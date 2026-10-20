@@ -6,7 +6,7 @@
 
 **Architecture:** npm-workspaces monorepo. `api/` is a Cloudflare Workers + Hono app talking to MongoDB Atlas with a per-invocation client closed via `ctx.waitUntil()`. `dashboard/` is a React + Vite SPA that talks only to `api/` over HTTP. `shared/` holds Zod schemas both packages import so request/response shapes can't drift. Login rate limiting and full CI/deploy are explicitly out of scope here — they belong to M6 (Operations).
 
-**Tech Stack:** TypeScript (strict), Hono 4, `mongodb` driver 6 (not Mongoose), Zod 3, `hono/jwt` for tokens, Web Crypto PBKDF2 for password hashing, Vitest + `mongodb-memory-server` for api/shared tests, React 18 + Vite 5 + react-router-dom 6 for the dashboard.
+**Tech Stack:** TypeScript (strict), Hono 4, `mongodb` driver 6 (not Mongoose), Zod 3, `hono/jwt` for tokens, Web Crypto PBKDF2 for password hashing, Vitest + `mongodb-memory-server` for api/shared tests, React 18 + Vite 5 + react-router-dom 6 + Tailwind CSS 3 for the dashboard.
 
 **Spec:** `docs/superpowers/specs/2026-10-20-ai-remote-job-hunter-design.md`
 
@@ -1253,25 +1253,37 @@ git commit -m "Add authenticated profile GET/PUT routes"
 
 ---
 
-### Task 8: Dashboard scaffold, routing, login/register pages
+### Task 8: Dashboard scaffold, Tailwind design system, routing, login/register pages
 
 **Files:**
 - Create: `dashboard/package.json`
 - Create: `dashboard/tsconfig.json`
 - Create: `dashboard/vite.config.ts`
+- Create: `dashboard/tailwind.config.js`
+- Create: `dashboard/postcss.config.js`
 - Create: `dashboard/index.html`
+- Create: `dashboard/src/index.css`
 - Create: `dashboard/src/main.tsx`
 - Create: `dashboard/src/App.tsx`
 - Create: `dashboard/src/api/client.ts`
 - Create: `dashboard/src/auth/AuthContext.tsx`
 - Create: `dashboard/src/auth/ProtectedRoute.tsx`
+- Create: `dashboard/src/components/Card.tsx`
+- Create: `dashboard/src/components/TextField.tsx`
+- Create: `dashboard/src/components/Checkbox.tsx`
+- Create: `dashboard/src/components/Button.tsx`
+- Create: `dashboard/src/components/FormError.tsx`
+- Create: `dashboard/src/components/Header.tsx`
 - Create: `dashboard/src/pages/Login.tsx`
 - Create: `dashboard/src/pages/Register.tsx`
 
 **Interfaces:**
 - Consumes: `/auth/register` and `/auth/login` from Task 6, via `apiFetch`.
 - Produces: `getToken()`, `setToken(token: string)`, `clearToken()`, `apiFetch(path: string, init?: RequestInit): Promise<Response>` from `dashboard/src/api/client.ts` — consumed by `dashboard/src/pages/Profile.tsx` (Task 9).
-- Produces: `useAuth(): { isAuthenticated: boolean, login(token: string): void, logout(): void }` from `dashboard/src/auth/AuthContext.tsx` — consumed by `Profile.tsx` (Task 9) for the logout button.
+- Produces: `useAuth(): { isAuthenticated: boolean, login(token: string): void, logout(): void }` from `dashboard/src/auth/AuthContext.tsx` — consumed by `Profile.tsx` (Task 9) for the logout button and `Header` component.
+- Produces design primitives consumed by `Profile.tsx` (Task 9): `Card` (`dashboard/src/components/Card.tsx`), `TextField` (props: `label: string` + all native `input` props), `Checkbox` (props: `label: string` + all native `input` props), `Button` (props: `variant?: 'primary' | 'secondary'` + all native `button` props), `FormError` (props: `message: string`), `Header` (no props — renders app name + logout button via `useAuth`).
+
+**Design system:** Tailwind CSS. Palette: `slate` for neutrals/background/text, `indigo-600` as the primary action color, `red` for errors, `green` for success/confirmation. Layout: auth pages (`Login`/`Register`) are a centered card on a `slate-50` background; `Profile` (Task 9) uses a `Header` bar + a single content card. All five components above are the only styled primitives — later milestones' screens (jobs list, materials, approvals) reuse them rather than hand-writing Tailwind classes inline, per DRY.
 
 This task has no automated tests — per the spec's testing strategy, the dashboard is gated by typecheck + build only.
 
@@ -1299,10 +1311,42 @@ This task has no automated tests — per the spec's testing strategy, the dashbo
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
     "typescript": "^5.6.3",
     "vite": "^5.4.9"
   }
 }
+```
+
+`dashboard/tailwind.config.js`:
+```js
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+```
+
+`dashboard/postcss.config.js`:
+```js
+export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+```
+
+`dashboard/src/index.css`:
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 ```
 
 `dashboard/tsconfig.json`:
@@ -1354,6 +1398,7 @@ export default defineConfig({
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -1449,7 +1494,132 @@ export function ProtectedRoute() {
 }
 ```
 
-- [ ] **Step 4: Create the login and register pages**
+- [ ] **Step 4: Create the design system primitives**
+
+`dashboard/src/components/Card.tsx`:
+```tsx
+import type { ReactNode } from 'react'
+
+export function Card({ children }: { children: ReactNode }) {
+  return (
+    <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+      {children}
+    </div>
+  )
+}
+```
+
+`dashboard/src/components/TextField.tsx`:
+```tsx
+import type { InputHTMLAttributes } from 'react'
+
+interface TextFieldProps extends InputHTMLAttributes<HTMLInputElement> {
+  label: string
+}
+
+export function TextField({ label, id, ...inputProps }: TextFieldProps) {
+  const fieldId = id ?? inputProps.name
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={fieldId} className="text-sm font-medium text-slate-700">
+        {label}
+      </label>
+      <input
+        id={fieldId}
+        className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        {...inputProps}
+      />
+    </div>
+  )
+}
+```
+
+`dashboard/src/components/Checkbox.tsx`:
+```tsx
+import type { InputHTMLAttributes } from 'react'
+
+interface CheckboxProps extends InputHTMLAttributes<HTMLInputElement> {
+  label: string
+}
+
+export function Checkbox({ label, id, ...inputProps }: CheckboxProps) {
+  const fieldId = id ?? inputProps.name
+  return (
+    <label htmlFor={fieldId} className="flex items-center gap-2 text-sm text-slate-700">
+      <input
+        id={fieldId}
+        type="checkbox"
+        className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+        {...inputProps}
+      />
+      {label}
+    </label>
+  )
+}
+```
+
+`dashboard/src/components/Button.tsx`:
+```tsx
+import type { ButtonHTMLAttributes } from 'react'
+
+type Variant = 'primary' | 'secondary'
+
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: Variant
+}
+
+const VARIANT_CLASSES: Record<Variant, string> = {
+  primary:
+    'bg-indigo-600 text-white hover:bg-indigo-500 focus-visible:outline-indigo-600 disabled:bg-indigo-300',
+  secondary:
+    'bg-white text-slate-700 border border-slate-300 hover:bg-slate-50 focus-visible:outline-slate-400',
+}
+
+export function Button({ variant = 'primary', className = '', ...props }: ButtonProps) {
+  return (
+    <button
+      className={`inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold shadow-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed ${VARIANT_CLASSES[variant]} ${className}`}
+      {...props}
+    />
+  )
+}
+```
+
+`dashboard/src/components/FormError.tsx`:
+```tsx
+export function FormError({ message }: { message: string }) {
+  return (
+    <p
+      role="alert"
+      className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+    >
+      {message}
+    </p>
+  )
+}
+```
+
+`dashboard/src/components/Header.tsx`:
+```tsx
+import { useAuth } from '../auth/AuthContext'
+import { Button } from './Button'
+
+export function Header() {
+  const { logout } = useAuth()
+  return (
+    <header className="border-b border-slate-200 bg-white">
+      <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4">
+        <span className="text-lg font-semibold text-slate-900">AI Remote Job Hunter</span>
+        <Button variant="secondary" onClick={logout}>
+          Log out
+        </Button>
+      </div>
+    </header>
+  )
+}
+```
+
+- [ ] **Step 5: Create the login and register pages**
 
 `dashboard/src/pages/Login.tsx`:
 ```tsx
@@ -1457,53 +1627,76 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { Card } from '../components/Card'
+import { TextField } from '../components/TextField'
+import { Button } from '../components/Button'
+import { FormError } from '../components/FormError'
 
 export function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
-    const res = await apiFetch('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    })
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: 'login failed' }))
-      setError(body.error ?? 'login failed')
-      return
+    setSubmitting(true)
+    try {
+      const res = await apiFetch('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: 'login failed' }))
+        setError(body.error ?? 'login failed')
+        return
+      }
+      const { token } = await res.json()
+      login(token)
+      navigate('/profile')
+    } finally {
+      setSubmitting(false)
     }
-    const { token } = await res.json()
-    login(token)
-    navigate('/profile')
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h1>Log in</h1>
-      {error && <p role="alert">{error}</p>}
-      <label>
-        Email
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-      </label>
-      <label>
-        Password
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-      </label>
-      <button type="submit">Log in</button>
-      <p>
-        Need an account? <Link to="/register">Register</Link>
-      </p>
-    </form>
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+      <Card>
+        <h1 className="text-xl font-semibold text-slate-900">Log in</h1>
+        <p className="mt-1 text-sm text-slate-500">Welcome back to AI Remote Job Hunter.</p>
+        <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
+          {error && <FormError message={error} />}
+          <TextField
+            label="Email"
+            type="email"
+            name="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <TextField
+            label="Password"
+            type="password"
+            name="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <Button type="submit" disabled={submitting}>
+            {submitting ? 'Logging in…' : 'Log in'}
+          </Button>
+        </form>
+        <p className="mt-4 text-sm text-slate-500">
+          Need an account?{' '}
+          <Link to="/register" className="font-medium text-indigo-600 hover:text-indigo-500">
+            Register
+          </Link>
+        </p>
+      </Card>
+    </div>
   )
 }
 ```
@@ -1514,59 +1707,82 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { Card } from '../components/Card'
+import { TextField } from '../components/TextField'
+import { Button } from '../components/Button'
+import { FormError } from '../components/FormError'
 
 export function RegisterPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
-    const res = await apiFetch('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    })
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: 'registration failed' }))
-      setError(body.error ?? 'registration failed')
-      return
+    setSubmitting(true)
+    try {
+      const res = await apiFetch('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: 'registration failed' }))
+        setError(body.error ?? 'registration failed')
+        return
+      }
+      const { token } = await res.json()
+      login(token)
+      navigate('/profile')
+    } finally {
+      setSubmitting(false)
     }
-    const { token } = await res.json()
-    login(token)
-    navigate('/profile')
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h1>Register</h1>
-      {error && <p role="alert">{error}</p>}
-      <label>
-        Email
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-      </label>
-      <label>
-        Password
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          minLength={8}
-          required
-        />
-      </label>
-      <button type="submit">Create account</button>
-      <p>
-        Already have an account? <Link to="/login">Log in</Link>
-      </p>
-    </form>
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+      <Card>
+        <h1 className="text-xl font-semibold text-slate-900">Create your account</h1>
+        <p className="mt-1 text-sm text-slate-500">Start automating your remote job search.</p>
+        <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
+          {error && <FormError message={error} />}
+          <TextField
+            label="Email"
+            type="email"
+            name="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+          <TextField
+            label="Password"
+            type="password"
+            name="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            minLength={8}
+            required
+          />
+          <Button type="submit" disabled={submitting}>
+            {submitting ? 'Creating account…' : 'Create account'}
+          </Button>
+        </form>
+        <p className="mt-4 text-sm text-slate-500">
+          Already have an account?{' '}
+          <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+            Log in
+          </Link>
+        </p>
+      </Card>
+    </div>
   )
 }
 ```
 
-- [ ] **Step 5: Wire up routing**
+- [ ] **Step 6: Wire up routing**
 
 `dashboard/src/App.tsx` (the `/profile` route itself is added in Task 9 — for now it 404s, which is fine since Task 8 ends with a typecheck+build gate, not a profile smoke test):
 ```tsx
@@ -1592,16 +1808,16 @@ export default function App() {
 }
 ```
 
-- [ ] **Step 6: Install, typecheck, and build**
+- [ ] **Step 7: Install, typecheck, and build**
 
 Run: `npm install && npm run typecheck --workspace=dashboard && npm run build --workspace=dashboard`
 Expected: both commands exit 0 with no errors.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add dashboard/
-git commit -m "Scaffold dashboard with routing, auth context, and login/register pages"
+git commit -m "Scaffold dashboard with Tailwind design system, routing, login/register"
 ```
 
 ---
@@ -1613,7 +1829,7 @@ git commit -m "Scaffold dashboard with routing, auth context, and login/register
 - Modify: `dashboard/src/App.tsx`
 
 **Interfaces:**
-- Consumes: `apiFetch` (Task 8), `useAuth` (Task 8), `Profile` type from `@job-hunter/shared` (Task 2), `GET /profile` and `PUT /profile` (Task 7).
+- Consumes: `apiFetch` (Task 8), `Profile` type from `@job-hunter/shared` (Task 2), `GET /profile` and `PUT /profile` (Task 7), and the design primitives from Task 8: `Header`, `TextField`, `Checkbox`, `Button`, `FormError`.
 
 No automated tests for this task either — typecheck + build is the gate, consistent with Task 8 and the spec's testing strategy.
 
@@ -1624,7 +1840,11 @@ No automated tests for this task either — typecheck + build is the gate, consi
 import { useEffect, useState, type FormEvent } from 'react'
 import type { Profile } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
-import { useAuth } from '../auth/AuthContext'
+import { Header } from '../components/Header'
+import { TextField } from '../components/TextField'
+import { Checkbox } from '../components/Checkbox'
+import { Button } from '../components/Button'
+import { FormError } from '../components/FormError'
 
 export function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -1633,13 +1853,13 @@ export function ProfilePage() {
   const [remoteOnly, setRemoteOnly] = useState(true)
   const [minSalaryUsd, setMinSalaryUsd] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const { logout } = useAuth()
 
   useEffect(() => {
     apiFetch('/profile').then(async (res) => {
       if (!res.ok) {
-        setError('failed to load profile')
+        setError('Failed to load profile.')
         return
       }
       const data: Profile = await res.json()
@@ -1655,62 +1875,85 @@ export function ProfilePage() {
     e.preventDefault()
     setError(null)
     setSaved(false)
-    const res = await apiFetch('/profile', {
-      method: 'PUT',
-      body: JSON.stringify({
-        preferences: {
-          targetRoles: targetRoles.split(',').map((s) => s.trim()).filter(Boolean),
-          locations: locations.split(',').map((s) => s.trim()).filter(Boolean),
-          remoteOnly,
-          minSalaryUsd: minSalaryUsd ? Number(minSalaryUsd) : null,
-        },
-      }),
-    })
-    if (!res.ok) {
-      setError('failed to save profile')
-      return
+    setSaving(true)
+    try {
+      const res = await apiFetch('/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          preferences: {
+            targetRoles: targetRoles.split(',').map((s) => s.trim()).filter(Boolean),
+            locations: locations.split(',').map((s) => s.trim()).filter(Boolean),
+            remoteOnly,
+            minSalaryUsd: minSalaryUsd ? Number(minSalaryUsd) : null,
+          },
+        }),
+      })
+      if (!res.ok) {
+        setError('Failed to save profile.')
+        return
+      }
+      setProfile(await res.json())
+      setSaved(true)
+    } finally {
+      setSaving(false)
     }
-    setProfile(await res.json())
-    setSaved(true)
   }
 
-  if (error) return <p role="alert">{error}</p>
-  if (!profile) return <p>Loading…</p>
-
   return (
-    <div>
-      <h1>Profile</h1>
-      <p>{profile.email}</p>
-      <form onSubmit={handleSubmit}>
-        <label>
-          Target roles (comma-separated)
-          <input value={targetRoles} onChange={(e) => setTargetRoles(e.target.value)} />
-        </label>
-        <label>
-          Locations (comma-separated)
-          <input value={locations} onChange={(e) => setLocations(e.target.value)} />
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={remoteOnly}
-            onChange={(e) => setRemoteOnly(e.target.checked)}
-          />
-          Remote only
-        </label>
-        <label>
-          Minimum salary (USD)
-          <input
-            type="number"
-            value={minSalaryUsd}
-            onChange={(e) => setMinSalaryUsd(e.target.value)}
-            min={0}
-          />
-        </label>
-        <button type="submit">Save</button>
-        {saved && <p>Saved.</p>}
-      </form>
-      <button onClick={logout}>Log out</button>
+    <div className="min-h-screen bg-slate-50">
+      <Header />
+      <main className="mx-auto max-w-3xl px-4 py-8">
+        {error && (
+          <div className="mb-4">
+            <FormError message={error} />
+          </div>
+        )}
+        {!profile ? (
+          <p className="text-sm text-slate-500">Loading…</p>
+        ) : (
+          <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-sm">
+            <h1 className="text-lg font-semibold text-slate-900">Profile</h1>
+            <p className="mt-1 text-sm text-slate-500">{profile.email}</p>
+
+            <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-5">
+              <TextField
+                label="Target roles (comma-separated)"
+                name="targetRoles"
+                value={targetRoles}
+                onChange={(e) => setTargetRoles(e.target.value)}
+                placeholder="Software Engineer, Backend Engineer"
+              />
+              <TextField
+                label="Locations (comma-separated)"
+                name="locations"
+                value={locations}
+                onChange={(e) => setLocations(e.target.value)}
+                placeholder="Remote, Dhaka"
+              />
+              <Checkbox
+                label="Remote only"
+                name="remoteOnly"
+                checked={remoteOnly}
+                onChange={(e) => setRemoteOnly(e.target.checked)}
+              />
+              <TextField
+                label="Minimum salary (USD)"
+                name="minSalaryUsd"
+                type="number"
+                min={0}
+                value={minSalaryUsd}
+                onChange={(e) => setMinSalaryUsd(e.target.value)}
+              />
+              <div className="flex items-center gap-3">
+                <Button type="submit" disabled={saving}>
+                  {saving ? 'Saving…' : 'Save'}
+                </Button>
+                {saved && <span className="text-sm text-green-600">Saved.</span>}
+              </div>
+            </form>
+          </div>
+        )}
+      </main>
     </div>
   )
 }
