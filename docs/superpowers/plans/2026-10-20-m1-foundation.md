@@ -2,19 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stand up the monorepo (api/dashboard/shared), the Cloudflare Workers MongoDB connection pattern, JWT-based auth, and profile CRUD — the foundation every later milestone (discovery, scoring, materials, automation, operations) builds on.
+**Goal:** Stand up the monorepo (api/dashboard/shared), the Node.js MongoDB connection, JWT-based auth, and profile CRUD — the foundation every later milestone (discovery, scoring, materials, automation, operations) builds on.
 
-**Architecture:** npm-workspaces monorepo. `api/` is a Cloudflare Workers + Hono app talking to MongoDB Atlas with a per-invocation client closed via `ctx.waitUntil()`. `dashboard/` is a React + Vite SPA that talks only to `api/` over HTTP. `shared/` holds Zod schemas both packages import so request/response shapes can't drift. Login rate limiting and full CI/deploy are explicitly out of scope here — they belong to M6 (Operations).
+**Architecture:** npm-workspaces monorepo. `api/` is a long-lived Node.js 22 process running Hono via `@hono/node-server`, connecting to MongoDB Atlas once at startup with a normal pooled `MongoClient` — no per-invocation connect/close workaround. `dashboard/` is a React + Vite SPA that talks only to `api/` over HTTP. `shared/` holds Zod schemas both packages import so request/response shapes can't drift. Login rate limiting and full CI/deploy are explicitly out of scope here — they belong to M6 (Operations).
 
-**Tech Stack:** TypeScript (strict), Hono 4, `mongodb` driver 6 (not Mongoose), Zod 3, `hono/jwt` for tokens, Web Crypto PBKDF2 for password hashing, Vitest + `mongodb-memory-server` for api/shared tests, React 18 + Vite 5 + react-router-dom 6 + Tailwind CSS 3 for the dashboard.
+**Tech Stack:** TypeScript (strict), Hono 4 on `@hono/node-server`, `mongodb` driver 6 (not Mongoose), Zod 3, `hono/jwt` for tokens, Web Crypto PBKDF2 for password hashing, `tsx` for dev execution, Vitest + `mongodb-memory-server` for api/shared tests, React 18 + Vite 5 + react-router-dom 6 + Tailwind CSS 3 for the dashboard.
 
 **Spec:** `docs/superpowers/specs/2026-10-20-ai-remote-job-hunter-design.md`
 
 ## Global Constraints
 
-- Node.js 22+ for all local tooling/dev.
+- Node.js 22+ for all local tooling/dev and production — `api/` is a regular long-lived process, not a serverless isolate (spec: Architecture — this was a deliberate pivot away from the originally-reconstructed Cloudflare Workers design, see spec's "Decisions made during planning").
 - TypeScript strict mode everywhere.
-- Cloudflare Workers runtime: `MongoClient` must be created per-invocation and closed via `ctx.waitUntil()` — never module-scoped (spec: Architecture).
+- MongoDB: one `MongoClient` connected at process startup, reused for every request via dependency injection (passed into route factories) — never reconnected per-request.
 - `api` and `shared` are tested with Vitest against a real `mongodb-memory-server` instance (not mocks); `dashboard` is gated by typecheck + Vite build only — no e2e UI tests in M1 (spec: Testing strategy).
 - Dashboard auth: JWT bearer token via `Authorization: Bearer <token>` header (spec: "Decisions made during planning").
 - Claude is the only AI provider for this project — not used in M1, but no other AI SDK is ever introduced (spec: Non-goals).
@@ -32,15 +32,13 @@
 - Create: `api/package.json`
 - Create: `api/tsconfig.json`
 - Create: `api/vitest.config.ts`
-- Create: `api/wrangler.toml`
-- Create: `api/.dev.vars.example`
-- Create: `api/src/env.ts`
-- Create: `api/src/index.ts`
+- Create: `api/.env.example`
+- Create: `api/src/app.ts`
+- Create: `api/src/server.ts`
 - Test: `api/test/health.test.ts`
 
 **Interfaces:**
-- Produces: `Env` interface (`MONGODB_URI: string`, `MONGODB_DB_NAME: string`, `JWT_SECRET: string`) from `api/src/env.ts` — every later api task imports this.
-- Produces: default-exported Hono `app` from `api/src/index.ts` — later tasks mount routes onto it with `app.route(...)`.
+- Produces: `createApp(): Hono` from `api/src/app.ts` — later tasks that need db/auth wrap this with their own route factories (see Task 6), composed together in `api/src/server.ts`. This function stays dependency-free permanently; it is never modified again after this task.
 
 - [ ] **Step 1: Create root files**
 
@@ -66,8 +64,7 @@
 ```
 node_modules/
 dist/
-.wrangler/
-.dev.vars
+.env
 *.log
 ```
 
@@ -103,8 +100,8 @@ volumes:
 
 ## API
 
-    cp api/.dev.vars.example api/.dev.vars
-    # edit api/.dev.vars: set JWT_SECRET to any random string;
+    cp api/.env.example api/.env
+    # edit api/.env: set JWT_SECRET to any random string;
     # MONGODB_URI can stay as mongodb://localhost:27017 for local dev
     npm run dev --workspace=api
 
@@ -132,22 +129,22 @@ http://localhost:8787 by default (override with VITE_API_BASE_URL).
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "tsx watch --env-file=.env src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@hono/node-server": "^1.13.2",
     "@job-hunter/shared": "*",
     "hono": "^4.6.9",
     "mongodb": "^6.9.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241022.0",
+    "@types/node": "^22.7.5",
     "mongodb-memory-server": "^10.1.2",
+    "tsx": "^4.19.1",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.3",
-    "wrangler": "^3.84.0"
+    "vitest": "^2.1.3"
   }
 }
 ```
@@ -160,7 +157,7 @@ http://localhost:8787 by default (override with VITE_API_BASE_URL).
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "lib": ["ES2022"],
-    "types": ["@cloudflare/workers-types"],
+    "types": ["node"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -182,44 +179,36 @@ export default defineConfig({
 })
 ```
 
-`api/wrangler.toml`:
-```toml
-name = "job-hunter-api"
-main = "src/index.ts"
-compatibility_date = "2026-10-20"
-
-[vars]
-MONGODB_DB_NAME = "job_hunter"
-
-# MONGODB_URI and JWT_SECRET are set via `wrangler secret put` in production,
-# and via .dev.vars (gitignored) for local `wrangler dev`.
-```
-
-`api/.dev.vars.example`:
+`api/.env.example`:
 ```
 MONGODB_URI=mongodb://localhost:27017
+MONGODB_DB_NAME=job_hunter
 JWT_SECRET=change-me-in-dev
+PORT=8787
 ```
 
-`api/src/env.ts`:
+`api/src/app.ts`:
 ```ts
-export interface Env {
-  MONGODB_URI: string
-  MONGODB_DB_NAME: string
-  JWT_SECRET: string
+import { Hono } from 'hono'
+
+export function createApp() {
+  const app = new Hono()
+  app.get('/health', (c) => c.json({ status: 'ok' }))
+  return app
 }
 ```
 
-`api/src/index.ts`:
+`api/src/server.ts`:
 ```ts
-import { Hono } from 'hono'
-import type { Env } from './env'
+import { serve } from '@hono/node-server'
+import { createApp } from './app'
 
-const app = new Hono<{ Bindings: Env }>()
+const port = Number(process.env.PORT ?? 8787)
+const app = createApp()
 
-app.get('/health', (c) => c.json({ status: 'ok' }))
-
-export default app
+serve({ fetch: app.fetch, port }, () => {
+  console.log(`API listening on http://localhost:${port}`)
+})
 ```
 
 - [ ] **Step 3: Write the failing test**
@@ -227,10 +216,11 @@ export default app
 `api/test/health.test.ts`:
 ```ts
 import { describe, it, expect } from 'vitest'
-import app from '../src/index'
+import { createApp } from '../src/app'
 
 describe('GET /health', () => {
   it('returns ok status', async () => {
+    const app = createApp()
     const res = await app.request('/health')
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ status: 'ok' })
@@ -474,7 +464,7 @@ git commit -m "Add shared Zod schemas for auth and profile"
 
 ---
 
-### Task 3: MongoDB per-invocation connection helper
+### Task 3: MongoDB connection helper
 
 **Files:**
 - Modify: `api/package.json` (no change needed — `mongodb` and `mongodb-memory-server` already added in Task 1)
@@ -482,8 +472,7 @@ git commit -m "Add shared Zod schemas for auth and profile"
 - Test: `api/test/db.test.ts`
 
 **Interfaces:**
-- Consumes: `Env` from `api/src/env.ts` (Task 1).
-- Produces: `withDb<T>(env: Env, ctx: ExecutionContext, fn: (db: Db) => Promise<T>): Promise<T>` from `api/src/db.ts` — every route handler in Tasks 6–7 wraps its DB access in this.
+- Produces: `MongoConnection` (`{ client: MongoClient, db: Db }`) and `connectMongo(uri: string, dbName: string): Promise<MongoConnection>` from `api/src/db.ts`. Called exactly once, at process startup — `api/src/server.ts` (Task 6) calls it before mounting any route, and holds the resulting `db` handle for the life of the process (passed into route factories via closure, not reconnected per-request). Tests in Tasks 6–7 also call it directly against `mongodb-memory-server` to get a real `Db` to construct route factories with.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -491,51 +480,28 @@ git commit -m "Add shared Zod schemas for auth and profile"
 ```ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { MongoMemoryServer } from 'mongodb-memory-server'
-import { withDb } from '../src/db'
-import type { Env } from '../src/env'
+import { connectMongo } from '../src/db'
+import type { MongoClient } from 'mongodb'
 
-function fakeCtx(): ExecutionContext {
-  return {
-    waitUntil: (p: Promise<unknown>) => {
-      p.catch(() => {})
-    },
-    passThroughOnException: () => {},
-  } as unknown as ExecutionContext
-}
-
-describe('withDb', () => {
+describe('connectMongo', () => {
   let mongod: MongoMemoryServer
-  let env: Env
+  let client: MongoClient
 
   beforeAll(async () => {
     mongod = await MongoMemoryServer.create()
-    env = {
-      MONGODB_URI: mongod.getUri(),
-      MONGODB_DB_NAME: 'test',
-      JWT_SECRET: 'test-secret',
-    }
   })
 
   afterAll(async () => {
+    await client?.close()
     await mongod.stop()
   })
 
-  it('connects, runs the callback, and returns its result', async () => {
-    const result = await withDb(env, fakeCtx(), async (db) => {
-      await db.collection('ping').insertOne({ ok: 1 })
-      return db.collection('ping').countDocuments()
-    })
-    expect(result).toBe(1)
-  })
-
-  it('opens a fresh connection on every call — data from one call is visible in the next', async () => {
-    await withDb(env, fakeCtx(), async (db) => {
-      await db.collection('cross_call').insertOne({ marker: 'written-in-call-1' })
-    })
-    const found = await withDb(env, fakeCtx(), async (db) => {
-      return db.collection('cross_call').findOne({ marker: 'written-in-call-1' })
-    })
-    expect(found?.marker).toBe('written-in-call-1')
+  it('connects and returns a usable Db handle', async () => {
+    const conn = await connectMongo(mongod.getUri(), 'test')
+    client = conn.client
+    await conn.db.collection('ping').insertOne({ ok: 1 })
+    const count = await conn.db.collection('ping').countDocuments()
+    expect(count).toBe(1)
   })
 })
 ```
@@ -545,39 +511,34 @@ describe('withDb', () => {
 Run: `npm run test --workspace=api`
 Expected: FAIL — `../src/db` does not exist.
 
-- [ ] **Step 3: Implement `withDb`**
+- [ ] **Step 3: Implement `connectMongo`**
 
 `api/src/db.ts`:
 ```ts
 import { MongoClient, type Db } from 'mongodb'
-import type { Env } from './env'
 
-export async function withDb<T>(
-  env: Env,
-  ctx: ExecutionContext,
-  fn: (db: Db) => Promise<T>
-): Promise<T> {
-  const client = new MongoClient(env.MONGODB_URI)
+export interface MongoConnection {
+  client: MongoClient
+  db: Db
+}
+
+export async function connectMongo(uri: string, dbName: string): Promise<MongoConnection> {
+  const client = new MongoClient(uri)
   await client.connect()
-  const db = client.db(env.MONGODB_DB_NAME)
-  try {
-    return await fn(db)
-  } finally {
-    ctx.waitUntil(client.close())
-  }
+  return { client, db: client.db(dbName) }
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm run test --workspace=api`
-Expected: PASS (3 tests total: health + 2 db tests)
+Expected: PASS (2 tests total: health + db)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add api/src/db.ts api/test/db.test.ts
-git commit -m "Add per-invocation MongoDB connection helper"
+git commit -m "Add MongoDB connection helper"
 ```
 
 ---
@@ -681,12 +642,12 @@ export async function verifyPassword(password: string, stored: string): Promise<
 }
 ```
 
-Note: uses the global `crypto` object (Web Crypto API), available natively in both Node 22 and the real Workers runtime — no `nodejs_compat` flag or extra dependency required.
+Note: uses the global `crypto` object (Web Crypto API), available natively in Node 22 — no extra dependency required.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm run test --workspace=api`
-Expected: PASS (6 tests total)
+Expected: PASS (5 tests total: health + db + 3 password)
 
 - [ ] **Step 5: Commit**
 
@@ -763,7 +724,7 @@ export async function verifyAuthToken(token: string, secret: string): Promise<Au
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm run test --workspace=api`
-Expected: PASS (8 tests total)
+Expected: PASS (7 tests total: health + db + password + 2 jwt)
 
 - [ ] **Step 5: Commit**
 
@@ -779,31 +740,26 @@ git commit -m "Add JWT sign/verify helpers"
 **Files:**
 - Create: `api/src/middleware/auth.ts`
 - Create: `api/src/routes/auth.ts`
-- Modify: `api/src/index.ts`
+- Modify: `api/src/server.ts`
 - Test: `api/test/auth.test.ts`
 
 **Interfaces:**
-- Consumes: `withDb` (Task 3), `hashPassword`/`verifyPassword` (Task 4), `createAuthToken`/`verifyAuthToken` (Task 5), `RegisterRequestSchema`/`LoginRequestSchema` (Task 2).
-- Produces: `requireAuth` middleware and `AuthVariables` (`{ profileId: string }`) from `api/src/middleware/auth.ts` — consumed by `api/src/routes/profile.ts` (Task 7).
-- Produces: `authRoutes` Hono sub-app from `api/src/routes/auth.ts`, mounted at `/auth` in `api/src/index.ts`. Endpoints: `POST /auth/register` → `201 { token }` or `409` on duplicate email; `POST /auth/login` → `200 { token }` or `401` on bad credentials.
+- Consumes: `connectMongo` (Task 3), `hashPassword`/`verifyPassword` (Task 4), `createAuthToken`/`verifyAuthToken` (Task 5), `RegisterRequestSchema`/`LoginRequestSchema` (Task 2).
+- Produces: `createRequireAuth(jwtSecret: string)` and `AuthVariables` (`{ profileId: string }`) from `api/src/middleware/auth.ts` — consumed by `api/src/routes/profile.ts` (Task 7).
+- Produces: `createAuthRoutes(db: Db, jwtSecret: string): Hono` from `api/src/routes/auth.ts` — a pure factory, no module-level state, so tests construct it directly with a `mongodb-memory-server`-backed `db` rather than passing env/bindings through Hono. Endpoints: `POST /register` → `201 { token }` or `409` on duplicate email; `POST /login` → `200 { token }` or `401` on bad credentials. Mounted at `/auth` in `api/src/server.ts`.
 
 - [ ] **Step 1: Write the failing test**
 
 `api/test/auth.test.ts`:
 ```ts
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { Hono } from 'hono'
 import { MongoMemoryServer } from 'mongodb-memory-server'
-import app from '../src/index'
-import type { Env } from '../src/env'
+import type { Db, MongoClient } from 'mongodb'
+import { connectMongo } from '../src/db'
+import { createAuthRoutes } from '../src/routes/auth'
 
-function fakeCtx(): ExecutionContext {
-  return {
-    waitUntil: (p: Promise<unknown>) => {
-      p.catch(() => {})
-    },
-    passThroughOnException: () => {},
-  } as unknown as ExecutionContext
-}
+const JWT_SECRET = 'test-secret'
 
 function uniqueDbName(): string {
   return `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
@@ -811,7 +767,9 @@ function uniqueDbName(): string {
 
 describe('auth routes', () => {
   let mongod: MongoMemoryServer
-  let env: Env
+  let client: MongoClient
+  let db: Db
+  let app: Hono
 
   beforeAll(async () => {
     mongod = await MongoMemoryServer.create()
@@ -821,53 +779,46 @@ describe('auth routes', () => {
     await mongod.stop()
   })
 
-  beforeEach(() => {
-    env = {
-      MONGODB_URI: mongod.getUri(),
-      MONGODB_DB_NAME: uniqueDbName(),
-      JWT_SECRET: 'test-secret',
-    }
+  beforeEach(async () => {
+    const conn = await connectMongo(mongod.getUri(), uniqueDbName())
+    client = conn.client
+    db = conn.db
+    app = new Hono()
+    app.route('/auth', createAuthRoutes(db, JWT_SECRET))
+  })
+
+  afterEach(async () => {
+    await client.close()
   })
 
   it('registers a new profile and returns a token', async () => {
-    const res = await app.request(
-      '/auth/register',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'a@example.com', password: 'password123' }),
-      },
-      env,
-      fakeCtx()
-    )
+    const res = await app.request('/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'a@example.com', password: 'password123' }),
+    })
     expect(res.status).toBe(201)
     const body = await res.json()
     expect(typeof body.token).toBe('string')
   })
 
   it('rejects registering the same email twice', async () => {
-    const payload = { email: 'dup@example.com', password: 'password123' }
     const init = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ email: 'dup@example.com', password: 'password123' }),
     }
-    await app.request('/auth/register', init, env, fakeCtx())
-    const res = await app.request('/auth/register', init, env, fakeCtx())
+    await app.request('/auth/register', init)
+    const res = await app.request('/auth/register', init)
     expect(res.status).toBe(409)
   })
 
   it('rejects an invalid register payload', async () => {
-    const res = await app.request(
-      '/auth/register',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'not-an-email', password: 'short' }),
-      },
-      env,
-      fakeCtx()
-    )
+    const res = await app.request('/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'not-an-email', password: 'short' }),
+    })
     expect(res.status).toBe(400)
   })
 
@@ -878,27 +829,17 @@ describe('auth routes', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     }
-    await app.request('/auth/register', registerInit, env, fakeCtx())
+    await app.request('/auth/register', registerInit)
 
-    const ok = await app.request(
-      '/auth/login',
-      registerInit,
-      env,
-      fakeCtx()
-    )
+    const ok = await app.request('/auth/login', registerInit)
     expect(ok.status).toBe(200)
     expect(typeof (await ok.json()).token).toBe('string')
 
-    const bad = await app.request(
-      '/auth/login',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, password: 'wrong-password' }),
-      },
-      env,
-      fakeCtx()
-    )
+    const bad = await app.request('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, password: 'wrong-password' }),
+    })
     expect(bad.status).toBe(401)
   })
 })
@@ -907,7 +848,7 @@ describe('auth routes', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npm run test --workspace=api`
-Expected: FAIL — `/auth/register` and `/auth/login` return 404 (no route mounted yet).
+Expected: FAIL — `../src/routes/auth` does not exist.
 
 - [ ] **Step 3: Implement the auth middleware**
 
@@ -915,28 +856,27 @@ Expected: FAIL — `/auth/register` and `/auth/login` return 404 (no route mount
 ```ts
 import { createMiddleware } from 'hono/factory'
 import { verifyAuthToken } from '../lib/jwt'
-import type { Env } from '../env'
 
 export interface AuthVariables {
   profileId: string
 }
 
-export const requireAuth = createMiddleware<{ Bindings: Env; Variables: AuthVariables }>(
-  async (c, next) => {
+export function createRequireAuth(jwtSecret: string) {
+  return createMiddleware<{ Variables: AuthVariables }>(async (c, next) => {
     const header = c.req.header('Authorization')
     if (!header?.startsWith('Bearer ')) {
       return c.json({ error: 'missing bearer token' }, 401)
     }
     const token = header.slice('Bearer '.length)
     try {
-      const payload = await verifyAuthToken(token, c.env.JWT_SECRET)
+      const payload = await verifyAuthToken(token, jwtSecret)
       c.set('profileId', payload.sub)
       await next()
     } catch {
       return c.json({ error: 'invalid or expired token' }, 401)
     }
-  }
-)
+  })
+}
 ```
 
 - [ ] **Step 4: Implement the auth routes**
@@ -944,23 +884,22 @@ export const requireAuth = createMiddleware<{ Bindings: Env; Variables: AuthVari
 `api/src/routes/auth.ts`:
 ```ts
 import { Hono } from 'hono'
+import type { Db } from 'mongodb'
 import { RegisterRequestSchema, LoginRequestSchema } from '@job-hunter/shared'
-import { withDb } from '../db'
 import { hashPassword, verifyPassword } from '../lib/password'
 import { createAuthToken } from '../lib/jwt'
-import type { Env } from '../env'
 
-export const authRoutes = new Hono<{ Bindings: Env }>()
+export function createAuthRoutes(db: Db, jwtSecret: string) {
+  const authRoutes = new Hono()
 
-authRoutes.post('/register', async (c) => {
-  const body = await c.req.json().catch(() => null)
-  const parsed = RegisterRequestSchema.safeParse(body)
-  if (!parsed.success) {
-    return c.json({ error: 'invalid request', details: parsed.error.flatten() }, 400)
-  }
-  const { email, password } = parsed.data
+  authRoutes.post('/register', async (c) => {
+    const body = await c.req.json().catch(() => null)
+    const parsed = RegisterRequestSchema.safeParse(body)
+    if (!parsed.success) {
+      return c.json({ error: 'invalid request', details: parsed.error.flatten() }, 400)
+    }
+    const { email, password } = parsed.data
 
-  return withDb(c.env, c.executionCtx, async (db) => {
     const profiles = db.collection('profiles')
     const existing = await profiles.findOne({ email })
     if (existing) {
@@ -979,57 +918,73 @@ authRoutes.post('/register', async (c) => {
       updatedAt: now,
     })
 
-    const token = await createAuthToken(result.insertedId.toString(), c.env.JWT_SECRET)
+    const token = await createAuthToken(result.insertedId.toString(), jwtSecret)
     return c.json({ token }, 201)
   })
-})
 
-authRoutes.post('/login', async (c) => {
-  const body = await c.req.json().catch(() => null)
-  const parsed = LoginRequestSchema.safeParse(body)
-  if (!parsed.success) {
-    return c.json({ error: 'invalid request', details: parsed.error.flatten() }, 400)
-  }
-  const { email, password } = parsed.data
+  authRoutes.post('/login', async (c) => {
+    const body = await c.req.json().catch(() => null)
+    const parsed = LoginRequestSchema.safeParse(body)
+    if (!parsed.success) {
+      return c.json({ error: 'invalid request', details: parsed.error.flatten() }, 400)
+    }
+    const { email, password } = parsed.data
 
-  return withDb(c.env, c.executionCtx, async (db) => {
     const profiles = db.collection('profiles')
     const profile = await profiles.findOne({ email })
     if (!profile || !(await verifyPassword(password, profile.passwordHash))) {
       return c.json({ error: 'invalid email or password' }, 401)
     }
 
-    const token = await createAuthToken(profile._id.toString(), c.env.JWT_SECRET)
+    const token = await createAuthToken(profile._id.toString(), jwtSecret)
     return c.json({ token })
   })
-})
+
+  return authRoutes
+}
 ```
 
-- [ ] **Step 5: Mount the routes**
+- [ ] **Step 5: Wire the server composition root**
 
-`api/src/index.ts`:
+`api/src/server.ts`:
 ```ts
-import { Hono } from 'hono'
-import type { Env } from './env'
-import { authRoutes } from './routes/auth'
+import { serve } from '@hono/node-server'
+import { createApp } from './app'
+import { connectMongo } from './db'
+import { createAuthRoutes } from './routes/auth'
 
-const app = new Hono<{ Bindings: Env }>()
+async function main() {
+  const mongodbUri = process.env.MONGODB_URI
+  const jwtSecret = process.env.JWT_SECRET
+  if (!mongodbUri) throw new Error('MONGODB_URI is required')
+  if (!jwtSecret) throw new Error('JWT_SECRET is required')
 
-app.get('/health', (c) => c.json({ status: 'ok' }))
-app.route('/auth', authRoutes)
+  const { db } = await connectMongo(mongodbUri, process.env.MONGODB_DB_NAME ?? 'job_hunter')
 
-export default app
+  const app = createApp()
+  app.route('/auth', createAuthRoutes(db, jwtSecret))
+
+  const port = Number(process.env.PORT ?? 8787)
+  serve({ fetch: app.fetch, port }, () => {
+    console.log(`API listening on http://localhost:${port}`)
+  })
+}
+
+main().catch((err) => {
+  console.error('Failed to start server:', err)
+  process.exit(1)
+})
 ```
 
 - [ ] **Step 6: Run test to verify it passes**
 
 Run: `npm run test --workspace=api`
-Expected: PASS (12 tests total)
+Expected: PASS (11 tests total: health + db + password + jwt + 4 auth)
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add api/src/middleware/auth.ts api/src/routes/auth.ts api/src/index.ts api/test/auth.test.ts
+git add api/src/middleware/auth.ts api/src/routes/auth.ts api/src/server.ts api/test/auth.test.ts
 git commit -m "Add register/login routes and bearer-token auth middleware"
 ```
 
@@ -1039,53 +994,46 @@ git commit -m "Add register/login routes and bearer-token auth middleware"
 
 **Files:**
 - Create: `api/src/routes/profile.ts`
-- Modify: `api/src/index.ts`
+- Modify: `api/src/server.ts`
 - Test: `api/test/profile.test.ts`
 
 **Interfaces:**
-- Consumes: `withDb` (Task 3), `requireAuth`/`AuthVariables` (Task 6), `ProfileUpdateSchema` (Task 2).
-- Produces: `profileRoutes` Hono sub-app mounted at `/profile`. `GET /profile` → `200` with the profile (no `passwordHash` field) or `404`; `PUT /profile` → `200` with the updated profile, `400` on invalid body, `404` if the profile is gone. Both require `Authorization: Bearer <token>`; absent/invalid token → `401` (via `requireAuth`, already tested in Task 6).
+- Consumes: `connectMongo` (Task 3), `createRequireAuth`/`AuthVariables` (Task 6), `ProfileUpdateSchema` (Task 2).
+- Produces: `createProfileRoutes(db: Db, jwtSecret: string): Hono` mounted at `/profile`. `GET /profile` → `200` with the profile (no `passwordHash` field) or `404`; `PUT /profile` → `200` with the updated profile, `400` on invalid body, `404` if the profile is gone. Both require `Authorization: Bearer <token>`; absent/invalid token → `401` (via `createRequireAuth`, already tested in Task 6).
 
 - [ ] **Step 1: Write the failing test**
 
 `api/test/profile.test.ts`:
 ```ts
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { Hono } from 'hono'
 import { MongoMemoryServer } from 'mongodb-memory-server'
-import app from '../src/index'
-import type { Env } from '../src/env'
+import type { Db, MongoClient } from 'mongodb'
+import { connectMongo } from '../src/db'
+import { createAuthRoutes } from '../src/routes/auth'
+import { createProfileRoutes } from '../src/routes/profile'
 
-function fakeCtx(): ExecutionContext {
-  return {
-    waitUntil: (p: Promise<unknown>) => {
-      p.catch(() => {})
-    },
-    passThroughOnException: () => {},
-  } as unknown as ExecutionContext
-}
+const JWT_SECRET = 'test-secret'
 
 function uniqueDbName(): string {
   return `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
 }
 
-async function registerAndGetToken(env: Env): Promise<string> {
-  const res = await app.request(
-    '/auth/register',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'profile-owner@example.com', password: 'password123' }),
-    },
-    env,
-    fakeCtx()
-  )
+async function registerAndGetToken(app: Hono): Promise<string> {
+  const res = await app.request('/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'profile-owner@example.com', password: 'password123' }),
+  })
   const body = await res.json()
   return body.token
 }
 
 describe('profile routes', () => {
   let mongod: MongoMemoryServer
-  let env: Env
+  let client: MongoClient
+  let db: Db
+  let app: Hono
 
   beforeAll(async () => {
     mongod = await MongoMemoryServer.create()
@@ -1095,27 +1043,29 @@ describe('profile routes', () => {
     await mongod.stop()
   })
 
-  beforeEach(() => {
-    env = {
-      MONGODB_URI: mongod.getUri(),
-      MONGODB_DB_NAME: uniqueDbName(),
-      JWT_SECRET: 'test-secret',
-    }
+  beforeEach(async () => {
+    const conn = await connectMongo(mongod.getUri(), uniqueDbName())
+    client = conn.client
+    db = conn.db
+    app = new Hono()
+    app.route('/auth', createAuthRoutes(db, JWT_SECRET))
+    app.route('/profile', createProfileRoutes(db, JWT_SECRET))
+  })
+
+  afterEach(async () => {
+    await client.close()
   })
 
   it('rejects a request with no token', async () => {
-    const res = await app.request('/profile', {}, env, fakeCtx())
+    const res = await app.request('/profile')
     expect(res.status).toBe(401)
   })
 
   it('returns the caller profile without the password hash', async () => {
-    const token = await registerAndGetToken(env)
-    const res = await app.request(
-      '/profile',
-      { headers: { Authorization: `Bearer ${token}` } },
-      env,
-      fakeCtx()
-    )
+    const token = await registerAndGetToken(app)
+    const res = await app.request('/profile', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.email).toBe('profile-owner@example.com')
@@ -1123,24 +1073,19 @@ describe('profile routes', () => {
   })
 
   it('updates preferences and returns the updated profile', async () => {
-    const token = await registerAndGetToken(env)
-    const res = await app.request(
-      '/profile',
-      {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          preferences: {
-            targetRoles: ['Software Engineer'],
-            remoteOnly: true,
-            minSalaryUsd: 80000,
-            locations: ['Remote'],
-          },
-        }),
-      },
-      env,
-      fakeCtx()
-    )
+    const token = await registerAndGetToken(app)
+    const res = await app.request('/profile', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        preferences: {
+          targetRoles: ['Software Engineer'],
+          remoteOnly: true,
+          minSalaryUsd: 80000,
+          locations: ['Remote'],
+        },
+      }),
+    })
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.preferences.targetRoles).toEqual(['Software Engineer'])
@@ -1148,17 +1093,12 @@ describe('profile routes', () => {
   })
 
   it('rejects an invalid update payload', async () => {
-    const token = await registerAndGetToken(env)
-    const res = await app.request(
-      '/profile',
-      {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferences: { minSalaryUsd: -5 } }),
-      },
-      env,
-      fakeCtx()
-    )
+    const token = await registerAndGetToken(app)
+    const res = await app.request('/profile', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preferences: { minSalaryUsd: -5 } }),
+    })
     expect(res.status).toBe(400)
   })
 })
@@ -1167,25 +1107,22 @@ describe('profile routes', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npm run test --workspace=api`
-Expected: FAIL — `/profile` returns 404 (no route mounted yet).
+Expected: FAIL — `../src/routes/profile` does not exist.
 
 - [ ] **Step 3: Implement the profile routes**
 
 `api/src/routes/profile.ts`:
 ```ts
 import { Hono } from 'hono'
-import { ObjectId } from 'mongodb'
+import { ObjectId, type Db } from 'mongodb'
 import { ProfileUpdateSchema } from '@job-hunter/shared'
-import { withDb } from '../db'
-import { requireAuth, type AuthVariables } from '../middleware/auth'
-import type { Env } from '../env'
+import { createRequireAuth, type AuthVariables } from '../middleware/auth'
 
-export const profileRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>()
+export function createProfileRoutes(db: Db, jwtSecret: string) {
+  const profileRoutes = new Hono<{ Variables: AuthVariables }>()
+  profileRoutes.use('*', createRequireAuth(jwtSecret))
 
-profileRoutes.use('*', requireAuth)
-
-profileRoutes.get('/', async (c) => {
-  return withDb(c.env, c.executionCtx, async (db) => {
+  profileRoutes.get('/', async (c) => {
     const profile = await db
       .collection('profiles')
       .findOne(
@@ -1197,16 +1134,14 @@ profileRoutes.get('/', async (c) => {
     }
     return c.json(profile)
   })
-})
 
-profileRoutes.put('/', async (c) => {
-  const body = await c.req.json().catch(() => null)
-  const parsed = ProfileUpdateSchema.safeParse(body)
-  if (!parsed.success) {
-    return c.json({ error: 'invalid request', details: parsed.error.flatten() }, 400)
-  }
+  profileRoutes.put('/', async (c) => {
+    const body = await c.req.json().catch(() => null)
+    const parsed = ProfileUpdateSchema.safeParse(body)
+    if (!parsed.success) {
+      return c.json({ error: 'invalid request', details: parsed.error.flatten() }, 400)
+    }
 
-  return withDb(c.env, c.executionCtx, async (db) => {
     const profiles = db.collection('profiles')
     const result = await profiles.findOneAndUpdate(
       { _id: new ObjectId(c.get('profileId')) },
@@ -1218,36 +1153,54 @@ profileRoutes.put('/', async (c) => {
     }
     return c.json(result)
   })
-})
+
+  return profileRoutes
+}
 ```
 
 - [ ] **Step 4: Mount the routes**
 
-`api/src/index.ts`:
+`api/src/server.ts`:
 ```ts
-import { Hono } from 'hono'
-import type { Env } from './env'
-import { authRoutes } from './routes/auth'
-import { profileRoutes } from './routes/profile'
+import { serve } from '@hono/node-server'
+import { createApp } from './app'
+import { connectMongo } from './db'
+import { createAuthRoutes } from './routes/auth'
+import { createProfileRoutes } from './routes/profile'
 
-const app = new Hono<{ Bindings: Env }>()
+async function main() {
+  const mongodbUri = process.env.MONGODB_URI
+  const jwtSecret = process.env.JWT_SECRET
+  if (!mongodbUri) throw new Error('MONGODB_URI is required')
+  if (!jwtSecret) throw new Error('JWT_SECRET is required')
 
-app.get('/health', (c) => c.json({ status: 'ok' }))
-app.route('/auth', authRoutes)
-app.route('/profile', profileRoutes)
+  const { db } = await connectMongo(mongodbUri, process.env.MONGODB_DB_NAME ?? 'job_hunter')
 
-export default app
+  const app = createApp()
+  app.route('/auth', createAuthRoutes(db, jwtSecret))
+  app.route('/profile', createProfileRoutes(db, jwtSecret))
+
+  const port = Number(process.env.PORT ?? 8787)
+  serve({ fetch: app.fetch, port }, () => {
+    console.log(`API listening on http://localhost:${port}`)
+  })
+}
+
+main().catch((err) => {
+  console.error('Failed to start server:', err)
+  process.exit(1)
+})
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npm run test --workspace=api`
-Expected: PASS (16 tests total)
+Expected: PASS (15 tests total: health + db + password + jwt + 4 auth + 4 profile)
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add api/src/routes/profile.ts api/src/index.ts api/test/profile.test.ts
+git add api/src/routes/profile.ts api/src/server.ts api/test/profile.test.ts
 git commit -m "Add authenticated profile GET/PUT routes"
 ```
 
@@ -2009,7 +1962,7 @@ git commit -m "Add dashboard profile view/edit page"
 
 ## M1 Definition of Done
 
-- `npm test` passes across `api` and `shared` (16+ tests).
+- `npm test` passes across `api` (15 tests) and `shared` (6 tests) — 21 total.
 - `npm run typecheck` and `npm run build` pass across all three workspaces.
-- Manual smoke test (Task 9, Step 4) works end to end against local Docker Mongo.
-- Explicitly NOT in scope for M1 (deferred to later milestones): job discovery, verification/scoring, materials generation, automation engine, cron/queues, login rate limiting, CI pipeline, Cloudflare deployment. These land in M2–M6.
+- Manual smoke test (Task 9, Step 4) works end to end against local Docker Mongo, running the API as a plain Node process (`npm run dev --workspace=api`, no special runtime).
+- Explicitly NOT in scope for M1 (deferred to later milestones): job discovery, verification/scoring, materials generation, automation engine, node-cron/queue worker, login rate limiting, CI pipeline, Fly.io deployment. These land in M2–M6.
