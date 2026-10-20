@@ -1,0 +1,109 @@
+{
+  "_comment": "Seed data for the `companies` collection (Company Directory). Reproduces the 'seed script adds examples' feature from the design spec. Compiled from web search 2026-10-20 — companies chosen by recurring appearance across multiple 'best software companies in Bangladesh' rankings. `verified` is true only where a careers URL was confirmed directly, not guessed from a domain pattern. Verify the `false` entries before wiring into the real seed script in M2.",
+  "companies": [
+    {
+      "name": "Brain Station 23",
+      "website": "https://brainstation-23.com",
+      "careersUrl": "https://brainstation-23.easy.jobs",
+      "atsType": "other",
+      "verified": true,
+      "notes": "Largest software firm in Bangladesh by headcount (850+ engineers), offices in 6 countries. Uses easy.jobs ATS, not Greenhouse/Lever."
+    },
+    {
+      "name": "BJIT Limited",
+      "website": "https://bjitgroup.com",
+      "careersUrl": null,
+      "atsType": "career-page",
+      "verified": false,
+      "notes": "One of the oldest IT firms in BD (750+ staff); operations in Japan/US/Europe/Singapore. Careers URL not confirmed — check bjitgroup.com for a /career path."
+    },
+    {
+      "name": "Cefalo Bangladesh",
+      "website": "https://www.cefalo.com",
+      "careersUrl": null,
+      "atsType": "career-page",
+      "verified": false,
+      "notes": "Named repeatedly for strong engineering culture. Careers URL not confirmed."
+    },
+    {
+      "name": "DataSoft Systems Bangladesh",
+      "website": "https://datasoft-bd.com",
+      "careersUrl": "https://datasoft-bd.com/career",
+      "atsType": "career-page",
+      "verified": true,
+      "notes": "Software, logistics and automation, 20+ years operating."
+    },
+    {
+      "name": "Kaz Software",
+      "website": "https://kaz.com.bd",
+      "careersUrl": "https://kaz.com.bd/careers",
+      "atsType": "career-page",
+      "verified": true,
+      "notes": "Boutique custom-software house, strong client-satisfaction reputation."
+    },
+    {
+      "name": "SELISE Digital Platforms",
+      "website": "https://selisegroup.com",
+      "careersUrl": "https://ats.hirebee.ai/en/company/selise-bangladesh-ltd",
+      "atsType": "other",
+      "verified": true,
+      "notes": "700+ employees, staff augmentation / AI / data science. Uses Hirebee ATS."
+    },
+    {
+      "name": "Vivasoft Limited",
+      "website": "https://vivasoftltd.com",
+      "careersUrl": null,
+      "atsType": "career-page",
+      "verified": false,
+      "notes": "Named as one of the top overall companies to work for in BD rankings. Careers URL not confirmed."
+    },
+    {
+      "name": "Enosis Solutions",
+      "website": null,
+      "careersUrl": null,
+      "atsType": "career-page",
+      "verified": false,
+      "notes": "Repeatedly named among top BD software companies. Website/careers URL not confirmed — verify before use."
+    },
+    {
+      "name": "TigerIT Bangladesh",
+      "website": null,
+      "careersUrl": null,
+      "atsType": "career-page",
+      "verified": false,
+      "notes": "Biometrics and e-governance, based in Banani, Dhaka. Website/careers URL not confirmed."
+    },
+    {
+      "name": "REVE Systems",
+      "website": null,
+      "careersUrl": null,
+      "atsType": "career-page",
+      "verified": false,
+      "notes": "Telecom software (VoIP). Website/careers URL not confirmed."
+    },
+    {
+      "name": "Riseup Labs",
+      "website": "https://riseuplabs.com",
+      "careersUrl": null,
+      "atsType": "career-page",
+      "verified": false,
+      "notes": "Domain confirmed via search; careers path not confirmed."
+    },
+    {
+      "name": "Dynamic Solution Innovators",
+      "website": "https://www.dsinnovators.com",
+      "careersUrl": null,
+      "atsType": "career-page",
+      "verified": false,
+      "notes": "Domain confirmed via search; careers path not confirmed."
+    },
+    {
+      "name": "Bdtask",
+      "website": "https://www.bdtask.com",
+      "careersUrl": null,
+      "atsType": "career-page",
+      "verified": false,
+      "notes": "Domain confirmed via search; careers path not confirmed."
+    }
+  ]
+}
