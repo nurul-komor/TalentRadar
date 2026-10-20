@@ -1,5 +1,5 @@
 {
-  "_comment": "Seed data for the `companies` collection (Company Directory). Reproduces the 'seed script adds examples' feature from the design spec. Compiled from web search 2026-10-20 — companies chosen by recurring appearance across multiple 'best software companies in Bangladesh' rankings. `verified` is true only where a careers URL was confirmed directly, not guessed from a domain pattern. Verify the `false` entries before wiring into the real seed script in M2.",
+  "_comment": "Seed data for the `companies` collection (Company Directory). Reproduces the 'seed script adds examples' feature from the design spec. Compiled from web search 2026-10-20, career URLs confirmed 2026-10-20. All entries verified except note TigerIT has no standalone careers page (atsType: external, points at its Indeed listing instead of a schema.org JobPosting page) — the career-page discovery adapter won't work for it as-is.",
   "companies": [
     {
       "name": "Brain Station 23",
@@ -12,18 +12,18 @@
     {
       "name": "BJIT Limited",
       "website": "https://bjitgroup.com",
-      "careersUrl": null,
+      "careersUrl": "https://bjitgroup.com/career",
       "atsType": "career-page",
-      "verified": false,
-      "notes": "One of the oldest IT firms in BD (750+ staff); operations in Japan/US/Europe/Singapore. Careers URL not confirmed — check bjitgroup.com for a /career path."
+      "verified": true,
+      "notes": "One of the oldest IT firms in BD (750+ staff); operations in Japan/US/Europe/Singapore."
     },
     {
       "name": "Cefalo Bangladesh",
       "website": "https://www.cefalo.com",
-      "careersUrl": null,
+      "careersUrl": "https://career.cefalo.com/",
       "atsType": "career-page",
-      "verified": false,
-      "notes": "Named repeatedly for strong engineering culture. Careers URL not confirmed."
+      "verified": true,
+      "notes": "Named repeatedly for strong engineering culture."
     },
     {
       "name": "DataSoft Systems Bangladesh",
@@ -52,58 +52,58 @@
     {
       "name": "Vivasoft Limited",
       "website": "https://vivasoftltd.com",
-      "careersUrl": null,
+      "careersUrl": "https://vivasoftltd.com/career/",
       "atsType": "career-page",
-      "verified": false,
-      "notes": "Named as one of the top overall companies to work for in BD rankings. Careers URL not confirmed."
+      "verified": true,
+      "notes": "Named as one of the top overall companies to work for in BD rankings."
     },
     {
       "name": "Enosis Solutions",
-      "website": null,
-      "careersUrl": null,
+      "website": "https://enosisbd.com",
+      "careersUrl": "https://careers.enosisbd.com/",
       "atsType": "career-page",
-      "verified": false,
-      "notes": "Repeatedly named among top BD software companies. Website/careers URL not confirmed — verify before use."
+      "verified": true,
+      "notes": "Repeatedly named among top BD software companies."
     },
     {
       "name": "TigerIT Bangladesh",
-      "website": null,
-      "careersUrl": null,
-      "atsType": "career-page",
-      "verified": false,
-      "notes": "Biometrics and e-governance, based in Banani, Dhaka. Website/careers URL not confirmed."
+      "website": "https://www.tigerit.com",
+      "careersUrl": "https://www.indeed.com/cmp/Tiger-IT-Bangladesh",
+      "atsType": "external",
+      "verified": true,
+      "notes": "Biometrics and e-governance, based in Banani, Dhaka. No standalone careers page on their own domain — vacancies are posted on Indeed/LinkedIn instead; the career-page adapter won't apply here, this needs a different discovery path (or manual tracking)."
     },
     {
       "name": "REVE Systems",
-      "website": null,
-      "careersUrl": null,
+      "website": "https://www.revesoft.com",
+      "careersUrl": "https://www.revesoft.com/career",
       "atsType": "career-page",
-      "verified": false,
-      "notes": "Telecom software (VoIP). Website/careers URL not confirmed."
+      "verified": true,
+      "notes": "Telecom software (VoIP)."
     },
     {
       "name": "Riseup Labs",
       "website": "https://riseuplabs.com",
-      "careersUrl": null,
+      "careersUrl": "https://riseuplabs.com/jobs/",
       "atsType": "career-page",
-      "verified": false,
-      "notes": "Domain confirmed via search; careers path not confirmed."
+      "verified": true,
+      "notes": "Software product development and AI consultancy."
     },
     {
       "name": "Dynamic Solution Innovators",
       "website": "https://www.dsinnovators.com",
-      "careersUrl": null,
-      "atsType": "career-page",
-      "verified": false,
-      "notes": "Domain confirmed via search; careers path not confirmed."
+      "careersUrl": "https://app.hrythmic.com/recruit/openings/company/dsinnovators/",
+      "atsType": "other",
+      "verified": true,
+      "notes": "Uses Hrythmic ATS for applications, not their own domain."
     },
     {
       "name": "Bdtask",
       "website": "https://www.bdtask.com",
-      "careersUrl": null,
+      "careersUrl": "https://www.bdtask.com/career.php",
       "atsType": "career-page",
-      "verified": false,
-      "notes": "Domain confirmed via search; careers path not confirmed."
+      "verified": true,
+      "notes": "ERP and business software vendor."
     }
   ]
 }
