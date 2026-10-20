@@ -29,17 +29,17 @@ Monorepo with three packages:
   the way it would be on a long-lived Node server.
 - `dashboard/` — React + Vite, deployed as a static build to Cloudflare
   Pages. Talks to `api/` only over HTTP; no direct DB access.
-- `shared/` — TypeScript types and Zod (or equivalent) schemas for the
-  domain objects below, imported by both `api` and `dashboard` so request/
-  response shapes can't drift.
+- `shared/` — TypeScript types and Zod schemas for the domain objects
+  below, imported by both `api` and `dashboard` so request/response
+  shapes can't drift.
 
 Cross-cutting infra:
 
 - **Cron Triggers** drive scheduled work: job discovery sweeps,
   verification re-checks, digest emails, follow-up reminders.
-- **Queue** (Cloudflare Queues or equivalent durable queue) carries
-  background work — discovery, verification, document generation,
-  automation runs — with retries and a dead-letter path for alerts.
+- **Cloudflare Queues** carry background work — discovery, verification,
+  document generation, automation runs — with retries and a dead-letter
+  queue for alerts.
 - **Playwright** drives form-filling, two execution modes:
   - local worker process, browser left open so the user can watch/review
     a run live;
@@ -88,10 +88,10 @@ open — the page content must show positive evidence of an open listing.
 
 Claude layer (Anthropic SDK, Claude as the only AI provider):
 
-- `claude-opus-5-5` for matching and document generation (CV tailoring,
+- `claude-opus-4-8` for matching and document generation (CV tailoring,
   cover letters, outreach messages, draft answers).
-- `claude-haiku-5-5` for cheap structured extraction (parsing job page
-  content into normalized fields).
+- `claude-haiku-4-5-20251001` for cheap structured extraction (parsing
+  job page content into normalized fields).
 - All Claude calls use schema-validated structured output.
 - Content-hash cache: unchanged job content never re-triggers a Claude
   call.
@@ -177,3 +177,6 @@ code is available, reconcile:
 - Package manager / build tooling specifics (Node 22, Express 5 was the
   pre-Cloudflare-pivot stack; confirm nothing from that phase lingers).
 - Exact queue/cron binding names in `wrangler.toml`.
+- Dashboard auth mechanism (session cookie vs. token) — referenced via
+  "login rate limiting" but not otherwise specified here; decide during
+  planning if the real repo isn't available in time.
