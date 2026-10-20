@@ -22,29 +22,37 @@ while keeping a hard human-approval gate before anything is ever submitted.
 
 Monorepo with three packages:
 
-- `api/` — Cloudflare Workers + [Hono](https://hono.dev), stateless HTTP
-  API. Talks to MongoDB Atlas with a **per-invocation** `MongoClient`,
-  closed via `ctx.waitUntil()` — Workers isolates cannot keep a TCP
-  connection alive across requests, so the client cannot be module-scoped
-  the way it would be on a long-lived Node server.
-- `dashboard/` — React + Vite, deployed as a static build to Cloudflare
-  Pages. Talks to `api/` only over HTTP; no direct DB access.
+- `api/` — a long-lived Node.js 22 process running [Hono](https://hono.dev)
+  via `@hono/node-server`. Connects to MongoDB Atlas **once at startup**
+  with a normal pooled `MongoClient`, reused for the life of the process —
+  no per-invocation connect/close workaround, since this is a regular
+  process rather than a serverless isolate.
+- `dashboard/` — React + Vite, built as a static bundle and served from
+  any static host. Talks to `api/` only over HTTP; no direct DB access.
 - `shared/` — TypeScript types and Zod schemas for the domain objects
   below, imported by both `api` and `dashboard` so request/response
   shapes can't drift.
 
 Cross-cutting infra:
 
-- **Cron Triggers** drive scheduled work: job discovery sweeps,
+- **`node-cron`** drives scheduled work in-process: job discovery sweeps,
   verification re-checks, digest emails, follow-up reminders.
-- **Cloudflare Queues** carry background work — discovery, verification,
-  document generation, automation runs — with retries and a dead-letter
-  queue for alerts.
-- **Playwright** drives form-filling, two execution modes:
-  - local worker process, browser left open so the user can watch/review
-    a run live;
-  - Cloudflare Browser Rendering, for runs triggered from the hosted
-    dashboard without a local machine.
+- A **MongoDB-backed queue collection** (not a separate broker service)
+  carries background work — discovery, verification, document
+  generation, automation runs — with retries and a dead-letter state,
+  polled by a worker loop inside the same process. Single-user volume
+  doesn't justify a dedicated broker (Redis/SQS/etc.); revisit only if
+  that changes.
+- **Playwright** runs directly inside the Node process — a single
+  execution mode, browser left open locally so the user can watch/review
+  a run live. No cloud/local split needed since there's no serverless
+  CPU-time ceiling to design around.
+
+**Deployment target:** a single small always-on instance (Fly.io by
+default — Dockerfile-based deploy, enough persistent compute to run
+cron + the queue worker + Playwright in one process; swappable for
+Railway or a plain VPS since it's just a container, no platform
+lock-in).
 
 ## Data model
 
@@ -119,8 +127,8 @@ are left for the user to answer, not auto-filled from the cover letter.
 
 ## Automation and the approval gate
 
-Shared form-filling engine (used by both the local Playwright worker and
-Cloudflare Browser Rendering):
+Shared form-filling engine, run by the Playwright instance the Node
+process manages:
 
 - Fills fields from the user's approved profile/materials data.
 - Radio and checkbox groups are labeled from their fieldset legend, not
@@ -138,14 +146,16 @@ skips this gate.
 
 ## Operations
 
-- Cron-triggered discovery/verification/digest/reminder jobs.
-- Durable queue with retries and dead-letter alerting for background work.
+- `node-cron`-triggered discovery/verification/digest/reminder jobs,
+  running in the same process.
+- MongoDB-backed queue collection with retries and a dead-letter state
+  for background work, polled by an in-process worker loop.
 - Daily digest and follow-up reminder emails (Resend, optional — system
   functions without it, just no email delivery).
 - Append-only audit log for state-changing actions.
 - Login rate limiting on the dashboard's auth.
 - Docker Compose for local dev (API + local Mongo).
-- GitHub Actions CI, with a deploy step for Cloudflare.
+- GitHub Actions CI, with a deploy step to Fly.io (or the chosen host).
 
 ## Testing strategy
 
@@ -155,14 +165,15 @@ skips this gate.
 - Playwright tests against local mock application pages for the form
   engine (radio/checkbox labeling, field matching, upload).
 - Dashboard: typecheck + Vite build as a gate (no e2e UI tests initially).
-- `wrangler dev` smoke test exercising the real Workers runtime end to
-  end: register → profile → sources → add job → cron tick.
+- A smoke test running the actual compiled server (not the Vitest
+  in-process app) end to end: register → profile → sources → add job →
+  cron tick.
 
 ## Environment / secrets
 
-`ANTHROPIC_API_KEY`, MongoDB Atlas connection URI, Cloudflare account
-(Workers Paid recommended for cron CPU time and Browser Rendering),
-optional `RESEND_API_KEY` for email delivery.
+`ANTHROPIC_API_KEY`, MongoDB Atlas connection URI, a Fly.io (or chosen
+host) account for deployment, optional `RESEND_API_KEY` for email
+delivery.
 
 ## Open items to reconcile once the real repo is available
 
@@ -176,7 +187,8 @@ code is available, reconcile:
 - Exact weighting formula used in match scoring.
 - Package manager / build tooling specifics (Node 22, Express 5 was the
   pre-Cloudflare-pivot stack; confirm nothing from that phase lingers).
-- Exact queue/cron binding names in `wrangler.toml`.
+- Exact MongoDB-backed queue collection schema (job type, status, retry
+  count, dead-letter marker, claim/lease fields).
 
 ## Decisions made during planning (real repo still unavailable)
 
@@ -184,3 +196,19 @@ code is available, reconcile:
   as an `Authorization: Bearer <token>` header by `dashboard/`. Decided
   2026-10-20 during M1 planning since the real repo's choice couldn't be
   confirmed in time.
+- **Runtime: Node.js, not Cloudflare Workers.** Decided 2026-10-20,
+  before M1 implementation started (the original Cloudflare-native
+  architecture above was itself reconstructed from the prior cloud
+  session, not copied from its code — so this is a planning-time
+  departure, not a rewrite of something already built here). Reasons:
+  this is a single-user tool, so Cloudflare's global edge distribution
+  buys nothing, while Workers' isolate constraints were actively
+  costing complexity (the per-invocation Mongo client workaround, and
+  splitting Playwright into a local-worker/Browser-Rendering dual mode
+  to dodge Workers CPU-time limits). Playwright and the PDF/DOCX
+  materials tooling are also most mature in the Node ecosystem. A
+  long-lived Node process removes both workarounds outright: one pooled
+  Mongo connection, one Playwright execution path. Trade-off accepted:
+  losing Cloudflare's managed edge/queue/cron infra for a single
+  always-on instance (Fly.io by default) that the user runs and pays
+  for directly.
