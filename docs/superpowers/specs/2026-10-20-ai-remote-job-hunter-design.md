@@ -177,6 +177,10 @@ code is available, reconcile:
 - Package manager / build tooling specifics (Node 22, Express 5 was the
   pre-Cloudflare-pivot stack; confirm nothing from that phase lingers).
 - Exact queue/cron binding names in `wrangler.toml`.
-- Dashboard auth mechanism (session cookie vs. token) — referenced via
-  "login rate limiting" but not otherwise specified here; decide during
-  planning if the real repo isn't available in time.
+
+## Decisions made during planning (real repo still unavailable)
+
+- **Dashboard auth:** JWT bearer token, issued by `api/` on login, sent
+  as an `Authorization: Bearer <token>` header by `dashboard/`. Decided
+  2026-10-20 during M1 planning since the real repo's choice couldn't be
+  confirmed in time.
