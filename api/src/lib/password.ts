@@ -1,5 +1,3 @@
-import { webcrypto } from 'node:crypto'
-
 const ITERATIONS = 100_000
 const HASH_ALGORITHM = 'SHA-256'
 const SALT_BYTES = 16
@@ -10,14 +8,14 @@ async function deriveBits(
   salt: Uint8Array,
   iterations: number
 ): Promise<ArrayBuffer> {
-  const keyMaterial = await webcrypto.subtle.importKey(
+  const keyMaterial = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(password),
     'PBKDF2',
     false,
     ['deriveBits']
   )
-  return webcrypto.subtle.deriveBits(
+  return crypto.subtle.deriveBits(
     { name: 'PBKDF2', salt, iterations, hash: HASH_ALGORITHM },
     keyMaterial,
     KEY_LENGTH_BITS
@@ -40,8 +38,7 @@ function fromHex(hex: string): Uint8Array {
 }
 
 export async function hashPassword(password: string): Promise<string> {
-  const salt = new Uint8Array(SALT_BYTES)
-  webcrypto.getRandomValues(salt)
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES))
   const derived = await deriveBits(password, salt, ITERATIONS)
   return `pbkdf2:${ITERATIONS}:${toHex(salt)}:${toHex(derived)}`
 }
