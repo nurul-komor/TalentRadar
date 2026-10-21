@@ -1,0 +1,14 @@
+{
+  "name": "job-hunter",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "api",
+    "dashboard"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  }
+}
