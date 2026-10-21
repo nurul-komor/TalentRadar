@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server'
 import { createApp } from './app'
 import { connectMongo } from './db'
 import { createAuthRoutes } from './routes/auth'
+import { createProfileRoutes } from './routes/profile'
 
 async function main() {
   const mongodbUri = process.env.MONGODB_URI
@@ -13,6 +14,7 @@ async function main() {
 
   const app = createApp()
   app.route('/auth', createAuthRoutes(db, jwtSecret))
+  app.route('/profile', createProfileRoutes(db, jwtSecret))
 
   const port = Number(process.env.PORT ?? 8787)
   serve({ fetch: app.fetch, port }, () => {
