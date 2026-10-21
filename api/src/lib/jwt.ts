@@ -5,6 +5,7 @@ const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7 // 7 days
 export interface AuthTokenPayload {
   sub: string
   exp: number
+  [key: string]: unknown
 }
 
 export async function createAuthToken(profileId: string, secret: string): Promise<string> {

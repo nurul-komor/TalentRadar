@@ -7,6 +7,10 @@ import { createAuthRoutes } from '../src/routes/auth'
 
 const JWT_SECRET = 'test-secret'
 
+interface AuthResponseBody {
+  token: string
+}
+
 function uniqueDbName(): string {
   return `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
 }
@@ -44,7 +48,7 @@ describe('auth routes', () => {
       body: JSON.stringify({ email: 'a@example.com', password: 'password123' }),
     })
     expect(res.status).toBe(201)
-    const body = await res.json()
+    const body = (await res.json()) as AuthResponseBody
     expect(typeof body.token).toBe('string')
   })
 
@@ -79,7 +83,8 @@ describe('auth routes', () => {
 
     const ok = await app.request('/auth/login', registerInit)
     expect(ok.status).toBe(200)
-    expect(typeof (await ok.json()).token).toBe('string')
+    const okBody = (await ok.json()) as AuthResponseBody
+    expect(typeof okBody.token).toBe('string')
 
     const bad = await app.request('/auth/login', {
       method: 'POST',
