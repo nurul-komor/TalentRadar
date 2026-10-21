@@ -2,6 +2,18 @@
   "name": "@job-hunter/shared",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "main": "src/index.ts",
-  "types": "src/index.ts"
+  "types": "src/index.ts",
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
 }
