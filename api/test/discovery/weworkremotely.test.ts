@@ -48,4 +48,31 @@ describe('weWorkRemotelySource', () => {
 
     await expect(weWorkRemotelySource.fetchJobs()).rejects.toThrow('503')
   })
+
+  it('parses numeric-looking guid and region values as strings, not numbers', async () => {
+    const numericRss = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>We Work Remotely</title>
+    <item>
+      <title>Company: Test Job</title>
+      <region>12345</region>
+      <category>Programming</category>
+      <description>&lt;p&gt;Test job&lt;/p&gt;</description>
+      <pubDate>Sun, 16 Jun 2024 17:30:51 +0000</pubDate>
+      <guid>5</guid>
+      <link>https://weworkremotely.com/remote-jobs/test</link>
+    </item>
+  </channel>
+</rss>`
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(numericRss, { status: 200 })))
+
+    const jobs = await weWorkRemotelySource.fetchJobs()
+
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0]!.sourceJobId).toBe('5')
+    expect(typeof jobs[0]!.sourceJobId).toBe('string')
+    expect(jobs[0]!.location).toBe('12345')
+    expect(typeof jobs[0]!.location).toBe('string')
+  })
 })

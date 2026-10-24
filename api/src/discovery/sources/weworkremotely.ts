@@ -21,7 +21,7 @@ export const weWorkRemotelySource: JobSource = {
       throw new Error(`weworkremotely: unexpected status ${res.status}`)
     }
     const xml = await res.text()
-    const parsed = new XMLParser().parse(xml)
+    const parsed = new XMLParser({ parseTagValue: false }).parse(xml)
     const rawItems = parsed?.rss?.channel?.item ?? []
     const items: WwrRssItem[] = Array.isArray(rawItems) ? rawItems : [rawItems]
 
