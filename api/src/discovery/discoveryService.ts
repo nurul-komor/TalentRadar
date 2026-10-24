@@ -84,6 +84,8 @@ export async function runDiscovery(db: Db, sources: JobSource[]): Promise<Discov
           status: 'discovered',
           discoveredAt: now,
           updatedAt: now,
+          verifiedAt: null,
+          verificationEvidence: null,
         })
         discovered += 1
       } catch (reason) {

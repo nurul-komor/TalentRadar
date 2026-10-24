@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 export const JobSourceIdSchema = z.enum(['remoteok', 'weworkremotely', 'himalayas'])
 
-export const JobStatusSchema = z.enum(['discovered'])
+export const JobStatusSchema = z.enum(['discovered', 'verified', 'rejected'])
 
 export const JobSchema = z.object({
   _id: z.string().optional(),
@@ -19,6 +19,8 @@ export const JobSchema = z.object({
   status: JobStatusSchema,
   discoveredAt: z.string(),
   updatedAt: z.string(),
+  verifiedAt: z.string().nullable(),
+  verificationEvidence: z.string().nullable(),
 })
 
 export type JobSourceId = z.infer<typeof JobSourceIdSchema>
