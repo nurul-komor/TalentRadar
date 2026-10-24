@@ -1,4 +1,5 @@
 import type { Db } from 'mongodb'
+import type { Job } from '@job-hunter/shared'
 import { normalizeUrl } from './normalizeUrl'
 import type { JobSource, RawJobPosting } from './types'
 
@@ -11,7 +12,7 @@ export interface DiscoveryResult {
 }
 
 export async function ensureJobIndexes(db: Db): Promise<void> {
-  const jobs = db.collection('jobs')
+  const jobs = db.collection<Job>('jobs')
   await jobs.createIndex({ sourceId: 1, sourceJobId: 1 }, { unique: true })
   await jobs.createIndex({ normalizedUrl: 1 }, { unique: true })
 }
@@ -60,30 +61,36 @@ export async function runDiscovery(db: Db, sources: JobSource[]): Promise<Discov
     }
 
     for (const posting of result.value) {
-      const normalizedPostingUrl = normalizeUrl(posting.url)
-      const duplicate = await isDuplicate(db, posting, normalizedPostingUrl)
-      if (duplicate) {
-        duplicates += 1
+      try {
+        const normalizedPostingUrl = normalizeUrl(posting.url)
+        const duplicate = await isDuplicate(db, posting, normalizedPostingUrl)
+        if (duplicate) {
+          duplicates += 1
+          continue
+        }
+
+        const now = new Date().toISOString()
+        await db.collection<Job>('jobs').insertOne({
+          sourceId: posting.sourceId,
+          sourceJobId: posting.sourceJobId,
+          normalizedUrl: normalizedPostingUrl,
+          title: posting.title,
+          company: posting.company,
+          rawDescription: posting.rawDescription,
+          location: posting.location,
+          salaryMin: posting.salaryMin,
+          salaryMax: posting.salaryMax,
+          postedAt: posting.postedAt,
+          status: 'discovered',
+          discoveredAt: now,
+          updatedAt: now,
+        })
+        discovered += 1
+      } catch (reason) {
+        const message = reason instanceof Error ? reason.message : String(reason)
+        errors.push({ sourceId: posting.sourceId, message })
         continue
       }
-
-      const now = new Date().toISOString()
-      await db.collection('jobs').insertOne({
-        sourceId: posting.sourceId,
-        sourceJobId: posting.sourceJobId,
-        normalizedUrl: normalizedPostingUrl,
-        title: posting.title,
-        company: posting.company,
-        rawDescription: posting.rawDescription,
-        location: posting.location,
-        salaryMin: posting.salaryMin,
-        salaryMax: posting.salaryMax,
-        postedAt: posting.postedAt,
-        status: 'discovered',
-        discoveredAt: now,
-        updatedAt: now,
-      })
-      discovered += 1
     }
   }
 

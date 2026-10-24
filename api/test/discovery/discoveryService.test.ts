@@ -100,4 +100,24 @@ describe('runDiscovery', () => {
     expect(result.discovered).toBe(1)
     expect(result.errors).toEqual([{ sourceId: 'weworkremotely', message: 'network timeout' }])
   })
+
+  it('records a per-posting error without blocking other postings in the same run', async () => {
+    const malformedPosting = { ...SAMPLE_JOB, sourceJobId: '99', url: 'not-a-valid-url' }
+    const goodPosting = { ...SAMPLE_JOB, sourceJobId: '100', url: 'https://remoteok.com/remote-jobs/100' }
+
+    const result = await runDiscovery(db, [
+      fakeSource('remoteok', [malformedPosting, goodPosting]),
+    ])
+
+    expect(result.discovered).toBe(1)
+    expect(result.duplicates).toBe(0)
+    expect(result.errors).toHaveLength(1)
+    expect(result.errors[0]?.sourceId).toBe('remoteok')
+    expect(result.errors[0]?.message).toMatch(/invalid url/i)
+
+    const stored = await db.collection('jobs').findOne({ sourceJobId: '100' })
+    expect(stored?.status).toBe('discovered')
+    const notStored = await db.collection('jobs').findOne({ sourceJobId: '99' })
+    expect(notStored).toBeNull()
+  })
 })

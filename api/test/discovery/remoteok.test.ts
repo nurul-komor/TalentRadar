@@ -49,4 +49,17 @@ describe('remoteOkSource', () => {
 
     await expect(remoteOkSource.fetchJobs()).rejects.toThrow('503')
   })
+
+  it('throws a clear error when the response body is not an array', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'rate limited' }), { status: 200 })
+      )
+    )
+
+    await expect(remoteOkSource.fetchJobs()).rejects.toThrow(
+      'remoteok: expected an array response, got object'
+    )
+  })
 })

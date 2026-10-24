@@ -22,9 +22,12 @@ export const remoteOkSource: JobSource = {
     if (!res.ok) {
       throw new Error(`remoteok: unexpected status ${res.status}`)
     }
-    const body = (await res.json()) as RemoteOkJob[]
+    const body = await res.json()
+    if (!Array.isArray(body)) {
+      throw new Error(`remoteok: expected an array response, got ${typeof body}`)
+    }
 
-    return body
+    return (body as RemoteOkJob[])
       .filter((item): item is RemoteOkJob & { id: string; url: string } =>
         typeof item.id === 'string' && typeof item.url === 'string'
       )
