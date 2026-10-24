@@ -4,10 +4,12 @@ import { connectMongo } from './db'
 import { createAuthRoutes } from './routes/auth'
 import { createProfileRoutes } from './routes/profile'
 import { createDiscoveryRoutes } from './routes/discovery'
+import { createVerificationRoutes } from './routes/verification'
 import { ensureJobIndexes } from './discovery/discoveryService'
 import { remoteOkSource } from './discovery/sources/remoteok'
 import { weWorkRemotelySource } from './discovery/sources/weworkremotely'
 import { himalayasSource } from './discovery/sources/himalayas'
+import { pageEvidenceVerifier } from './verification/pageEvidenceVerifier'
 
 async function main() {
   const mongodbUri = process.env.MONGODB_URI
@@ -25,6 +27,7 @@ async function main() {
     '/discovery',
     createDiscoveryRoutes(db, jwtSecret, [remoteOkSource, weWorkRemotelySource, himalayasSource])
   )
+  app.route('/verification', createVerificationRoutes(db, jwtSecret, pageEvidenceVerifier))
 
   const port = Number(process.env.PORT ?? 8787)
   serve({ fetch: app.fetch, port }, () => {
