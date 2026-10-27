@@ -5,6 +5,7 @@ import { createAuthRoutes } from './routes/auth'
 import { createProfileRoutes } from './routes/profile'
 import { createDiscoveryRoutes } from './routes/discovery'
 import { createVerificationRoutes } from './routes/verification'
+import { createJobsRoutes } from './routes/jobs'
 import { ensureJobIndexes } from './discovery/discoveryService'
 import { remoteOkSource } from './discovery/sources/remoteok'
 import { weWorkRemotelySource } from './discovery/sources/weworkremotely'
@@ -28,6 +29,7 @@ async function main() {
     createDiscoveryRoutes(db, jwtSecret, [remoteOkSource, weWorkRemotelySource, himalayasSource])
   )
   app.route('/verification', createVerificationRoutes(db, jwtSecret, pageEvidenceVerifier))
+  app.route('/jobs', createJobsRoutes(db, jwtSecret))
 
   const port = Number(process.env.PORT ?? 8787)
   serve({ fetch: app.fetch, port }, () => {

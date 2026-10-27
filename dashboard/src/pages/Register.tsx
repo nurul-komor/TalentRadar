@@ -31,7 +31,9 @@ export function RegisterPage() {
       }
       const { token } = await res.json()
       login(token)
-      navigate('/profile')
+      navigate('/jobs')
+    } catch {
+      setError('Could not reach the server. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -67,7 +69,7 @@ export function RegisterPage() {
         </form>
         <p className="mt-4 text-sm text-slate-500">
           Already have an account?{' '}
-          <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+          <Link to="/login" className="font-medium text-blue-600 hover:text-blue-500">
             Log in
           </Link>
         </p>

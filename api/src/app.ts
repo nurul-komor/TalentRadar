@@ -3,14 +3,19 @@ import { cors } from 'hono/cors'
 
 export function createApp() {
   const app = new Hono()
-  // Dashboard runs on a different origin (Vite dev server) than the API, so
-  // browser requests need CORS. Not exercised by the in-process Vitest
-  // suites (same-process fetch has no Origin header), only surfaced by the
-  // Task 9 full-stack smoke test driving a real browser.
+  // Dashboard runs on a different origin (Vite dev server, or a deployed
+  // preview/production URL) than the API, so browser requests need CORS.
+  // DASHBOARD_URL accepts a comma-separated list so a preview deploy can be
+  // tested against a local API without losing local dev access. Not
+  // exercised by the in-process Vitest suites (same-process fetch has no
+  // Origin header), only surfaced by a real browser.
+  const allowedOrigins = (process.env.DASHBOARD_URL ?? 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim())
   app.use(
     '*',
     cors({
-      origin: process.env.DASHBOARD_URL ?? 'http://localhost:5173',
+      origin: allowedOrigins,
       allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
       allowHeaders: ['Content-Type', 'Authorization'],
     })

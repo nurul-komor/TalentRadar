@@ -1,0 +1,8 @@
+{
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build --workspace=dashboard",
+  "outputDirectory": "dashboard/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

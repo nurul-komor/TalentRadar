@@ -4,6 +4,8 @@ import { ProtectedRoute } from './auth/ProtectedRoute'
 import { LoginPage } from './pages/Login'
 import { RegisterPage } from './pages/Register'
 import { ProfilePage } from './pages/Profile'
+import { JobsPage } from './pages/Jobs'
+import { JobDetailPage } from './pages/JobDetail'
 
 export default function App() {
   return (
@@ -13,9 +15,11 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route element={<ProtectedRoute />}>
+            <Route path="/jobs" element={<JobsPage />} />
+            <Route path="/jobs/:id" element={<JobDetailPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
-          <Route path="*" element={<Navigate to="/profile" replace />} />
+          <Route path="*" element={<Navigate to="/jobs" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
