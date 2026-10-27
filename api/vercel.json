@@ -1,5 +1,6 @@
 {
   "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ../shared",
+  "installCommand": "cd .. && npm ci",
   "buildCommand": "cd .. && npm run build --workspace=shared",
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
 }
