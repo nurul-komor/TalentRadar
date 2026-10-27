@@ -1,5 +1,5 @@
-import { fetchWithPolicy } from '../fetchWithPolicy'
-import type { JobSource, RawJobPosting } from '../types'
+import { fetchWithPolicy } from '../fetchWithPolicy.js'
+import type { JobSource, RawJobPosting } from '../types.js'
 
 const HIMALAYAS_API_URL = 'https://himalayas.app/jobs/api?limit=50'
 

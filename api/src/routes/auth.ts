@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import type { Db } from 'mongodb'
 import { RegisterRequestSchema, LoginRequestSchema } from '@job-hunter/shared'
-import { hashPassword, verifyPassword } from '../lib/password'
-import { createAuthToken } from '../lib/jwt'
+import { hashPassword, verifyPassword } from '../lib/password.js'
+import { createAuthToken } from '../lib/jwt.js'
 
 export function createAuthRoutes(db: Db, jwtSecret: string) {
   const authRoutes = new Hono()

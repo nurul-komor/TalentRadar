@@ -1,16 +1,8 @@
 import { serve } from '@hono/node-server'
-import { createApp } from './app'
-import { connectMongo } from './db'
-import { createAuthRoutes } from './routes/auth'
-import { createProfileRoutes } from './routes/profile'
-import { createDiscoveryRoutes } from './routes/discovery'
-import { createVerificationRoutes } from './routes/verification'
-import { createJobsRoutes } from './routes/jobs'
-import { ensureJobIndexes } from './discovery/discoveryService'
-import { remoteOkSource } from './discovery/sources/remoteok'
-import { weWorkRemotelySource } from './discovery/sources/weworkremotely'
-import { himalayasSource } from './discovery/sources/himalayas'
-import { pageEvidenceVerifier } from './verification/pageEvidenceVerifier'
+import { createApp } from './app.js'
+import { connectMongo } from './db.js'
+import { mountRoutes } from './mountRoutes.js'
+import { ensureJobIndexes } from './discovery/discoveryService.js'
 
 async function main() {
   const mongodbUri = process.env.MONGODB_URI
@@ -21,15 +13,7 @@ async function main() {
   const { db } = await connectMongo(mongodbUri, process.env.MONGODB_DB_NAME ?? 'job_hunter')
   await ensureJobIndexes(db)
 
-  const app = createApp()
-  app.route('/auth', createAuthRoutes(db, jwtSecret))
-  app.route('/profile', createProfileRoutes(db, jwtSecret))
-  app.route(
-    '/discovery',
-    createDiscoveryRoutes(db, jwtSecret, [remoteOkSource, weWorkRemotelySource, himalayasSource])
-  )
-  app.route('/verification', createVerificationRoutes(db, jwtSecret, pageEvidenceVerifier))
-  app.route('/jobs', createJobsRoutes(db, jwtSecret))
+  const app = mountRoutes(createApp(), db, jwtSecret)
 
   const port = Number(process.env.PORT ?? 8787)
   serve({ fetch: app.fetch, port }, () => {

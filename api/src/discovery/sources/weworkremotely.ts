@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser'
-import { fetchWithPolicy } from '../fetchWithPolicy'
-import type { JobSource, RawJobPosting } from '../types'
+import { fetchWithPolicy } from '../fetchWithPolicy.js'
+import type { JobSource, RawJobPosting } from '../types.js'
 
 const WWR_FEED_URL = 'https://weworkremotely.com/categories/remote-programming-jobs.rss'
 

@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { ObjectId, type Db, type Filter } from 'mongodb'
 import type { Job, JobSourceId, JobStatus } from '@job-hunter/shared'
 import { JobSourceIdSchema, JobStatusSchema } from '@job-hunter/shared'
-import { createRequireAuth, type AuthVariables } from '../middleware/auth'
+import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
@@ -54,6 +54,7 @@ function buildJobsFilter(query: {
   sourceId?: JobSourceId
   keyword?: string
   location?: string
+  company?: string
   salaryMin?: number
   salaryMax?: number
   discoveredAfter?: string
@@ -62,6 +63,7 @@ function buildJobsFilter(query: {
   if (query.status) filter.status = query.status
   if (query.sourceId) filter.sourceId = query.sourceId
   if (query.location) filter.location = { $regex: escapeRegex(query.location), $options: 'i' }
+  if (query.company) filter.company = { $regex: `^${escapeRegex(query.company)}$`, $options: 'i' }
   if (query.keyword) {
     const pattern = escapeRegex(query.keyword)
     filter.$or = [{ title: { $regex: pattern, $options: 'i' } }, { company: { $regex: pattern, $options: 'i' } }]
@@ -84,6 +86,7 @@ export function createJobsRoutes(db: Db, jwtSecret: string) {
       sourceId: parseSourceId(c.req.query('sourceId')),
       keyword: parseText(c.req.query('q')),
       location: parseText(c.req.query('location')),
+      company: parseText(c.req.query('company')),
       salaryMin: parseSalaryBound(c.req.query('salaryMin')),
       salaryMax: parseSalaryBound(c.req.query('salaryMax')),
       discoveredAfter: parseIsoDate(c.req.query('discoveredAfter')),

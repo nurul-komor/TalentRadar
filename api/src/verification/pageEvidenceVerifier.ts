@@ -1,6 +1,6 @@
-import { fetchWithPolicy } from '../discovery/fetchWithPolicy'
-import { classifyEvidence, stripHtmlToText } from './evidenceClassifier'
-import type { JobVerifier, VerificationOutcome } from './types'
+import { fetchWithPolicy } from '../discovery/fetchWithPolicy.js'
+import { classifyEvidence, stripHtmlToText } from './evidenceClassifier.js'
+import type { JobVerifier, VerificationOutcome } from './types.js'
 
 const GONE_STATUS_CODES = new Set([404, 410])
 

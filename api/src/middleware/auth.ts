@@ -1,5 +1,5 @@
 import { createMiddleware } from 'hono/factory'
-import { verifyAuthToken } from '../lib/jwt'
+import { verifyAuthToken } from '../lib/jwt.js'
 
 export interface AuthVariables {
   profileId: string

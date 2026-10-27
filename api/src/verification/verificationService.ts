@@ -1,6 +1,6 @@
 import type { Db } from 'mongodb'
 import type { Job } from '@job-hunter/shared'
-import type { JobVerifier } from './types'
+import type { JobVerifier } from './types.js'
 
 export interface VerificationResult {
   checked: number

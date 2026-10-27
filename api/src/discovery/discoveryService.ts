@@ -1,7 +1,7 @@
 import type { Db } from 'mongodb'
 import type { Job } from '@job-hunter/shared'
-import { normalizeUrl } from './normalizeUrl'
-import type { JobSource, RawJobPosting } from './types'
+import { normalizeUrl } from './normalizeUrl.js'
+import type { JobSource, RawJobPosting } from './types.js'
 
 const DEDUPE_WINDOW_DAYS = 60
 

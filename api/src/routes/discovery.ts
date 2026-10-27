@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import type { Db } from 'mongodb'
-import { createRequireAuth, type AuthVariables } from '../middleware/auth'
-import { runDiscovery } from '../discovery/discoveryService'
-import type { JobSource } from '../discovery/types'
+import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
+import { runDiscovery } from '../discovery/discoveryService.js'
+import type { JobSource } from '../discovery/types.js'
 
 export function createDiscoveryRoutes(db: Db, jwtSecret: string, sources: JobSource[]) {
   const discoveryRoutes = new Hono<{ Variables: AuthVariables }>()

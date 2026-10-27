@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { ObjectId, type Db } from 'mongodb'
 import { ProfileUpdateSchema } from '@job-hunter/shared'
-import { createRequireAuth, type AuthVariables } from '../middleware/auth'
+import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
 
 export function createProfileRoutes(db: Db, jwtSecret: string) {
   const profileRoutes = new Hono<{ Variables: AuthVariables }>()

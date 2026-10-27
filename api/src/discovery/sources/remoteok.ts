@@ -1,5 +1,5 @@
-import { fetchWithPolicy } from '../fetchWithPolicy'
-import type { JobSource, RawJobPosting } from '../types'
+import { fetchWithPolicy } from '../fetchWithPolicy.js'
+import type { JobSource, RawJobPosting } from '../types.js'
 
 const REMOTEOK_API_URL = 'https://remoteok.com/api'
 

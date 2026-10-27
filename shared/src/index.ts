@@ -1,3 +1,3 @@
-export * from './schemas/auth'
-export * from './schemas/profile'
-export * from './schemas/job'
+export * from './schemas/auth.js'
+export * from './schemas/profile.js'
+export * from './schemas/job.js'
