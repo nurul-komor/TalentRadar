@@ -1,0 +1,4 @@
+{
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ../shared",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
+}
