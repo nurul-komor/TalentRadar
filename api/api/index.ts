@@ -19,8 +19,14 @@ async function buildApp() {
   return mountRoutes(createApp(), db, jwtSecret)
 }
 
-export default async function handler(request: Request) {
-  if (!appPromise) appPromise = buildApp()
-  const app = await appPromise
-  return app.fetch(request)
+// A bare `export default function handler(request)` is treated by Vercel as the
+// legacy Node (req, res) signature and gets handed a raw Node request instead of a
+// Web API Request, breaking Hono's `c.req.header()`. The fetch Web Standard export
+// (default-exported object with a `fetch` method) is required to get a real Request.
+export default {
+  async fetch(request: Request) {
+    if (!appPromise) appPromise = buildApp()
+    const app = await appPromise
+    return app.fetch(request)
+  },
 }
