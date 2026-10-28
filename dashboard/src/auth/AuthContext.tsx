@@ -1,8 +1,12 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
-import { getToken, setToken, clearToken } from '../api/client'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { apiFetch, getToken, setToken, clearToken } from '../api/client'
+
+const ADMIN_EMAIL = 'nurulkomor123@gmail.com'
 
 interface AuthContextValue {
   isAuthenticated: boolean
+  isAdmin: boolean
+  profileLoading: boolean
   login: (token: string) => void
   logout: () => void
 }
@@ -11,6 +15,8 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setTokenState] = useState<string | null>(() => getToken())
+  const [email, setEmail] = useState<string | null>(null)
+  const [profileLoading, setProfileLoading] = useState(() => getToken() !== null)
 
   const login = useCallback((newToken: string) => {
     setToken(newToken)
@@ -20,11 +26,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     clearToken()
     setTokenState(null)
+    setEmail(null)
   }, [])
 
+  useEffect(() => {
+    if (!token) {
+      setProfileLoading(false)
+      return
+    }
+    setProfileLoading(true)
+    apiFetch('/profile')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((profile) => setEmail(profile?.email ?? null))
+      .catch(() => setEmail(null))
+      .finally(() => setProfileLoading(false))
+  }, [token])
+
   const value = useMemo(
-    () => ({ isAuthenticated: token !== null, login, logout }),
-    [token, login, logout]
+    () => ({
+      isAuthenticated: token !== null,
+      isAdmin: email === ADMIN_EMAIL,
+      profileLoading,
+      login,
+      logout,
+    }),
+    [token, email, profileLoading, login, logout]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

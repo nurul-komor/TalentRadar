@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Building2, MapPin, Search, Wallet, X } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { Building2, CircleCheck, MapPin, Search, SlidersHorizontal, Wallet, X } from 'lucide-react'
 import type { Job, JobSourceId, JobStatus } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { Header } from '../components/Header'
@@ -8,12 +8,22 @@ import { Button } from '../components/Button'
 import { FormError } from '../components/FormError'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../components/ui/accordion'
 import { Checkbox } from '../components/ui/checkbox'
+import {
+  Drawer,
+  DrawerBody,
+  DrawerClose,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerPortal,
+  DrawerTitle,
+  DrawerTrigger,
+} from '../components/ui/drawer'
 
 const PAGE_SIZE = 20
 const DEBOUNCE_MS = 300
 
 type StatusFilter = JobStatus | 'all'
-type SourceFilter = JobSourceId | 'all'
+type SourceSelection = { kind: 'all' } | { kind: 'source'; id: JobSourceId } | { kind: 'company'; name: string }
 type DateFilter = 'all' | 'today' | 'week' | 'month'
 
 const DATE_FILTER_OPTIONS: Array<{ value: Exclude<DateFilter, 'all'>; label: string; days: number }> = [
@@ -44,6 +54,14 @@ const SOURCE_LABELS: Record<JobSourceId, string> = Object.fromEntries(
   SOURCE_OPTIONS.map((option) => [option.value, option.label]),
 ) as Record<JobSourceId, string>
 
+function parseSourceSelection(searchParams: URLSearchParams): SourceSelection {
+  const sourceId = searchParams.get('sourceId')
+  if (sourceId) return { kind: 'source', id: sourceId as JobSourceId }
+  const companyName = searchParams.get('company')
+  if (companyName) return { kind: 'company', name: companyName }
+  return { kind: 'all' }
+}
+
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value)
   useEffect(() => {
@@ -56,6 +74,19 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 interface JobsResponseBody {
   jobs: Array<Job & { _id: string }>
   total: number
+}
+
+interface TrackedCompany {
+  name: string
+  website: string
+  careersUrl: string
+  atsType: string
+  verified: boolean
+  notes?: string
+}
+
+interface SeedCompaniesResponseBody {
+  companies: TrackedCompany[]
 }
 
 function statusBadgeClasses(status: JobStatus): string {
@@ -134,53 +165,102 @@ function requirementsPreview(rawDescription: string): string | null {
 }
 
 export function JobsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [jobs, setJobs] = useState<Array<Job & { _id: string }>>([])
   const [total, setTotal] = useState(0)
-  const [status, setStatus] = useState<StatusFilter>('all')
-  const [source, setSource] = useState<SourceFilter>('all')
-  const [datePosted, setDatePosted] = useState<DateFilter>('all')
-  const [keyword, setKeyword] = useState('')
-  const [location, setLocation] = useState('')
-  const [salaryMin, setSalaryMin] = useState('')
-  const [salaryMax, setSalaryMax] = useState('')
-  const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [trackedCompanies, setTrackedCompanies] = useState<TrackedCompany[]>([])
+
+  const status = (searchParams.get('status') as StatusFilter) || 'all'
+  const sourceSelection = parseSourceSelection(searchParams)
+  const sourceSelectionKey =
+    sourceSelection.kind === 'source'
+      ? `source:${sourceSelection.id}`
+      : sourceSelection.kind === 'company'
+        ? `company:${sourceSelection.name}`
+        : 'all'
+  const datePosted = (searchParams.get('datePosted') as DateFilter) || 'all'
+  const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
+
+  const [keyword, setKeyword] = useState(searchParams.get('q') ?? '')
+  const [location, setLocation] = useState(searchParams.get('location') ?? '')
+  const [salaryMin, setSalaryMin] = useState(searchParams.get('salaryMin') ?? '')
+  const [salaryMax, setSalaryMax] = useState(searchParams.get('salaryMax') ?? '')
+
+  const urlKeyword = searchParams.get('q') ?? ''
+  const urlLocation = searchParams.get('location') ?? ''
+  const urlSalaryMin = searchParams.get('salaryMin') ?? ''
+  const urlSalaryMax = searchParams.get('salaryMax') ?? ''
+
+  useEffect(() => setKeyword(urlKeyword), [urlKeyword])
+  useEffect(() => setLocation(urlLocation), [urlLocation])
+  useEffect(() => setSalaryMin(urlSalaryMin), [urlSalaryMin])
+  useEffect(() => setSalaryMax(urlSalaryMax), [urlSalaryMax])
 
   const debouncedKeyword = useDebouncedValue(keyword, DEBOUNCE_MS)
   const debouncedLocation = useDebouncedValue(location, DEBOUNCE_MS)
   const debouncedSalaryMin = useDebouncedValue(salaryMin, DEBOUNCE_MS)
   const debouncedSalaryMax = useDebouncedValue(salaryMax, DEBOUNCE_MS)
 
-  const hasActiveFilters =
-    status !== 'all' ||
-    source !== 'all' ||
-    datePosted !== 'all' ||
-    keyword.trim() !== '' ||
-    location.trim() !== '' ||
-    salaryMin.trim() !== '' ||
-    salaryMax.trim() !== ''
+  const activeFilterCount =
+    Number(status !== 'all') +
+    Number(sourceSelection.kind !== 'all') +
+    Number(datePosted !== 'all') +
+    Number(keyword.trim() !== '') +
+    Number(location.trim() !== '') +
+    Number(salaryMin.trim() !== '' || salaryMax.trim() !== '')
+  const hasActiveFilters = activeFilterCount > 0
+
+  function updateFilters(updates: Record<string, string | null>, opts: { resetOffset?: boolean } = {}) {
+    const resetOffset = opts.resetOffset ?? true
+    const next = new URLSearchParams(searchParams)
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === '') next.delete(key)
+      else next.set(key, value)
+    }
+    if (resetOffset) next.delete('offset')
+    setSearchParams(next, { replace: true })
+  }
 
   function clearFilters() {
-    setStatus('all')
-    setSource('all')
-    setDatePosted('all')
-    setKeyword('')
-    setLocation('')
-    setSalaryMin('')
-    setSalaryMax('')
+    setSearchParams(new URLSearchParams(), { replace: true })
   }
 
   useEffect(() => {
-    setOffset(0)
-  }, [status, source, datePosted, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax])
+    fetch('/data/seed-companies-bd.json')
+      .then((res) => (res.ok ? (res.json() as Promise<SeedCompaniesResponseBody>) : null))
+      .then((data) => setTrackedCompanies(data?.companies ?? []))
+      .catch(() => setTrackedCompanies([]))
+  }, [])
+
+  useEffect(() => {
+    if (debouncedKeyword === urlKeyword) return
+    updateFilters({ q: debouncedKeyword || null })
+  }, [debouncedKeyword])
+
+  useEffect(() => {
+    if (debouncedLocation === urlLocation) return
+    updateFilters({ location: debouncedLocation || null })
+  }, [debouncedLocation])
+
+  useEffect(() => {
+    if (debouncedSalaryMin === urlSalaryMin) return
+    updateFilters({ salaryMin: debouncedSalaryMin || null })
+  }, [debouncedSalaryMin])
+
+  useEffect(() => {
+    if (debouncedSalaryMax === urlSalaryMax) return
+    updateFilters({ salaryMax: debouncedSalaryMax || null })
+  }, [debouncedSalaryMax])
 
   useEffect(() => {
     setLoading(true)
     setError(null)
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) })
     if (status !== 'all') params.set('status', status)
-    if (source !== 'all') params.set('sourceId', source)
+    if (sourceSelection.kind === 'source') params.set('sourceId', sourceSelection.id)
+    if (sourceSelection.kind === 'company') params.set('company', sourceSelection.name)
     const discoveredAfter = dateFilterCutoffIso(datePosted)
     if (discoveredAfter) params.set('discoveredAfter', discoveredAfter)
     if (debouncedKeyword.trim()) params.set('q', debouncedKeyword.trim())
@@ -199,43 +279,25 @@ export function JobsPage() {
         setTotal(data.total)
       })
       .finally(() => setLoading(false))
-  }, [status, source, datePosted, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset])
+  }, [status, sourceSelectionKey, datePosted, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset])
 
   const rangeStart = total === 0 ? 0 : offset + 1
   const rangeEnd = Math.min(offset + PAGE_SIZE, total)
 
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <Header />
-      <main className="mx-auto flex max-w-7xl flex-col items-start gap-6 px-4 py-8 lg:flex-row lg:gap-10">
-        <aside className="w-full shrink-0 lg:sticky lg:top-8 lg:w-72">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-900">
-              {loading ? 'Searching…' : `${total.toLocaleString()} jobs found`}
-            </p>
-            <button
-              type="button"
-              onClick={clearFilters}
-              disabled={!hasActiveFilters}
-              className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline disabled:pointer-events-none disabled:text-slate-300"
-            >
-              <X size={14} />
-              Clear filters
-            </button>
-          </div>
+  const filterControls = (
+    <>
+      <div className="relative mt-4">
+        <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          type="text"
+          placeholder="Title or company"
+          className="w-full rounded-full border border-slate-300 py-2.5 pl-10 pr-3 text-sm"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+        />
+      </div>
 
-          <div className="relative mt-4">
-            <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Title or company"
-              className="w-full rounded-full border border-slate-300 py-2.5 pl-10 pr-3 text-sm"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-            />
-          </div>
-
-          <Accordion defaultValue={['date', 'status', 'source']} className="mt-4 divide-y divide-slate-200 border-t border-b border-slate-200">
+      <Accordion defaultValue={['date', 'status', 'source']} className="mt-4 divide-y divide-slate-200 border-t border-b border-slate-200">
             <AccordionItem value="date">
               <AccordionTrigger className="text-sm font-medium text-slate-900">Date posted</AccordionTrigger>
               <AccordionContent>
@@ -244,7 +306,9 @@ export function JobsPage() {
                     <label key={option.value} className="flex items-center gap-2 text-sm text-slate-700">
                       <Checkbox
                         checked={datePosted === option.value}
-                        onCheckedChange={(checked) => setDatePosted(checked ? option.value : 'all')}
+                        onCheckedChange={(checked) =>
+                          updateFilters({ datePosted: checked ? option.value : null })
+                        }
                       />
                       {option.label}
                     </label>
@@ -261,7 +325,7 @@ export function JobsPage() {
                     <label key={option.value} className="flex items-center gap-2 text-sm text-slate-700">
                       <Checkbox
                         checked={status === option.value}
-                        onCheckedChange={(checked) => setStatus(checked ? option.value : 'all')}
+                        onCheckedChange={(checked) => updateFilters({ status: checked ? option.value : null })}
                       />
                       {option.label}
                     </label>
@@ -273,17 +337,37 @@ export function JobsPage() {
             <AccordionItem value="source">
               <AccordionTrigger className="text-sm font-medium text-slate-900">Source</AccordionTrigger>
               <AccordionContent>
-                <div className="flex flex-col gap-2">
+                <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto">
                   {SOURCE_OPTIONS.map((option) => (
-                    <label key={option.value} className="flex items-center gap-2 text-sm text-slate-700">
-                      <Checkbox
-                        checked={source === option.value}
-                        onCheckedChange={(checked) => setSource(checked ? option.value : 'all')}
-                      />
-                      {option.label}
-                    </label>
+                    <li key={option.value}>
+                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <Checkbox
+                          checked={sourceSelection.kind === 'source' && sourceSelection.id === option.value}
+                          onCheckedChange={(checked) =>
+                            updateFilters({ sourceId: checked ? option.value : null, company: null })
+                          }
+                        />
+                        {option.label}
+                      </label>
+                    </li>
                   ))}
-                </div>
+                  {trackedCompanies.map((trackedCompany) => (
+                    <li key={trackedCompany.name} className="flex items-center justify-between gap-2">
+                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <Checkbox
+                          checked={sourceSelection.kind === 'company' && sourceSelection.name === trackedCompany.name}
+                          onCheckedChange={(checked) =>
+                            updateFilters({ company: checked ? trackedCompany.name : null, sourceId: null })
+                          }
+                        />
+                        {trackedCompany.name}
+                      </label>
+                      {trackedCompany.verified && (
+                        <CircleCheck size={14} className="shrink-0 text-green-600" aria-label="Verified" />
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </AccordionContent>
             </AccordionItem>
 
@@ -308,7 +392,7 @@ export function JobsPage() {
                     type="number"
                     min={0}
                     placeholder="Min"
-                    className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    className="w-full min-w-0 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
                     value={salaryMin}
                     onChange={(e) => setSalaryMin(e.target.value)}
                   />
@@ -317,7 +401,7 @@ export function JobsPage() {
                     type="number"
                     min={0}
                     placeholder="Max"
-                    className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    className="w-full min-w-0 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
                     value={salaryMax}
                     onChange={(e) => setSalaryMax(e.target.value)}
                   />
@@ -325,7 +409,77 @@ export function JobsPage() {
               </AccordionContent>
             </AccordionItem>
           </Accordion>
+    </>
+  )
+
+  const jobsCountLabel = loading ? 'Searching…' : `${total.toLocaleString()} jobs found`
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <Header />
+      <main className="mx-auto flex max-w-7xl flex-col items-start gap-6 px-4 py-8 lg:flex-row lg:gap-10">
+        <aside className="hidden w-full shrink-0 lg:sticky lg:top-8 lg:block lg:w-72">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-slate-900">{jobsCountLabel}</p>
+            <button
+              type="button"
+              onClick={clearFilters}
+              disabled={!hasActiveFilters}
+              className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline disabled:pointer-events-none disabled:text-slate-300"
+            >
+              <X size={14} />
+              Clear filters
+            </button>
+          </div>
+          {filterControls}
         </aside>
+
+        <Drawer>
+          <div className="flex w-full items-center justify-between gap-2 lg:hidden">
+            <p className="text-sm font-medium text-slate-900">{jobsCountLabel}</p>
+            <div className="flex items-center gap-3">
+              <DrawerTrigger className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                <SlidersHorizontal size={14} />
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </DrawerTrigger>
+              <button
+                type="button"
+                onClick={clearFilters}
+                disabled={!hasActiveFilters}
+                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline disabled:pointer-events-none disabled:text-slate-300"
+              >
+                <X size={14} />
+                Clear
+              </button>
+            </div>
+          </div>
+          <DrawerPortal>
+            <DrawerHeader>
+              <DrawerTitle>Filters</DrawerTitle>
+              <DrawerClose />
+            </DrawerHeader>
+            <DrawerBody>{filterControls}</DrawerBody>
+            <DrawerFooter>
+              <button
+                type="button"
+                onClick={clearFilters}
+                disabled={!hasActiveFilters}
+                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline disabled:pointer-events-none disabled:text-slate-300"
+              >
+                <X size={14} />
+                Clear filters
+              </button>
+              <DrawerClose className="ml-auto inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500">
+                Done
+              </DrawerClose>
+            </DrawerFooter>
+          </DrawerPortal>
+        </Drawer>
 
         <section className="min-w-0 flex-1">
           {error && (
@@ -424,14 +578,14 @@ export function JobsPage() {
               <Button
                 variant="secondary"
                 disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                onClick={() => updateFilters({ offset: String(Math.max(0, offset - PAGE_SIZE)) }, { resetOffset: false })}
               >
                 Prev
               </Button>
               <Button
                 variant="secondary"
                 disabled={offset + PAGE_SIZE >= total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
+                onClick={() => updateFilters({ offset: String(offset + PAGE_SIZE) }, { resetOffset: false })}
               >
                 Next
               </Button>
