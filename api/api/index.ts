@@ -11,12 +11,14 @@ let appPromise: ReturnType<typeof buildApp> | undefined
 async function buildApp() {
   const mongodbUri = process.env.MONGODB_URI
   const jwtSecret = process.env.JWT_SECRET
+  const cronSecret = process.env.CRON_SECRET
   if (!mongodbUri) throw new Error('MONGODB_URI is required')
   if (!jwtSecret) throw new Error('JWT_SECRET is required')
+  if (!cronSecret) throw new Error('CRON_SECRET is required')
 
   const { db } = await connectMongo(mongodbUri, process.env.MONGODB_DB_NAME ?? 'job_hunter')
   await ensureJobIndexes(db)
-  return mountRoutes(createApp(), db, jwtSecret)
+  return mountRoutes(createApp(), db, jwtSecret, cronSecret)
 }
 
 // A bare `export default function handler(request)` is treated by Vercel as the
