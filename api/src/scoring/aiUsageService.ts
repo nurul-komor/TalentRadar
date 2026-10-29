@@ -10,6 +10,12 @@ export interface ClaudeUsage {
   outputTokens: number
 }
 
+interface AiUsageDoc {
+  _id: string
+  costUsd: number
+  calls: number
+}
+
 export function computeCostUsd(usage: ClaudeUsage): number {
   return (
     (usage.inputTokens / 1_000_000) * HAIKU_PRICING.inputPerMillionUsd +
@@ -29,27 +35,27 @@ export async function isWithinBudget(db: Db): Promise<boolean> {
   const dailyCap = Number.parseFloat(process.env.ANTHROPIC_DAILY_BUDGET_USD ?? '1')
   const monthlyCap = Number.parseFloat(process.env.ANTHROPIC_MONTHLY_BUDGET_USD ?? '20')
 
-  const usage = db.collection('aiUsage')
-  const daily = await usage.findOne({ _id: todayKey() as unknown as never })
-  const monthly = await usage.findOne({ _id: thisMonthKey() as unknown as never })
+  const usage = db.collection<AiUsageDoc>('aiUsage')
+  const daily = await usage.findOne({ _id: todayKey() })
+  const monthly = await usage.findOne({ _id: thisMonthKey() })
 
-  const dailySpent = (daily?.costUsd as number | undefined) ?? 0
-  const monthlySpent = (monthly?.costUsd as number | undefined) ?? 0
+  const dailySpent = daily?.costUsd ?? 0
+  const monthlySpent = monthly?.costUsd ?? 0
 
   return dailySpent < dailyCap && monthlySpent < monthlyCap
 }
 
 export async function recordUsage(db: Db, usage: ClaudeUsage): Promise<void> {
   const cost = computeCostUsd(usage)
-  const aiUsage = db.collection('aiUsage')
+  const aiUsage = db.collection<AiUsageDoc>('aiUsage')
 
   await aiUsage.updateOne(
-    { _id: todayKey() as unknown as never },
+    { _id: todayKey() },
     { $inc: { costUsd: cost, calls: 1 } },
     { upsert: true }
   )
   await aiUsage.updateOne(
-    { _id: thisMonthKey() as unknown as never },
+    { _id: thisMonthKey() },
     { $inc: { costUsd: cost, calls: 1 } },
     { upsert: true }
   )
