@@ -43,6 +43,12 @@ function makeJob(overrides: Partial<Job> & { sourceJobId: string }): Omit<Job, '
     updatedAt: '2026-01-01T00:00:00.000Z',
     verifiedAt: null,
     verificationEvidence: null,
+    contentHash: null,
+    extractedRequirements: null,
+    extractedAt: null,
+    score: null,
+    scoreBreakdown: null,
+    scoredAt: null,
     ...overrides,
   }
 }
