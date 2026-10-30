@@ -481,7 +481,7 @@ export function JobsPage() {
           </DrawerPortal>
         </Drawer>
 
-        <section className="min-w-0 flex-1">
+        <section className="w-full min-w-0 flex-1">
           {error && (
             <div className="mb-4">
               <FormError message={error} />
