@@ -1,0 +1,68 @@
+import { Hono } from 'hono'
+import type { Db } from 'mongodb'
+import type { Application, AutomationRun } from '@job-hunter/shared'
+import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
+import { createApplication } from '../applications/applicationsService.js'
+import { approveRun } from '../applications/automationRunsService.js'
+import { ForbiddenError, NotFoundError } from '../lib/errors.js'
+
+export function createApplicationsRoutes(db: Db, jwtSecret: string) {
+  const applicationsRoutes = new Hono<{ Variables: AuthVariables }>()
+  applicationsRoutes.use('*', createRequireAuth(jwtSecret))
+
+  applicationsRoutes.post('/', async (c) => {
+    const body = await c.req.json().catch(() => null)
+    if (!body || typeof body.sourceId !== 'string' || typeof body.sourceJobId !== 'string') {
+      return c.json({ error: 'sourceId and sourceJobId are required' }, 400)
+    }
+
+    try {
+      const application = await createApplication(
+        db,
+        { sourceId: body.sourceId, sourceJobId: body.sourceJobId },
+        c.get('profileId')
+      )
+      return c.json(application, 201)
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : 'failed to create application'
+      return c.json({ error: message }, 409)
+    }
+  })
+
+  applicationsRoutes.get('/:jobId', async (c) => {
+    const jobId = c.req.param('jobId')
+    const application = await db.collection<Application>('applications').findOne({ jobId })
+    if (!application) {
+      return c.json({ error: 'application not found' }, 404)
+    }
+    if (application.profileId !== c.get('profileId')) {
+      return c.json({ error: 'forbidden' }, 403)
+    }
+
+    const latestRun = await db
+      .collection<AutomationRun>('automationRuns')
+      .find({ jobId })
+      .sort({ runNumber: -1 })
+      .limit(1)
+      .toArray()
+
+    return c.json({ application, latestRun: latestRun[0] ?? null })
+  })
+
+  applicationsRoutes.post('/:jobId/runs/:runNumber/approve', async (c) => {
+    const jobId = c.req.param('jobId')
+    const runNumber = Number(c.req.param('runNumber'))
+
+    try {
+      const result = await approveRun(db, jobId, runNumber, c.get('profileId'))
+      return c.json(result)
+    } catch (reason) {
+      if (reason instanceof ForbiddenError) return c.json({ error: reason.message }, 403)
+      if (reason instanceof NotFoundError) return c.json({ error: reason.message }, 404)
+      console.error('failed to approve run', reason)
+      return c.json({ error: 'failed to approve run' }, 500)
+    }
+  })
+
+  return applicationsRoutes
+}

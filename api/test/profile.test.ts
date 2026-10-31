@@ -5,8 +5,10 @@ import type { Db, MongoClient } from 'mongodb'
 import { connectMongo } from '../src/db'
 import { createAuthRoutes } from '../src/routes/auth'
 import { createProfileRoutes } from '../src/routes/profile'
+import type { CvParser } from '../src/profile/cvParser'
 
 const JWT_SECRET = 'test-secret'
+const fakeCvParser: CvParser = async () => 'Parsed CV text from the fake extractor.'
 
 interface AuthResponseBody {
   token: string
@@ -46,7 +48,7 @@ describe('profile routes', () => {
     db = conn.db
     app = new Hono()
     app.route('/auth', createAuthRoutes(db, JWT_SECRET))
-    app.route('/profile', createProfileRoutes(db, JWT_SECRET))
+    app.route('/profile', createProfileRoutes(db, JWT_SECRET, fakeCvParser))
   })
 
   afterEach(async () => {
@@ -98,6 +100,61 @@ describe('profile routes', () => {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ preferences: { minSalaryUsd: -5 } }),
     })
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects a CV upload with no token', async () => {
+    const res = await app.request('/profile/cv', { method: 'POST' })
+    expect(res.status).toBe(401)
+  })
+
+  it('parses an uploaded CV and stores the extracted text on the profile', async () => {
+    const token = await registerAndGetToken(app)
+    const file = new File([Buffer.from('fake pdf bytes')], 'resume.pdf', {
+      type: 'application/pdf',
+    })
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const res = await app.request('/profile/cv', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { cvText: string }
+    expect(body.cvText).toBe('Parsed CV text from the fake extractor.')
+  })
+
+  it('rejects an unsupported file type', async () => {
+    const token = await registerAndGetToken(app)
+    const file = new File([Buffer.from('not a cv')], 'resume.png', { type: 'image/png' })
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const res = await app.request('/profile/cv', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects a file over the 10 MB size limit', async () => {
+    const token = await registerAndGetToken(app)
+    const oversizedBytes = new Uint8Array(10 * 1024 * 1024 + 1)
+    const file = new File([oversizedBytes], 'resume.pdf', { type: 'application/pdf' })
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const res = await app.request('/profile/cv', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    })
+
     expect(res.status).toBe(400)
   })
 })

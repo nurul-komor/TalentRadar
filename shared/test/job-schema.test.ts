@@ -17,6 +17,12 @@ const VALID_JOB = {
   updatedAt: '2026-10-21T00:00:00.000Z',
   verifiedAt: null,
   verificationEvidence: null,
+  contentHash: null,
+  extractedRequirements: null,
+  extractedAt: null,
+  score: null,
+  scoreBreakdown: null,
+  scoredAt: null,
 }
 
 describe('JobSchema', () => {
@@ -58,6 +64,51 @@ describe('JobSchema', () => {
 
   it('rejects an unknown status value', () => {
     const result = JobSchema.safeParse({ ...VALID_JOB, status: 'pending' })
+    expect(result.success).toBe(false)
+  })
+
+  it('accepts a job with extracted requirements and a score', () => {
+    const result = JobSchema.safeParse({
+      ...VALID_JOB,
+      status: 'verified',
+      contentHash: 'abc123',
+      extractedRequirements: {
+        requiredSkills: ['typescript', 'node.js'],
+        niceToHaveSkills: ['kubernetes'],
+        minExperienceYears: 3,
+        workAuthRequirement: 'any',
+        remoteType: 'fully_remote',
+      },
+      extractedAt: '2026-10-24T00:00:00.000Z',
+      score: 85,
+      scoreBreakdown: {
+        workAuthFit: 30,
+        remoteFit: 20,
+        salaryFit: 20,
+        skillMatch: 15,
+        locationFit: 0,
+      },
+      scoredAt: '2026-10-24T00:00:00.000Z',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects extracted requirements with an unknown workAuthRequirement value', () => {
+    const result = JobSchema.safeParse({
+      ...VALID_JOB,
+      extractedRequirements: {
+        requiredSkills: [],
+        niceToHaveSkills: [],
+        minExperienceYears: null,
+        workAuthRequirement: 'sponsored', // not a valid enum value
+        remoteType: 'fully_remote',
+      },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects a score outside the 0-100 range', () => {
+    const result = JobSchema.safeParse({ ...VALID_JOB, score: 150 })
     expect(result.success).toBe(false)
   })
 })
