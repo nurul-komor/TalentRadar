@@ -120,4 +120,77 @@ describe('runDiscovery', () => {
     const notStored = await db.collection('jobs').findOne({ sourceJobId: '99' })
     expect(notStored).toBeNull()
   })
+
+  it('persists govtDetails when a source populates it, and null when it does not', async () => {
+    const govtSource: JobSource = {
+      id: 'teletalk-govt',
+      async fetchJobs() {
+        return [
+          {
+            sourceId: 'teletalk-govt',
+            sourceJobId: '15068',
+            url: 'https://alljobs.teletalk.com.bd/jobs/government/559?jobId=15068',
+            title: 'Accounts Assistant',
+            company: 'Narail Distric (DCNARAIL)',
+            rawDescription: 'Accounts Assistant at Narail Distric (DCNARAIL) — 02 vacancies.',
+            location: null,
+            salaryMin: null,
+            salaryMax: null,
+            postedAt: '2026-11-01T03:00:00.000Z',
+            govtDetails: {
+              jobCode: 'GJOB15068',
+              vacancy: '02',
+              minAge: 18,
+              maxAge: 32,
+              genderRequirement: 'any',
+              publishedDate: '2026-11-01T03:00:00.000Z',
+              deadlineDate: '2026-11-22T10:00:00.000Z',
+              advertisementNo: '05.44.6500.402.06.012.26-206',
+              advertisementPdfUrl: 'https://alljobs.teletalk.com.bd/public/uploads/governments/jobs/advertisement-1793262869609.pdf',
+              applicationPortalUrl: 'https://dcnarail.teletalk.com.bd/',
+            },
+          },
+        ]
+      },
+    }
+    const plainSource: JobSource = {
+      id: 'remoteok',
+      async fetchJobs() {
+        return [
+          {
+            sourceId: 'remoteok',
+            sourceJobId: 'r1',
+            url: 'https://remoteok.com/remote-jobs/r1',
+            title: 'Engineer',
+            company: 'Acme',
+            rawDescription: 'desc',
+            location: null,
+            salaryMin: null,
+            salaryMax: null,
+            postedAt: null,
+          },
+        ]
+      },
+    }
+
+    await runDiscovery(db, [govtSource, plainSource])
+
+    const jobs = db.collection('jobs')
+    const govtJob = await jobs.findOne({ sourceId: 'teletalk-govt', sourceJobId: '15068' })
+    const plainJob = await jobs.findOne({ sourceId: 'remoteok', sourceJobId: 'r1' })
+
+    expect(govtJob?.govtDetails).toEqual({
+      jobCode: 'GJOB15068',
+      vacancy: '02',
+      minAge: 18,
+      maxAge: 32,
+      genderRequirement: 'any',
+      publishedDate: '2026-11-01T03:00:00.000Z',
+      deadlineDate: '2026-11-22T10:00:00.000Z',
+      advertisementNo: '05.44.6500.402.06.012.26-206',
+      advertisementPdfUrl: 'https://alljobs.teletalk.com.bd/public/uploads/governments/jobs/advertisement-1793262869609.pdf',
+      applicationPortalUrl: 'https://dcnarail.teletalk.com.bd/',
+    })
+    expect(plainJob?.govtDetails).toBeNull()
+  })
 })

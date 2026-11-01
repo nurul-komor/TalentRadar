@@ -89,6 +89,7 @@ describe('scoring routes', () => {
       extractedAt: null,
       score: null,
       scoreBreakdown: null,
+      govtDetails: null,
       scoredAt: null,
     })
 

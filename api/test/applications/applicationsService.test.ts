@@ -31,6 +31,7 @@ async function insertJob(db: Db, overrides: Partial<Record<string, unknown>> = {
     extractedAt: null,
     score: null,
     scoreBreakdown: null,
+    govtDetails: null,
     scoredAt: null,
     ...overrides,
   })

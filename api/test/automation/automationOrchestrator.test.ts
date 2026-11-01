@@ -67,6 +67,7 @@ async function insertJob(db: Db, normalizedUrl: string) {
     extractedAt: null,
     score: null,
     scoreBreakdown: null,
+    govtDetails: null,
     scoredAt: null,
   })
 }

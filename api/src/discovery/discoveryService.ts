@@ -92,6 +92,7 @@ export async function runDiscovery(db: Db, sources: JobSource[]): Promise<Discov
           score: null,
           scoreBreakdown: null,
           scoredAt: null,
+          govtDetails: posting.govtDetails ?? null,
         })
         discovered += 1
       } catch (reason) {

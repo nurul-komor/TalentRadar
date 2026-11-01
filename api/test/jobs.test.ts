@@ -48,6 +48,7 @@ function makeJob(overrides: Partial<Job> & { sourceJobId: string }): Omit<Job, '
     extractedAt: null,
     score: null,
     scoreBreakdown: null,
+    govtDetails: null,
     scoredAt: null,
     ...overrides,
   }

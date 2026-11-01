@@ -1,5 +1,7 @@
+import type { GovtJobDetails } from '@job-hunter/shared'
+
 export interface RawJobPosting {
-  sourceId: 'remoteok' | 'weworkremotely' | 'himalayas'
+  sourceId: 'remoteok' | 'weworkremotely' | 'himalayas' | 'teletalk-govt'
   sourceJobId: string
   url: string
   title: string
@@ -9,6 +11,7 @@ export interface RawJobPosting {
   salaryMin: number | null
   salaryMax: number | null
   postedAt: string | null
+  govtDetails?: GovtJobDetails
 }
 
 export interface JobSource {

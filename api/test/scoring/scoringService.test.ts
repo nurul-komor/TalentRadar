@@ -43,6 +43,7 @@ async function insertVerifiedJob(db: Db, overrides: Partial<Record<string, unkno
     extractedAt: null,
     score: null,
     scoreBreakdown: null,
+    govtDetails: null,
     scoredAt: null,
     ...overrides,
   })
