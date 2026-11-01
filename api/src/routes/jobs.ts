@@ -1,11 +1,13 @@
 import { Hono } from 'hono'
 import { ObjectId, type Db, type Filter } from 'mongodb'
 import type { Job, JobSourceId, JobStatus } from '@job-hunter/shared'
-import { JobSourceIdSchema, JobStatusSchema } from '@job-hunter/shared'
+import { JobSourceIdSchema, JobStatusSchema, UNSCORED_JOB_SOURCE_IDS } from '@job-hunter/shared'
 import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
+
+export const GOVT_JOB_SOURCE_IDS = UNSCORED_JOB_SOURCE_IDS
 
 function parseLimit(raw: string | undefined): number {
   const parsed = Number(raw)
@@ -27,6 +29,10 @@ function parseStatus(raw: string | undefined): JobStatus | undefined {
 function parseSourceId(raw: string | undefined): JobSourceId | undefined {
   const parsed = JobSourceIdSchema.safeParse(raw)
   return parsed.success ? parsed.data : undefined
+}
+
+function parseCategory(raw: string | undefined): 'government' | 'private' | undefined {
+  return raw === 'government' || raw === 'private' ? raw : undefined
 }
 
 function parseText(raw: string | undefined): string | undefined {
@@ -52,6 +58,7 @@ function escapeRegex(value: string): string {
 function buildJobsFilter(query: {
   status?: JobStatus
   sourceId?: JobSourceId
+  category?: 'government' | 'private'
   keyword?: string
   location?: string
   company?: string
@@ -62,6 +69,8 @@ function buildJobsFilter(query: {
   const filter: Filter<Job> = {}
   if (query.status) filter.status = query.status
   if (query.sourceId) filter.sourceId = query.sourceId
+  if (query.category === 'government') filter.sourceId = { $in: GOVT_JOB_SOURCE_IDS }
+  if (query.category === 'private') filter.sourceId = { $nin: GOVT_JOB_SOURCE_IDS }
   if (query.location) filter.location = { $regex: escapeRegex(query.location), $options: 'i' }
   if (query.company) filter.company = { $regex: `^${escapeRegex(query.company)}$`, $options: 'i' }
   if (query.keyword) {
@@ -84,6 +93,7 @@ export function createJobsRoutes(db: Db, jwtSecret: string) {
     const filter = buildJobsFilter({
       status: parseStatus(c.req.query('status')),
       sourceId: parseSourceId(c.req.query('sourceId')),
+      category: parseCategory(c.req.query('category')),
       keyword: parseText(c.req.query('q')),
       location: parseText(c.req.query('location')),
       company: parseText(c.req.query('company')),

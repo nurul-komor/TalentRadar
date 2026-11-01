@@ -253,4 +253,36 @@ describe('jobs routes', () => {
     })
     expect(res.status).toBe(404)
   })
+
+  it('filters to government jobs with category=government', async () => {
+    const token = await registerAndGetToken(app)
+    await db.collection<Job>('jobs').insertMany([
+      makeJob({ sourceJobId: 'g1', sourceId: 'teletalk-govt' }),
+      makeJob({ sourceJobId: 'p1', sourceId: 'remoteok' }),
+    ] as Job[])
+
+    const res = await app.request('/jobs?category=government', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const body = (await res.json()) as JobsListBody
+
+    expect(body.jobs).toHaveLength(1)
+    expect(body.jobs[0].sourceId).toBe('teletalk-govt')
+  })
+
+  it('filters to private jobs with category=private', async () => {
+    const token = await registerAndGetToken(app)
+    await db.collection<Job>('jobs').insertMany([
+      makeJob({ sourceJobId: 'g1', sourceId: 'teletalk-govt' }),
+      makeJob({ sourceJobId: 'p1', sourceId: 'remoteok' }),
+    ] as Job[])
+
+    const res = await app.request('/jobs?category=private', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const body = (await res.json()) as JobsListBody
+
+    expect(body.jobs).toHaveLength(1)
+    expect(body.jobs[0].sourceId).toBe('remoteok')
+  })
 })
