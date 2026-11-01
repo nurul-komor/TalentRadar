@@ -4,6 +4,8 @@ import {
   LoginRequestSchema,
   ProfileSchema,
   ProfileUpdateSchema,
+  ResumeSchema,
+  emptyResume,
 } from '../src/index'
 
 describe('auth schemas', () => {
@@ -60,5 +62,65 @@ describe('profile schemas', () => {
       preferences: { targetRoles: ['Software Engineer'] },
     })
     expect(result.success).toBe(true)
+  })
+
+  it('defaults resume to an empty resume when a profile omits it', () => {
+    const result = ProfileSchema.safeParse({
+      email: 'a@example.com',
+      eligibility: { workAuthorization: 'unknown', countries: [] },
+      preferences: {},
+    })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.resume).toEqual(emptyResume())
+    }
+  })
+
+  it('allows a partial update with only resume', () => {
+    const result = ProfileUpdateSchema.safeParse({
+      resume: { ...emptyResume(), fullName: 'Nadia Rahman' },
+    })
+    expect(result.success).toBe(true)
+  })
+})
+
+describe('resume schema', () => {
+  it('accepts a fully filled-in resume', () => {
+    const result = ResumeSchema.safeParse({
+      fullName: 'Nurul Komor',
+      headline: 'Full-Stack Developer',
+      phone: '+8801860081978',
+      links: ['github.com/nurul-komor'],
+      summary: 'Full-stack engineer.',
+      experience: [
+        {
+          company: 'wOow Global',
+          role: 'Software Engineer',
+          startDate: '03/2024',
+          endDate: null,
+          bullets: ['Built an automation system.'],
+        },
+      ],
+      projects: [
+        {
+          name: 'wOow CRM',
+          url: null,
+          role: 'Full Stack Engineer',
+          technologies: ['Laravel', 'React.js'],
+          bullets: ['Developed lead-management workflows.'],
+        },
+      ],
+      skillGroups: [{ category: 'Programming Languages', skills: ['PHP', 'TypeScript'] }],
+      education: [{ institution: 'East Delta University', credential: 'BSc in Computer Science' }],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects an experience entry missing a required field', () => {
+    const result = ResumeSchema.safeParse({
+      ...emptyResume(),
+      experience: [{ company: 'wOow Global', startDate: '03/2024', endDate: null, bullets: [] }],
+    })
+    expect(result.success).toBe(false)
   })
 })

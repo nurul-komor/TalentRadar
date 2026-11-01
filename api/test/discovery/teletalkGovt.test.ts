@@ -138,6 +138,26 @@ describe('teletalkGovtSource', () => {
     expect(jobs[0].govtDetails?.genderRequirement).toBe('unknown')
   })
 
+  it('stops paginating once a page returns no orgs, even if count claims more pages', async () => {
+    const orgPage1 = {
+      ...ORG,
+      id: 1,
+      govt_jobs: [{ id: 201, job_title: 'A', job_title_bn: 'ক', organization_id: 1 }],
+    }
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes('page=1')) return Promise.resolve(orgListPage({ count: 5, orgs: [orgPage1] }))
+      if (url.includes('page=2')) return Promise.resolve(orgListPage({ count: 5, orgs: [] }))
+      if (url.includes('id=201')) return Promise.resolve(publicDetails({ ...DETAILS, id: 201, job_id: 'GJOB201' }))
+      throw new Error(`unexpected url: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const jobs = await teletalkGovtSource.fetchJobs()
+
+    expect(jobs.map((j) => j.sourceJobId)).toEqual(['201'])
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('page=3'))).toBe(false)
+  })
+
   it('throws when the org-list page itself fails', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 503 })))
 

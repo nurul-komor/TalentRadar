@@ -1,28 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Briefcase, Building2, Globe2, MapPin, Search, Sparkles } from 'lucide-react'
+import { Briefcase, Building2, MapPin, Search } from 'lucide-react'
 import type { PublicJobsSummary, JobSourceId } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { useCountUp } from '../hooks/useCountUp'
 import { useScrollReveal } from '../hooks/useScrollReveal'
 import { gsap } from '../lib/gsap'
-import { Button } from '../components/Button'
-
-const NAV_LINKS = ['Demos', 'Companies', 'Candidates', 'Blog', 'Pages']
-
-const SOURCE_IDS: JobSourceId[] = ['remoteok', 'weworkremotely', 'himalayas']
+import { PublicNav } from '../components/Nav'
+import { Footer } from '../components/Footer'
+import { LogoChip } from '../components/LogoChip'
+import { ScoreRing } from '../components/ScoreRing'
+import { Pill } from '../components/Pill'
 
 const SOURCE_LABELS: Record<JobSourceId, string> = {
   remoteok: 'Remote OK',
   weworkremotely: 'We Work Remotely',
   himalayas: 'Himalayas',
-}
-
-const SOURCE_ICONS: Record<JobSourceId, typeof Globe2> = {
-  remoteok: Globe2,
-  weworkremotely: Briefcase,
-  himalayas: MapPin,
+  'teletalk-govt': 'alljobs.teletalk.com.bd',
 }
 
 function relativeTimeFromNow(dateString: string): string {
@@ -39,7 +34,7 @@ export function LandingPage() {
   const { isAuthenticated } = useAuth()
   const [summary, setSummary] = useState<PublicJobsSummary | null>(null)
   const [keyword, setKeyword] = useState('')
-  const [scrolled, setScrolled] = useState(false)
+  const [location, setLocation] = useState('')
   const heroRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -47,13 +42,6 @@ export function LandingPage() {
       .then((res) => (res.ok ? (res.json() as Promise<PublicJobsSummary>) : null))
       .then(setSummary)
       .catch(() => setSummary(null))
-  }, [])
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
   useEffect(() => {
@@ -75,210 +63,272 @@ export function LandingPage() {
     return () => ctx.revert()
   }, [])
 
-  const sourceRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-source-card' })
+  const statsRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-stat' })
   const jobsRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-job-card' })
+  const stepsRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-step' })
+  const sourcesRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-source-chip' })
 
   function goToJobs(params: Record<string, string>) {
     const search = new URLSearchParams(params).toString()
     navigate(search ? `/jobs?${search}` : '/jobs')
   }
 
-  const countBySourceId = Object.fromEntries(
-    (summary?.bySource ?? []).map((entry) => [entry.sourceId, entry.count])
-  ) as Partial<Record<JobSourceId, number>>
-
   const totalJobsCount = useCountUp(summary ? summary.totalJobs : null)
-  const remoteOkCount = useCountUp(summary ? (countBySourceId.remoteok ?? 0) : null)
-  const wwrCount = useCountUp(summary ? (countBySourceId.weworkremotely ?? 0) : null)
-  const himalayasCount = useCountUp(summary ? (countBySourceId.himalayas ?? 0) : null)
-  const statCounts: Record<JobSourceId, number> = {
-    remoteok: remoteOkCount,
-    weworkremotely: wwrCount,
-    himalayas: himalayasCount,
-  }
+  const sourceCount = summary?.bySource.length ?? null
+  const sourcesCount = useCountUp(sourceCount)
 
   return (
-    <div className="min-h-screen bg-white">
-      <header
-        className={`sticky top-0 z-30 border-b transition-colors ${
-          scrolled
-            ? 'border-slate-200 bg-white/80 backdrop-blur-lg shadow-sm'
-            : 'border-transparent bg-transparent'
-        }`}
-      >
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
-          <span className={`text-lg font-bold ${scrolled ? 'text-slate-900' : 'text-white'}`}>
-            AI Remote Job Hunter
-          </span>
-          <nav
-            className={`hidden items-center gap-8 text-sm font-medium md:flex ${
-              scrolled ? 'text-slate-600' : 'text-white/70'
-            }`}
-          >
-            <Link to="/jobs" className={scrolled ? 'hover:text-slate-900' : 'hover:text-white'}>
-              Find Jobs
-            </Link>
-            {NAV_LINKS.map((label) => (
-              <span key={label} className="cursor-default opacity-60">
-                {label}
-              </span>
-            ))}
-          </nav>
-          <Button
-            variant="primary"
-            className="rounded-full"
-            onClick={() => navigate(isAuthenticated ? '/jobs' : '/login')}
-          >
-            {isAuthenticated ? 'Go to Jobs' : 'Sign in'}
-          </Button>
-        </div>
-      </header>
+    <div>
+      <PublicNav />
 
-      <section ref={heroRef} className="relative -mt-16 overflow-hidden bg-slate-950 pt-16">
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -left-24 top-10 size-[28rem] animate-[blob-float_18s_ease-in-out_infinite] rounded-full bg-indigo-600/40 blur-3xl" />
-          <div
-            className="absolute right-0 top-1/3 size-[26rem] animate-[blob-float_22s_ease-in-out_infinite] rounded-full bg-violet-600/30 blur-3xl"
-            style={{ animationDelay: '-6s' }}
-          />
-          <div
-            className="absolute bottom-0 left-1/3 size-[22rem] animate-[blob-float_20s_ease-in-out_infinite] rounded-full bg-blue-500/20 blur-3xl"
-            style={{ animationDelay: '-11s' }}
-          />
-        </div>
-
-        <div className="relative mx-auto grid max-w-7xl gap-10 px-4 py-20 lg:grid-cols-2 lg:items-center lg:py-32">
+      <section ref={heroRef} className="hero">
+        <div className="hero-bg" />
+        <div className="hero-glow" />
+        <div className="wrap hero-grid">
           <div>
-            <span className="hero-reveal inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-medium text-white/80 backdrop-blur">
-              <Sparkles size={14} className="text-indigo-300" />
-              AI-powered remote job discovery
+            <span className="hero-reveal eyebrow">
+              <span className="tag">Verified</span>
+              Every listing re-checked against its source page
             </span>
 
-            <h1 className="hero-reveal mt-5 text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">
-              Find the perfect job for you
+            <h1 className="hero-reveal">
+              Remote jobs that are actually <em>open</em>, and actually <em>yours</em>.
             </h1>
-            <p className="hero-reveal mt-4 max-w-md text-white/70">
-              Search your next remote opportunity through {totalJobsCount.toLocaleString()} tracked jobs
+            <p className="hero-reveal lead">
+              We discover postings across the web, re-check each one against its live source, then
+              score the match against your profile. You only spend time on roles worth applying to.
             </p>
 
             <form
+              className="hero-reveal search-card"
               onSubmit={(e) => {
                 e.preventDefault()
-                goToJobs(keyword.trim() ? { q: keyword.trim() } : {})
+                const params: Record<string, string> = {}
+                if (keyword.trim()) params.q = keyword.trim()
+                if (location.trim()) params.location = location.trim()
+                goToJobs(params)
               }}
-              className="hero-reveal mt-8 flex max-w-xl items-center gap-2 rounded-full border border-white/15 bg-white/10 p-2 shadow-xl backdrop-blur-xl"
             >
-              <Search size={18} className="ml-2 shrink-0 text-white/50" />
-              <input
-                type="text"
-                placeholder="Job title or keyword"
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                className="w-full min-w-0 border-none bg-transparent px-1 py-2 text-sm text-white outline-none placeholder:text-white/40"
-              />
-              <Button type="submit" className="rounded-full">
-                Search
-              </Button>
+              <div className="search-field">
+                <Search size={17} />
+                <input
+                  type="text"
+                  placeholder="Role or keyword"
+                  aria-label="Role or keyword"
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                />
+              </div>
+              <div className="search-field">
+                <MapPin size={17} />
+                <input
+                  type="text"
+                  placeholder="Anywhere / timezone"
+                  aria-label="Location or timezone"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                />
+              </div>
+              <button type="submit" className="btn btn-indigo">
+                Explore jobs
+              </button>
             </form>
 
-            <div className="hero-reveal mt-6 flex flex-wrap items-center gap-2 text-sm">
-              <span className="font-medium text-white/80">Popular:</span>
-              {['engineer', 'designer', 'writer', 'fullstack', 'devops', 'frontend'].map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => goToJobs({ q: tag })}
-                  className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-white/80 backdrop-blur transition-colors hover:bg-white/20"
-                >
-                  {tag}
-                </button>
-              ))}
+            <div className="hero-reveal hero-ctas">
+              <Link to="/register" className="btn btn-ghost btn-lg">
+                Create your profile
+              </Link>
+            </div>
+            <div className="hero-reveal hero-note">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6L9 17l-5-5" />
+              </svg>
+              <span>
+                Sourced today from{' '}
+                <span className="sources">Himalayas · Remote OK · We Work Remotely</span>
+              </span>
             </div>
           </div>
 
-          <div className="hero-reveal relative mx-auto w-full max-w-sm">
-            <div className="aspect-[4/5] rounded-2xl border border-white/10 bg-gradient-to-br from-indigo-500/30 via-violet-500/20 to-slate-900 shadow-2xl backdrop-blur-sm" />
-            <div className="absolute -bottom-6 -left-6 w-56 rounded-xl border border-white/15 bg-white/10 p-4 shadow-xl backdrop-blur-xl sm:-left-10">
-              <ul className="flex flex-col gap-3">
-                {SOURCE_IDS.map((sourceId) => (
-                  <li key={sourceId}>
-                    <p className="text-lg font-bold text-white">{statCounts[sourceId]}</p>
-                    <p className="text-xs text-white/60">verified jobs on {SOURCE_LABELS[sourceId]}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          <div className="hero-reveal stack" aria-hidden="true">
+            {(summary?.featuredJobs ?? []).slice(0, 3).map((job, index) => (
+              <div className={`fcard c${index + 1}`} key={job._id}>
+                <div className="fcard-top">
+                  <div className="fcard-co">
+                    <LogoChip name={job.company} />
+                    <div>
+                      <div className="fcard-role">{job.title}</div>
+                      <div className="fcard-co-name">{job.company}</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="fcard-meta">
+                  <Pill tone="verified">Verified open</Pill>
+                  <Pill tone="mono">{SOURCE_LABELS[job.sourceId]}</Pill>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-16">
-        <h2 className="text-2xl font-bold text-slate-900">Browse by Source</h2>
-        <p className="mt-1 text-sm text-slate-500">Search your career opportunity across every tracked source</p>
-
-        <div ref={sourceRevealRef} className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {(summary?.bySource ?? SOURCE_IDS.map((sourceId) => ({ sourceId, count: 0 }))).map((entry) => {
-            const Icon = SOURCE_ICONS[entry.sourceId]
-            return (
-              <button
-                key={entry.sourceId}
-                type="button"
-                onClick={() => goToJobs({ sourceId: entry.sourceId })}
-                className="reveal-source-card group flex flex-col items-start gap-3 rounded-2xl border border-slate-200/80 bg-white/60 p-6 text-left shadow-sm backdrop-blur-xl transition-all hover:-translate-y-1 hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-100"
-              >
-                <span className="flex size-10 items-center justify-center rounded-full bg-indigo-50 shadow-sm transition-colors group-hover:bg-indigo-100">
-                  <Icon size={18} className="text-indigo-600" />
-                </span>
-                <span className="font-semibold text-slate-900">{SOURCE_LABELS[entry.sourceId]}</span>
-                <span className="text-sm text-slate-500">{entry.count} open positions</span>
-              </button>
-            )
-          })}
+      <section className="band band-alt">
+        <div className="wrap">
+          <div ref={statsRevealRef} className="stat-grid">
+            <div className="stat reveal-stat">
+              <div className="k">Discovery</div>
+              <div className="n mono">{totalJobsCount.toLocaleString()}</div>
+              <div className="l">Jobs discovered in total</div>
+            </div>
+            <div className="stat reveal-stat">
+              <div className="k">Coverage</div>
+              <div className="n mono">{sourcesCount}</div>
+              <div className="l">Active sources</div>
+            </div>
+            <div className="stat reveal-stat">
+              <div className="k">Verification</div>
+              <div className="n mono">—</div>
+              <div className="l">Verified open rate</div>
+            </div>
+            <div className="stat reveal-stat">
+              <div className="k">Matching</div>
+              <div className="n mono">—</div>
+              <div className="l">Avg. match score of applied jobs</div>
+            </div>
+          </div>
+          <div className="placeholder-note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 8v5M12 16h.01" strokeLinecap="round" />
+            </svg>
+            Verification rate and match score require a signed-in profile — the two figures above are live.
+          </div>
         </div>
       </section>
 
-      <section className="bg-gradient-to-b from-slate-50 to-white py-16">
-        <div className="mx-auto max-w-7xl px-4">
-          <h2 className="text-2xl font-bold text-slate-900">Featured Job Offers</h2>
-          <p className="mt-1 text-sm text-slate-500">The latest verified roles we've found for you</p>
+      <section className="band">
+        <div className="wrap">
+          <div className="section-head">
+            <div className="kicker">Freshly discovered</div>
+            <h2>Recently discovered, already verified.</h2>
+            <p>What's landed in the feed. Each one is re-checked against its source page before it ever reaches a score.</p>
+          </div>
 
           {summary && summary.featuredJobs.length === 0 && (
-            <p className="mt-8 rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-              No verified jobs yet — check back soon.
-            </p>
+            <p className="placeholder-note">No verified jobs yet — check back soon.</p>
           )}
 
-          <div ref={jobsRevealRef} className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div ref={jobsRevealRef} className="jobs-grid">
             {(summary?.featuredJobs ?? []).map((job) => (
-              <Link
-                key={job._id}
-                to="/jobs"
-                className="reveal-job-card flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/70 p-5 shadow-sm backdrop-blur-xl transition-all hover:-translate-y-1 hover:shadow-lg hover:shadow-indigo-100"
-              >
-                <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
-                  {SOURCE_LABELS[job.sourceId]}
-                </span>
-                <span className="font-semibold text-slate-900">{job.title}</span>
-                <span className="flex items-center gap-1.5 text-sm text-slate-600">
-                  <Building2 size={14} className="text-slate-400" />
-                  {job.company}
-                </span>
-                {job.location && (
-                  <span className="flex items-center gap-1.5 text-sm text-slate-600">
-                    <MapPin size={14} className="text-slate-400" />
-                    {job.location}
-                  </span>
-                )}
-                <span className="text-xs text-slate-400">{relativeTimeFromNow(job.discoveredAt)}</span>
+              <Link to="/jobs" key={job._id} className="jobcard reveal-job-card">
+                <div className="top">
+                  <div>
+                    <div className="role">{job.title}</div>
+                    <div className="co">
+                      <Building2 size={12} style={{ display: 'inline', marginRight: 4 }} />
+                      {job.company}
+                      {job.location ? ` · ${job.location}` : ''}
+                    </div>
+                  </div>
+                </div>
+                <div className="tags">
+                  <Pill tone="verified">Verified</Pill>
+                  <Pill tone="mono">{SOURCE_LABELS[job.sourceId]}</Pill>
+                </div>
+                <div className="foot">
+                  <span className="src">{relativeTimeFromNow(job.discoveredAt)}</span>
+                  <span className="apply">View role →</span>
+                </div>
               </Link>
             ))}
           </div>
-
-          <Button variant="primary" className="mt-8 rounded-full" onClick={() => navigate('/jobs')}>
-            All Job Offers
-          </Button>
         </div>
       </section>
+
+      <section className="band band-alt">
+        <div className="wrap">
+          <div className="section-head center" style={{ margin: '0 auto 56px' }}>
+            <div className="kicker">How it works</div>
+            <h2>Four steps, one human approval gate.</h2>
+            <p>Nothing gets submitted on your behalf without you clicking confirm. Every time.</p>
+          </div>
+          <div ref={stepsRevealRef} className="steps">
+            <div className="step reveal-step">
+              <div className="step-icon">
+                <Search size={18} />
+              </div>
+              <div className="idx">01 / DISCOVER</div>
+              <h3>Discover</h3>
+              <p>Adapters pull candidate postings from each source continuously.</p>
+            </div>
+            <div className="step reveal-step">
+              <div className="step-icon">
+                <Briefcase size={18} />
+              </div>
+              <div className="idx">02 / VERIFY</div>
+              <h3>Verify</h3>
+              <p>Each listing is re-checked against its live source page. A 200 alone proves nothing.</p>
+            </div>
+            <div className="step reveal-step">
+              <div className="step-icon">
+                <ScoreRing score={88} size={18} strokeWidth={2} />
+              </div>
+              <div className="idx">03 / SCORE</div>
+              <h3>Score</h3>
+              <p>Weighted matching against your profile. Unknowns pull the score down, never ignored.</p>
+            </div>
+            <div className="step reveal-step">
+              <div className="step-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 12l6 6L20 6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+              <div className="idx">04 / APPROVE</div>
+              <h3>Approve &amp; apply</h3>
+              <p>Review tailored materials, then confirm. That click is what submits.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="wrap">
+          <div className="section-head">
+            <div className="kicker">Where it looks</div>
+            <h2>Sources, plain and honest.</h2>
+            <p>We only show integrations that are actually live. Nothing here is aspirational.</p>
+          </div>
+          <div ref={sourcesRevealRef} className="sources-row">
+            {(summary?.bySource ?? []).map((entry) => (
+              <span className="source-chip reveal-source-chip" key={entry.sourceId}>
+                <span className="dot" />
+                {SOURCE_LABELS[entry.sourceId]}
+                {entry.sourceId === 'teletalk-govt' && (
+                  <Pill tone="govt">Government</Pill>
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="band cta-band">
+        <div className="hero-glow" />
+        <div className="wrap" style={{ position: 'relative', zIndex: 1 }}>
+          <h2>Stop refreshing ten job boards a day.</h2>
+          <p>Build your profile once. Let verification and scoring do the filtering.</p>
+          <div className="hero-ctas">
+            <Link to="/jobs" className="btn btn-indigo btn-lg">
+              Explore jobs
+            </Link>
+            <Link to={isAuthenticated ? '/dashboard' : '/register'} className="btn btn-ghost btn-lg">
+              {isAuthenticated ? 'Go to dashboard' : 'Create your profile'}
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <Footer />
     </div>
   )
 }

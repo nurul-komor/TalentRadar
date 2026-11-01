@@ -3,9 +3,12 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { Building2, CircleCheck, MapPin, Search, SlidersHorizontal, Wallet, X } from 'lucide-react'
 import type { Job, JobSourceId, JobStatus } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
-import { Header } from '../components/Header'
+import { AppNav } from '../components/Nav'
 import { Button } from '../components/Button'
 import { FormError } from '../components/FormError'
+import { ScoreRing } from '../components/ScoreRing'
+import { Pill } from '../components/Pill'
+import { useSavedJobs } from '../hooks/useSavedJobs'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../components/ui/accordion'
 import { Checkbox } from '../components/ui/checkbox'
 import {
@@ -22,6 +25,7 @@ import {
 const PAGE_SIZE = 20
 const DEBOUNCE_MS = 300
 
+type CategoryFilter = 'all' | 'government' | 'private'
 type StatusFilter = JobStatus | 'all'
 type SourceSelection = { kind: 'all' } | { kind: 'source'; id: JobSourceId } | { kind: 'company'; name: string }
 type DateFilter = 'all' | 'today' | 'week' | 'month'
@@ -48,6 +52,7 @@ const SOURCE_OPTIONS: Array<{ value: JobSourceId; label: string }> = [
   { value: 'remoteok', label: 'Remote OK' },
   { value: 'weworkremotely', label: 'We Work Remotely' },
   { value: 'himalayas', label: 'Himalayas' },
+  { value: 'teletalk-govt', label: 'alljobs.teletalk.com.bd (Govt)' },
 ]
 
 const SOURCE_LABELS: Record<JobSourceId, string> = Object.fromEntries(
@@ -87,17 +92,6 @@ interface TrackedCompany {
 
 interface SeedCompaniesResponseBody {
   companies: TrackedCompany[]
-}
-
-function statusBadgeClasses(status: JobStatus): string {
-  switch (status) {
-    case 'verified':
-      return 'bg-green-100 text-green-700'
-    case 'rejected':
-      return 'bg-red-100 text-red-700'
-    default:
-      return 'bg-slate-100 text-slate-600'
-  }
 }
 
 function relativeTimeFromNow(dateString: string): string {
@@ -172,6 +166,7 @@ export function JobsPage() {
   const [error, setError] = useState<string | null>(null)
   const [trackedCompanies, setTrackedCompanies] = useState<TrackedCompany[]>([])
 
+  const category = (searchParams.get('category') as CategoryFilter) || 'all'
   const status = (searchParams.get('status') as StatusFilter) || 'all'
   const sourceSelection = parseSourceSelection(searchParams)
   const sourceSelectionKey =
@@ -204,6 +199,7 @@ export function JobsPage() {
   const debouncedSalaryMax = useDebouncedValue(salaryMax, DEBOUNCE_MS)
 
   const activeFilterCount =
+    Number(category !== 'all') +
     Number(status !== 'all') +
     Number(sourceSelection.kind !== 'all') +
     Number(datePosted !== 'all') +
@@ -258,6 +254,7 @@ export function JobsPage() {
     setLoading(true)
     setError(null)
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) })
+    if (category !== 'all') params.set('category', category)
     if (status !== 'all') params.set('status', status)
     if (sourceSelection.kind === 'source') params.set('sourceId', sourceSelection.id)
     if (sourceSelection.kind === 'company') params.set('company', sourceSelection.name)
@@ -279,7 +276,7 @@ export function JobsPage() {
         setTotal(data.total)
       })
       .finally(() => setLoading(false))
-  }, [status, sourceSelectionKey, datePosted, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset])
+  }, [category, status, sourceSelectionKey, datePosted, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset])
 
   const rangeStart = total === 0 ? 0 : offset + 1
   const rangeEnd = Math.min(offset + PAGE_SIZE, total)
@@ -287,23 +284,23 @@ export function JobsPage() {
   const filterControls = (
     <>
       <div className="relative mt-4">
-        <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+        <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
           placeholder="Title or company"
-          className="w-full rounded-full border border-slate-300 py-2.5 pl-10 pr-3 text-sm"
+          className="w-full rounded-full border border-input bg-background py-2.5 pl-10 pr-3 text-sm text-foreground"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
         />
       </div>
 
-      <Accordion defaultValue={['date', 'status', 'source']} className="mt-4 divide-y divide-slate-200 border-t border-b border-slate-200">
+      <Accordion defaultValue={['date', 'status', 'source']} className="mt-4 divide-y divide-border border-t border-b border-border">
             <AccordionItem value="date">
-              <AccordionTrigger className="text-sm font-medium text-slate-900">Date posted</AccordionTrigger>
+              <AccordionTrigger className="text-sm font-medium text-foreground">Date posted</AccordionTrigger>
               <AccordionContent>
                 <div className="flex flex-col gap-2">
                   {DATE_FILTER_OPTIONS.map((option) => (
-                    <label key={option.value} className="flex items-center gap-2 text-sm text-slate-700">
+                    <label key={option.value} className="flex items-center gap-2 text-sm text-foreground">
                       <Checkbox
                         checked={datePosted === option.value}
                         onCheckedChange={(checked) =>
@@ -318,11 +315,11 @@ export function JobsPage() {
             </AccordionItem>
 
             <AccordionItem value="status">
-              <AccordionTrigger className="text-sm font-medium text-slate-900">Status</AccordionTrigger>
+              <AccordionTrigger className="text-sm font-medium text-foreground">Status</AccordionTrigger>
               <AccordionContent>
                 <div className="flex flex-col gap-2">
                   {STATUS_OPTIONS.map((option) => (
-                    <label key={option.value} className="flex items-center gap-2 text-sm text-slate-700">
+                    <label key={option.value} className="flex items-center gap-2 text-sm text-foreground">
                       <Checkbox
                         checked={status === option.value}
                         onCheckedChange={(checked) => updateFilters({ status: checked ? option.value : null })}
@@ -335,12 +332,12 @@ export function JobsPage() {
             </AccordionItem>
 
             <AccordionItem value="source">
-              <AccordionTrigger className="text-sm font-medium text-slate-900">Source</AccordionTrigger>
+              <AccordionTrigger className="text-sm font-medium text-foreground">Source</AccordionTrigger>
               <AccordionContent>
                 <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto">
                   {SOURCE_OPTIONS.map((option) => (
                     <li key={option.value}>
-                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <label className="flex items-center gap-2 text-sm text-foreground">
                         <Checkbox
                           checked={sourceSelection.kind === 'source' && sourceSelection.id === option.value}
                           onCheckedChange={(checked) =>
@@ -353,7 +350,7 @@ export function JobsPage() {
                   ))}
                   {trackedCompanies.map((trackedCompany) => (
                     <li key={trackedCompany.name} className="flex items-center justify-between gap-2">
-                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <label className="flex items-center gap-2 text-sm text-foreground">
                         <Checkbox
                           checked={sourceSelection.kind === 'company' && sourceSelection.name === trackedCompany.name}
                           onCheckedChange={(checked) =>
@@ -372,12 +369,12 @@ export function JobsPage() {
             </AccordionItem>
 
             <AccordionItem value="location">
-              <AccordionTrigger className="text-sm font-medium text-slate-900">Location</AccordionTrigger>
+              <AccordionTrigger className="text-sm font-medium text-foreground">Location</AccordionTrigger>
               <AccordionContent>
                 <input
                   type="text"
                   placeholder="e.g. Europe"
-                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                  className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
                 />
@@ -385,23 +382,23 @@ export function JobsPage() {
             </AccordionItem>
 
             <AccordionItem value="salary">
-              <AccordionTrigger className="text-sm font-medium text-slate-900">Salary</AccordionTrigger>
+              <AccordionTrigger className="text-sm font-medium text-foreground">Salary</AccordionTrigger>
               <AccordionContent>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
                     min={0}
                     placeholder="Min"
-                    className="w-full min-w-0 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    className="w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
                     value={salaryMin}
                     onChange={(e) => setSalaryMin(e.target.value)}
                   />
-                  <span className="text-slate-400">–</span>
+                  <span className="text-muted-foreground">–</span>
                   <input
                     type="number"
                     min={0}
                     placeholder="Max"
-                    className="w-full min-w-0 rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    className="w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
                     value={salaryMax}
                     onChange={(e) => setSalaryMax(e.target.value)}
                   />
@@ -413,186 +410,200 @@ export function JobsPage() {
   )
 
   const jobsCountLabel = loading ? 'Searching…' : `${total.toLocaleString()} jobs found`
+  const { isSaved, toggleSaved } = useSavedJobs()
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <Header />
-      <main className="mx-auto flex max-w-7xl flex-col items-start gap-6 px-4 py-8 lg:flex-row lg:gap-10">
-        <aside className="hidden w-full shrink-0 lg:sticky lg:top-8 lg:block lg:w-72">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-900">{jobsCountLabel}</p>
+    <div>
+      <AppNav />
+      <header className="page-head">
+        <div className="wrap">
+          <div className="kicker">Job feed</div>
+          <h1>Verified roles, scored for you.</h1>
+          <p>Remote roles and Bangladesh government circulars, each re-checked against its source in the last 24 hours.</p>
+          <div className="segment" role="tablist" aria-label="Job category">
             <button
               type="button"
-              onClick={clearFilters}
-              disabled={!hasActiveFilters}
-              className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline disabled:pointer-events-none disabled:text-slate-300"
+              role="tab"
+              className={`seg${category === 'all' ? ' on' : ''}`}
+              aria-selected={category === 'all'}
+              onClick={() => updateFilters({ category: null })}
             >
-              <X size={14} />
-              Clear filters
+              All jobs
             </button>
+            <button
+              type="button"
+              role="tab"
+              className={`seg${category === 'government' ? ' on' : ''}`}
+              aria-selected={category === 'government'}
+              onClick={() => updateFilters({ category: 'government' })}
+            >
+              Government
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className={`seg${category === 'private' ? ' on' : ''}`}
+              aria-selected={category === 'private'}
+              onClick={() => updateFilters({ category: 'private' })}
+            >
+              Other jobs
+            </button>
+            {category === 'government' && (
+              <span className="seg-note">
+                Government circulars come from{' '}
+                <a href="https://alljobs.teletalk.com.bd/jobs/government" target="_blank" rel="noopener noreferrer">
+                  alljobs.teletalk.com.bd
+                </a>
+              </span>
+            )}
           </div>
-          {filterControls}
-        </aside>
-
-        <Drawer>
-          <div className="flex w-full items-center justify-between gap-2 lg:hidden">
-            <p className="text-sm font-medium text-slate-900">{jobsCountLabel}</p>
-            <div className="flex items-center gap-3">
-              <DrawerTrigger className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                <SlidersHorizontal size={14} />
-                Filters
-                {activeFilterCount > 0 && (
-                  <span className="inline-flex size-5 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">
-                    {activeFilterCount}
-                  </span>
-                )}
-              </DrawerTrigger>
-              <button
-                type="button"
-                onClick={clearFilters}
-                disabled={!hasActiveFilters}
-                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline disabled:pointer-events-none disabled:text-slate-300"
-              >
-                <X size={14} />
-                Clear
-              </button>
-            </div>
-          </div>
-          <DrawerPortal>
-            <DrawerHeader>
-              <DrawerTitle>Filters</DrawerTitle>
-              <DrawerClose />
-            </DrawerHeader>
-            <DrawerBody>{filterControls}</DrawerBody>
-            <DrawerFooter>
-              <button
-                type="button"
-                onClick={clearFilters}
-                disabled={!hasActiveFilters}
-                className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline disabled:pointer-events-none disabled:text-slate-300"
-              >
-                <X size={14} />
+        </div>
+      </header>
+      <section className="page-pad">
+        <div className="wrap listing">
+          <aside className="hidden w-full shrink-0 lg:sticky lg:top-24 lg:block lg:w-72">
+            <div className="flex items-center justify-between">
+              <span className="count">
+                <b>{jobsCountLabel}</b>
+              </span>
+              <button type="button" onClick={clearFilters} disabled={!hasActiveFilters} className="clear-all">
+                <X size={14} style={{ display: 'inline', marginRight: 4 }} />
                 Clear filters
               </button>
-              <DrawerClose className="ml-auto inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500">
-                Done
-              </DrawerClose>
-            </DrawerFooter>
-          </DrawerPortal>
-        </Drawer>
-
-        <section className="w-full min-w-0 flex-1">
-          {error && (
-            <div className="mb-4">
-              <FormError message={error} />
             </div>
-          )}
+            {filterControls}
+          </aside>
 
-          {loading ? (
-            <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-              Loading…
-            </p>
-          ) : jobs.length === 0 ? (
-            <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-              No jobs found.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-4">
-              {jobs.map((job) => {
+          <Drawer>
+            <div className="flex w-full items-center justify-between gap-2 lg:hidden">
+              <span className="count">
+                <b>{jobsCountLabel}</b>
+              </span>
+              <div className="flex items-center gap-3">
+                <DrawerTrigger className="btn btn-ghost">
+                  <SlidersHorizontal size={14} />
+                  Filters
+                  {activeFilterCount > 0 && <span className="pill mono">{activeFilterCount}</span>}
+                </DrawerTrigger>
+                <button type="button" onClick={clearFilters} disabled={!hasActiveFilters} className="clear-all">
+                  Clear
+                </button>
+              </div>
+            </div>
+            <DrawerPortal>
+              <DrawerHeader>
+                <DrawerTitle>Filters</DrawerTitle>
+                <DrawerClose />
+              </DrawerHeader>
+              <DrawerBody>{filterControls}</DrawerBody>
+              <DrawerFooter>
+                <button type="button" onClick={clearFilters} disabled={!hasActiveFilters} className="clear-all">
+                  Clear filters
+                </button>
+                <DrawerClose className="btn btn-indigo">Done</DrawerClose>
+              </DrawerFooter>
+            </DrawerPortal>
+          </Drawer>
+
+          <div className="results">
+            {error && (
+              <div className="mb-4">
+                <FormError message={error} />
+              </div>
+            )}
+
+            {loading ? (
+              <div className="skeleton" aria-hidden="true">
+                <div className="sk" style={{ width: 40, height: 40, borderRadius: '50%' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div className="sk" style={{ width: '46%' }} />
+                  <div className="sk" style={{ width: '30%' }} />
+                </div>
+              </div>
+            ) : jobs.length === 0 ? (
+              <p className="saved-empty">
+                <b>No jobs found.</b>
+                Try widening your filters.
+              </p>
+            ) : (
+              jobs.map((job) => {
                 const requirements = requirementsPreview(job.rawDescription)
                 return (
-                <li
-                  key={job._id}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-5 sm:px-6"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <Link
-                      to={`/jobs/${job._id}`}
-                      className="text-xl font-normal text-slate-900 hover:underline"
-                    >
-                      {job.title}
-                    </Link>
-                    <span
-                      className={`mt-1 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${statusBadgeClasses(job.status)}`}
-                    >
-                      {statusBadgeLabel(job)}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Building2 size={16} className="text-slate-400" />
-                      {job.company}
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <MapPin size={16} className="text-slate-400" />
-                      {job.location ?? '—'}
-                    </span>
-                    <span className="inline-flex items-center gap-1.5">
-                      <Wallet size={16} className="text-slate-400" />
-                      {formatSalary(job)}
-                    </span>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-                      {SOURCE_LABELS[job.sourceId]}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 border-t border-slate-200 pt-4">
-                    <h3 className="text-sm font-semibold text-slate-900">Description</h3>
-                    <p className="mt-2 text-sm text-slate-600">{descriptionPreview(job.rawDescription)}</p>
-
-                    {requirements && (
-                      <div className="mt-4">
-                        <h3 className="text-sm font-semibold text-slate-900">Requirements</h3>
-                        <p className="mt-2 text-sm text-slate-600">{requirements}</p>
+                  <article key={job._id} className="jrow" style={{ gridTemplateColumns: 'auto minmax(0,1fr) auto' }}>
+                    <ScoreRing score={job.score ?? 0} />
+                    <div className="main">
+                      <div className="title">
+                        <Link to={`/jobs/${job._id}`}>{job.title}</Link>
                       </div>
-                    )}
-
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <Link
-                        to={`/jobs/${job._id}`}
-                        className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-1.5 text-sm font-semibold text-blue-600 shadow-sm hover:bg-slate-50"
-                      >
-                        View details
-                      </Link>
-                      <a
-                        href={job.normalizedUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500"
-                      >
-                        Apply
-                      </a>
+                      <div className="sub">
+                        <Building2 size={12} style={{ display: 'inline', marginRight: 4 }} />
+                        {job.company}
+                        {job.location ? ` · ${job.location}` : ''}
+                      </div>
+                      <div className="tags">
+                        {job.status === 'verified' && <Pill tone="verified">Verified</Pill>}
+                        {job.sourceId === 'teletalk-govt' && <Pill tone="govt">Government</Pill>}
+                        <Pill tone="mono">{formatSalary(job)}</Pill>
+                        <Pill tone="mono">{SOURCE_LABELS[job.sourceId]}</Pill>
+                      </div>
+                      <p style={{ marginTop: 10, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
+                        {descriptionPreview(job.rawDescription)}
+                      </p>
+                      {requirements && (
+                        <p style={{ marginTop: 8, fontSize: 13, color: 'var(--muted-text)', lineHeight: 1.6 }}>
+                          {requirements}
+                        </p>
+                      )}
+                      <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <Link to={`/jobs/${job._id}`} className="btn btn-ghost">
+                          View details
+                        </Link>
+                        <a href={job.normalizedUrl} target="_blank" rel="noreferrer" className="btn btn-indigo">
+                          Apply
+                        </a>
+                      </div>
                     </div>
-                  </div>
-                </li>
+                    <div className="side">
+                      <span className="when">{statusBadgeLabel(job)}</span>
+                      <button
+                        type="button"
+                        className={`save-btn${isSaved(job._id) ? ' saved' : ''}`}
+                        aria-pressed={isSaved(job._id)}
+                        aria-label={isSaved(job._id) ? 'Remove from saved' : 'Save job'}
+                        onClick={() => toggleSaved(job._id)}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+                          <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </article>
                 )
-              })}
-            </ul>
-          )}
+              })
+            )}
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500">
-            <span>
-              {total === 0 ? 'No results' : `Showing ${rangeStart}–${rangeEnd} of ${total}`}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                disabled={offset === 0}
-                onClick={() => updateFilters({ offset: String(Math.max(0, offset - PAGE_SIZE)) }, { resetOffset: false })}
-              >
-                Prev
-              </Button>
-              <Button
-                variant="secondary"
-                disabled={offset + PAGE_SIZE >= total}
-                onClick={() => updateFilters({ offset: String(offset + PAGE_SIZE) }, { resetOffset: false })}
-              >
-                Next
-              </Button>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2" style={{ color: 'var(--muted-text)', fontSize: 13 }}>
+              <span>{total === 0 ? 'No results' : `Showing ${rangeStart}–${rangeEnd} of ${total}`}</span>
+              <div className="pager">
+                <button
+                  type="button"
+                  disabled={offset === 0}
+                  onClick={() => updateFilters({ offset: String(Math.max(0, offset - PAGE_SIZE)) }, { resetOffset: false })}
+                >
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  disabled={offset + PAGE_SIZE >= total}
+                  onClick={() => updateFilters({ offset: String(offset + PAGE_SIZE) }, { resetOffset: false })}
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </div>
-        </section>
-      </main>
+        </div>
+      </section>
     </div>
   )
 }

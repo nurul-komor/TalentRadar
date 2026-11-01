@@ -6,6 +6,7 @@ const ADMIN_EMAIL = 'nurulkomor123@gmail.com'
 interface AuthContextValue {
   isAuthenticated: boolean
   isAdmin: boolean
+  email: string | null
   profileLoading: boolean
   login: (token: string) => void
   logout: () => void
@@ -46,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       isAuthenticated: token !== null,
       isAdmin: email === ADMIN_EMAIL,
+      email,
       profileLoading,
       login,
       logout,

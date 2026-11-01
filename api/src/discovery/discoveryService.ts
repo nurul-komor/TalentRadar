@@ -42,66 +42,84 @@ async function isDuplicate(
   return byCompanyTitle !== null
 }
 
-export async function runDiscovery(db: Db, sources: JobSource[]): Promise<DiscoveryResult> {
-  const results = await Promise.allSettled(sources.map((source) => source.fetchJobs()))
+interface SourceRunTotals {
+  discovered: number
+  duplicates: number
+  errors: DiscoveryResult['errors']
+}
 
-  let discovered = 0
-  let duplicates = 0
-  const errors: DiscoveryResult['errors'] = []
+async function persistPosting(db: Db, posting: RawJobPosting): Promise<'discovered' | 'duplicate'> {
+  const normalizedPostingUrl = normalizeUrl(posting.url)
+  const duplicate = await isDuplicate(db, posting, normalizedPostingUrl)
+  if (duplicate) return 'duplicate'
 
-  for (let i = 0; i < results.length; i++) {
-    const result = results[i]
-    const source = sources[i]
+  const now = new Date().toISOString()
+  await db.collection<Job>('jobs').insertOne({
+    sourceId: posting.sourceId,
+    sourceJobId: posting.sourceJobId,
+    normalizedUrl: normalizedPostingUrl,
+    title: posting.title,
+    company: posting.company,
+    rawDescription: posting.rawDescription,
+    location: posting.location,
+    salaryMin: posting.salaryMin,
+    salaryMax: posting.salaryMax,
+    postedAt: posting.postedAt,
+    status: 'discovered',
+    discoveredAt: now,
+    updatedAt: now,
+    verifiedAt: null,
+    verificationEvidence: null,
+    contentHash: null,
+    extractedRequirements: null,
+    extractedAt: null,
+    score: null,
+    scoreBreakdown: null,
+    scoredAt: null,
+    govtDetails: posting.govtDetails ?? null,
+  })
+  return 'discovered'
+}
 
-    if (result.status === 'rejected') {
-      const reason = result.reason
+async function runSource(db: Db, source: JobSource): Promise<SourceRunTotals> {
+  const totals: SourceRunTotals = { discovered: 0, duplicates: 0, errors: [] }
+
+  let postings: RawJobPosting[]
+  try {
+    postings = await source.fetchJobs()
+  } catch (reason) {
+    const message = reason instanceof Error ? reason.message : String(reason)
+    totals.errors.push({ sourceId: source.id, message })
+    return totals
+  }
+
+  for (const posting of postings) {
+    try {
+      const outcome = await persistPosting(db, posting)
+      if (outcome === 'duplicate') totals.duplicates += 1
+      else totals.discovered += 1
+    } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason)
-      errors.push({ sourceId: source.id, message })
-      continue
-    }
-
-    for (const posting of result.value) {
-      try {
-        const normalizedPostingUrl = normalizeUrl(posting.url)
-        const duplicate = await isDuplicate(db, posting, normalizedPostingUrl)
-        if (duplicate) {
-          duplicates += 1
-          continue
-        }
-
-        const now = new Date().toISOString()
-        await db.collection<Job>('jobs').insertOne({
-          sourceId: posting.sourceId,
-          sourceJobId: posting.sourceJobId,
-          normalizedUrl: normalizedPostingUrl,
-          title: posting.title,
-          company: posting.company,
-          rawDescription: posting.rawDescription,
-          location: posting.location,
-          salaryMin: posting.salaryMin,
-          salaryMax: posting.salaryMax,
-          postedAt: posting.postedAt,
-          status: 'discovered',
-          discoveredAt: now,
-          updatedAt: now,
-          verifiedAt: null,
-          verificationEvidence: null,
-          contentHash: null,
-          extractedRequirements: null,
-          extractedAt: null,
-          score: null,
-          scoreBreakdown: null,
-          scoredAt: null,
-          govtDetails: posting.govtDetails ?? null,
-        })
-        discovered += 1
-      } catch (reason) {
-        const message = reason instanceof Error ? reason.message : String(reason)
-        errors.push({ sourceId: posting.sourceId, message })
-        continue
-      }
+      totals.errors.push({ sourceId: posting.sourceId, message })
     }
   }
 
-  return { discovered, duplicates, errors }
+  return totals
+}
+
+export async function runDiscovery(db: Db, sources: JobSource[]): Promise<DiscoveryResult> {
+  // Each source persists its own postings as soon as it resolves, rather than
+  // waiting on every source via Promise.allSettled before writing anything —
+  // one slow source (e.g. a rate-limited upstream API) would otherwise hold
+  // up jobs from every other, fast source for the length of the whole run.
+  const sourceTotals = await Promise.all(sources.map((source) => runSource(db, source)))
+
+  return sourceTotals.reduce<DiscoveryResult>(
+    (acc, totals) => ({
+      discovered: acc.discovered + totals.discovered,
+      duplicates: acc.duplicates + totals.duplicates,
+      errors: [...acc.errors, ...totals.errors],
+    }),
+    { discovered: 0, duplicates: 0, errors: [] }
+  )
 }

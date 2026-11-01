@@ -157,4 +157,21 @@ describe('profile routes', () => {
 
     expect(res.status).toBe(400)
   })
+
+  it('rejects a CV export request with no token', async () => {
+    const res = await app.request('/profile/cv/export')
+    expect(res.status).toBe(401)
+  })
+
+  it('exports the caller profile as a PDF', async () => {
+    const token = await registerAndGetToken(app)
+    const res = await app.request('/profile/cv/export', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('application/pdf')
+    const buffer = Buffer.from(await res.arrayBuffer())
+    expect(buffer.subarray(0, 4).toString()).toBe('%PDF')
+  })
 })

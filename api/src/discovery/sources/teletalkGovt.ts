@@ -68,20 +68,25 @@ async function fetchAllJobStubs(): Promise<JobStubWithOrg[]> {
   const firstPage = await fetchOrgListPage(1)
   const stubs: JobStubWithOrg[] = []
 
-  function collect(response: OrgListResponse) {
+  function collect(response: OrgListResponse): number {
     for (const org of response.govtOrgJobs) {
       for (const job of org.govt_jobs) {
         stubs.push({ jobId: job.id, jobTitle: job.job_title, orgId: org.id, orgName: org.name })
       }
     }
+    return response.govtOrgJobs.length
   }
   collect(firstPage)
 
   // `count` is the org-list endpoint's own total-page count for this page size,
   // not a total-org count — confirmed against the live API's pagination fixtures.
+  // In practice it overstates real data by a wide margin (observed: count=30,
+  // real orgs run out after page 2), so stop as soon as a page comes back empty
+  // rather than paying for a rate-limited request per declared-but-empty page.
   const totalPages = firstPage.count
   for (let page = 2; page <= totalPages; page++) {
-    collect(await fetchOrgListPage(page))
+    const orgCount = collect(await fetchOrgListPage(page))
+    if (orgCount === 0) break
   }
 
   return stubs

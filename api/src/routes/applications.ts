@@ -10,6 +10,15 @@ export function createApplicationsRoutes(db: Db, jwtSecret: string) {
   const applicationsRoutes = new Hono<{ Variables: AuthVariables }>()
   applicationsRoutes.use('*', createRequireAuth(jwtSecret))
 
+  applicationsRoutes.get('/', async (c) => {
+    const applications = await db
+      .collection<Application>('applications')
+      .find({ profileId: c.get('profileId') })
+      .sort({ updatedAt: -1 })
+      .toArray()
+    return c.json({ applications })
+  })
+
   applicationsRoutes.post('/', async (c) => {
     const body = await c.req.json().catch(() => null)
     if (!body || typeof body.sourceId !== 'string' || typeof body.sourceJobId !== 'string') {

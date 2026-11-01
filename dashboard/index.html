@@ -1,9 +1,18 @@
 <!doctype html>
-<html lang="en" class="theme">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Remote Job Hunter</title>
+    <title>Hunter — Verified remote jobs, scored for you</title>
+    <script>
+      try {
+        var stored = localStorage.getItem('hunter-theme')
+        var theme = stored === 'dark' || stored === 'light'
+          ? stored
+          : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        document.documentElement.setAttribute('data-theme', theme)
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

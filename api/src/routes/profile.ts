@@ -1,8 +1,10 @@
 import { Hono } from 'hono'
 import { ObjectId, type Db } from 'mongodb'
-import { ProfileUpdateSchema } from '@job-hunter/shared'
+import type { Profile } from '@job-hunter/shared'
+import { ProfileUpdateSchema, emptyResume } from '@job-hunter/shared'
 import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
 import { parseCvFile, DOCX_MIME_TYPE, type CvParser } from '../profile/cvParser.js'
+import { renderResumePdf } from '../profile/cvExporter.js'
 
 const MAX_CV_FILE_BYTES = 10 * 1024 * 1024
 
@@ -40,6 +42,25 @@ export function createProfileRoutes(db: Db, jwtSecret: string, cvParser: CvParse
       return c.json({ error: 'profile not found' }, 404)
     }
     return c.json(result)
+  })
+
+  profileRoutes.get('/cv/export', async (c) => {
+    const profile = (await db
+      .collection('profiles')
+      .findOne(
+        { _id: new ObjectId(c.get('profileId')) },
+        { projection: { passwordHash: 0 } }
+      )) as Profile | null
+    if (!profile) {
+      return c.json({ error: 'profile not found' }, 404)
+    }
+
+    // Profiles created before the resume field existed won't have it on the stored document.
+    const pdfBuffer = await renderResumePdf({ ...profile, resume: profile.resume ?? emptyResume() })
+
+    c.header('Content-Type', 'application/pdf')
+    c.header('Content-Disposition', 'attachment; filename="cv.pdf"')
+    return c.body(pdfBuffer.buffer.slice(pdfBuffer.byteOffset, pdfBuffer.byteOffset + pdfBuffer.byteLength) as ArrayBuffer)
   })
 
   profileRoutes.post('/cv', async (c) => {

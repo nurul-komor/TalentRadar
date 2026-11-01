@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { computeScore } from '../../src/scoring/scoreCalculator'
 import type { JobRequirements, Profile } from '@job-hunter/shared'
+import { emptyResume } from '@job-hunter/shared'
 
 const BASE_REQUIREMENTS: JobRequirements = {
   requiredSkills: [],
@@ -18,6 +19,7 @@ function baseProfile(overrides: Partial<Profile> = {}): Profile {
     eligibility: { workAuthorization: 'citizen', countries: [] },
     preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
     cvText: null,
+    resume: emptyResume(),
     ...overrides,
   }
 }

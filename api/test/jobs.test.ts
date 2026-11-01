@@ -79,16 +79,16 @@ describe('jobs routes', () => {
     db = conn.db
     app = new Hono()
     app.route('/auth', createAuthRoutes(db, JWT_SECRET))
-    app.route('/jobs', createJobsRoutes(db, JWT_SECRET))
+    app.route('/jobs', createJobsRoutes(db))
   })
 
   afterEach(async () => {
     await client.close()
   })
 
-  it('rejects a request with no token', async () => {
+  it('allows a request with no token', async () => {
     const res = await app.request('/jobs')
-    expect(res.status).toBe(401)
+    expect(res.status).toBe(200)
   })
 
   it('lists jobs sorted by discoveredAt descending', async () => {

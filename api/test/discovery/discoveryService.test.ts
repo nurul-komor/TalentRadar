@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import type { Db, MongoClient } from 'mongodb'
 import { connectMongo } from '../../src/db'
@@ -192,5 +192,33 @@ describe('runDiscovery', () => {
       applicationPortalUrl: 'https://dcnarail.teletalk.com.bd/',
     })
     expect(plainJob?.govtDetails).toBeNull()
+  })
+
+  it('persists a fast source\'s jobs without waiting for a slower source to resolve', async () => {
+    let resolveSlowSource: (jobs: RawJobPosting[]) => void = () => {}
+    const slowSource: JobSource = {
+      id: 'teletalk-govt',
+      fetchJobs: () => new Promise((resolve) => { resolveSlowSource = resolve }),
+    }
+    const fastJob: RawJobPosting = {
+      ...SAMPLE_JOB,
+      sourceJobId: 'fast-1',
+      url: 'https://remoteok.com/remote-jobs/fast-1',
+    }
+    const fastSource = fakeSource('remoteok', [fastJob])
+
+    const discoveryPromise = runDiscovery(db, [slowSource, fastSource])
+
+    await vi.waitFor(
+      async () => {
+        const stored = await db.collection('jobs').findOne({ sourceJobId: 'fast-1' })
+        expect(stored).not.toBeNull()
+      },
+      { timeout: 2000 }
+    )
+
+    resolveSlowSource([])
+    const result = await discoveryPromise
+    expect(result.discovered).toBe(1)
   })
 })

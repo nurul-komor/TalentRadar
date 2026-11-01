@@ -44,6 +44,24 @@ export function createMaterialsRoutes(db: Db, jwtSecret: string, generator: Mate
     }
   })
 
+  materialsRoutes.get('/:jobId', async (c) => {
+    const jobId = c.req.param('jobId')
+    const latest = await db
+      .collection<Materials>('materials')
+      .find({ jobId })
+      .sort({ version: -1 })
+      .limit(1)
+      .toArray()
+    const materials = latest[0] ?? null
+    if (!materials) {
+      return c.json({ error: 'materials not found' }, 404)
+    }
+    if (materials.profileId !== c.get('profileId')) {
+      return c.json({ error: 'forbidden' }, 403)
+    }
+    return c.json(materials)
+  })
+
   materialsRoutes.get('/:jobId/:version/export', async (c) => {
     const jobId = c.req.param('jobId')
     const version = Number(c.req.param('version'))

@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { Db } from 'mongodb'
-import { RegisterRequestSchema, LoginRequestSchema } from '@job-hunter/shared'
+import { RegisterRequestSchema, LoginRequestSchema, emptyResume } from '@job-hunter/shared'
 import { hashPassword, verifyPassword } from '../lib/password.js'
 import { createAuthToken } from '../lib/jwt.js'
 
@@ -29,6 +29,7 @@ export function createAuthRoutes(db: Db, jwtSecret: string) {
       eligibility: { workAuthorization: 'unknown', countries: [] },
       preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
       cvText: null,
+      resume: emptyResume(),
       createdAt: now,
       updatedAt: now,
     })

@@ -2,7 +2,6 @@ import { Hono } from 'hono'
 import { ObjectId, type Db, type Filter } from 'mongodb'
 import type { Job, JobSourceId, JobStatus } from '@job-hunter/shared'
 import { JobSourceIdSchema, JobStatusSchema, UNSCORED_JOB_SOURCE_IDS } from '@job-hunter/shared'
-import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
@@ -83,9 +82,8 @@ function buildJobsFilter(query: {
   return filter
 }
 
-export function createJobsRoutes(db: Db, jwtSecret: string) {
-  const jobsRoutes = new Hono<{ Variables: AuthVariables }>()
-  jobsRoutes.use('*', createRequireAuth(jwtSecret))
+export function createJobsRoutes(db: Db) {
+  const jobsRoutes = new Hono()
 
   jobsRoutes.get('/', async (c) => {
     const limit = parseLimit(c.req.query('limit'))

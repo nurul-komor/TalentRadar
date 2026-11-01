@@ -4,6 +4,7 @@ import { discoverForm } from '../../src/automation/formDiscovery'
 import { fillForm } from '../../src/automation/fillStrategy'
 import type { Browser } from '../../src/automation/browser'
 import type { Materials, Profile } from '@job-hunter/shared'
+import { emptyResume } from '@job-hunter/shared'
 
 const MOCK_FORM_HTML = `
 <form>
@@ -35,6 +36,7 @@ function profile(): Profile {
     eligibility: { workAuthorization: 'citizen', countries: [] },
     preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
     cvText: 'Experienced engineer.',
+    resume: emptyResume(),
   }
 }
 

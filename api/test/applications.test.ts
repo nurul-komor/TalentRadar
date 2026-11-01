@@ -139,6 +139,41 @@ describe('applications routes', () => {
     expect(body.latestRun).toBeNull()
   })
 
+  it('lists only the current profile\'s applications', async () => {
+    const token = await registerAndGetToken(app)
+    await app.request('/applications', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceId: 'remoteok', sourceJobId: '1' }),
+    })
+
+    const now = new Date().toISOString()
+    await db.collection('applications').insertOne({
+      jobId: 'remoteok:other',
+      profileId: 'some-other-profile-id',
+      company: 'Other Co',
+      title: 'Other Role',
+      status: 'draft',
+      materialsVersion: null,
+      requiredAnswers: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    const res = await app.request('/applications', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { applications: Array<{ jobId: string }> }
+    expect(body.applications).toHaveLength(1)
+    expect(body.applications[0].jobId).toBe('remoteok:1')
+  })
+
+  it('rejects listing applications with no token', async () => {
+    const res = await app.request('/applications')
+    expect(res.status).toBe(401)
+  })
+
   it('404s when getting an application that does not exist', async () => {
     const token = await registerAndGetToken(app)
     const res = await app.request('/applications/remoteok:missing', {
@@ -207,5 +242,35 @@ describe('applications routes', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as { approved: boolean }
     expect(body.approved).toBe(true)
+  })
+
+  it('lists only the current profile\'s applications', async () => {
+    const token = await registerAndGetToken(app)
+    await app.request('/applications', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceId: 'remoteok', sourceJobId: '1' }),
+    })
+
+    const otherRes = await app.request('/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'other-user@example.com', password: 'password123' }),
+    })
+    const otherToken = ((await otherRes.json()) as AuthResponseBody).token
+
+    const res = await app.request('/applications', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { applications: Array<{ jobId: string }> }
+    expect(body.applications).toHaveLength(1)
+    expect(body.applications[0].jobId).toBe('remoteok:1')
+
+    const otherListRes = await app.request('/applications', {
+      headers: { Authorization: `Bearer ${otherToken}` },
+    })
+    const otherBody = (await otherListRes.json()) as { applications: unknown[] }
+    expect(otherBody.applications).toHaveLength(0)
   })
 })

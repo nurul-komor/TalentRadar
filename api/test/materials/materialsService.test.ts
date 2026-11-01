@@ -5,6 +5,7 @@ import { connectMongo } from '../../src/db'
 import { ensureMaterialsIndexes, generateMaterials } from '../../src/materials/materialsService'
 import type { MaterialsGenerator } from '../../src/materials/types'
 import type { Profile } from '@job-hunter/shared'
+import { emptyResume } from '@job-hunter/shared'
 
 function uniqueDbName(): string {
   return `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
@@ -16,6 +17,7 @@ function baseProfile(): Profile {
     eligibility: { workAuthorization: 'citizen', countries: [] },
     preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
     cvText: 'Experienced backend engineer.',
+    resume: emptyResume(),
   }
 }
 

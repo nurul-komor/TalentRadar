@@ -50,7 +50,7 @@ export function Header() {
           </div>
 
           <div className="hidden sm:flex sm:items-center">
-            <Button variant="secondary" onClick={logout}>
+            <Button variant="ghost" onClick={logout}>
               Log out
             </Button>
           </div>
@@ -86,7 +86,7 @@ export function Header() {
           <div className="border-t border-slate-200 pb-3 pt-4">
             <div className="px-4">
               <Button
-                variant="secondary"
+                variant="ghost"
                 className="w-full justify-center"
                 onClick={() => {
                   setMobileOpen(false)

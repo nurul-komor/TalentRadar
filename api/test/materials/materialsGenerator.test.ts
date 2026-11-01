@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { emptyResume } from '@job-hunter/shared'
 
 const mockParse = vi.fn()
 
@@ -38,6 +39,7 @@ describe('createClaudeMaterialsGenerator', () => {
         eligibility: { workAuthorization: 'citizen', countries: [] },
         preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
         cvText: 'Experienced backend engineer.',
+        resume: emptyResume(),
       },
       requirements: null,
     })
@@ -70,6 +72,7 @@ describe('createClaudeMaterialsGenerator', () => {
           eligibility: { workAuthorization: 'citizen', countries: [] },
           preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
           cvText: null,
+          resume: emptyResume(),
         },
         requirements: null,
       })

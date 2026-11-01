@@ -6,6 +6,7 @@ import { ensureJobIndexes } from '../../src/discovery/discoveryService'
 import { runScoring } from '../../src/scoring/scoringService'
 import type { JobRequirementsExtractor } from '../../src/scoring/types'
 import type { Profile } from '@job-hunter/shared'
+import { emptyResume } from '@job-hunter/shared'
 
 function uniqueDbName(): string {
   return `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
@@ -17,6 +18,7 @@ function baseProfile(): Profile {
     eligibility: { workAuthorization: 'citizen', countries: [] },
     preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
     cvText: null,
+    resume: emptyResume(),
   }
 }
 

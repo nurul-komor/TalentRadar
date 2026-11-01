@@ -18,8 +18,10 @@ export const parseCvFile: CvParser = async (buffer, mimeType) => {
 
 async function parsePdf(buffer: Buffer): Promise<string> {
   // pdf.js takes ownership of the ArrayBuffer backing `data` and detaches it —
-  // copy first so the caller's original buffer is never mutated.
-  const copy = Buffer.from(buffer)
+  // copy first so the caller's original buffer is never mutated. pdf.js also
+  // rejects Node's `Buffer` type outright (even though it's a Uint8Array
+  // subclass), so the copy must be a plain Uint8Array.
+  const copy = new Uint8Array(buffer)
   const doc = await pdfjsLib.getDocument({ data: copy }).promise
 
   const pageTexts: string[] = []

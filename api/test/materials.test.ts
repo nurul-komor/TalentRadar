@@ -161,4 +161,51 @@ describe('materials routes', () => {
     })
     expect(res.status).toBe(404)
   })
+
+  it('gets the latest generated materials for a job', async () => {
+    const token = await registerAndGetToken(app)
+    await app.request('/materials/remoteok:1/generate', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    await app.request('/materials/remoteok:1/generate', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    const res = await app.request('/materials/remoteok:1', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { version: number; coverLetter: string }
+    expect(body.version).toBe(2)
+    expect(body.coverLetter).toBe('Cover letter text')
+  })
+
+  it('rejects getting materials with no token', async () => {
+    const res = await app.request('/materials/remoteok:1')
+    expect(res.status).toBe(401)
+  })
+
+  it('404s when getting materials for a job with none generated', async () => {
+    const token = await registerAndGetToken(app)
+    const res = await app.request('/materials/remoteok:1', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('403s when getting materials that belong to a different profile', async () => {
+    const token = await registerAndGetToken(app)
+    await app.request('/materials/remoteok:1/generate', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    await db.collection('materials').updateOne({ jobId: 'remoteok:1' }, { $set: { profileId: 'someone-else' } })
+
+    const res = await app.request('/materials/remoteok:1', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(res.status).toBe(403)
+  })
 })
