@@ -15,6 +15,7 @@ import { createAutomationRoutes } from './routes/automation.js'
 import { remoteOkSource } from './discovery/sources/remoteok.js'
 import { weWorkRemotelySource } from './discovery/sources/weworkremotely.js'
 import { himalayasSource } from './discovery/sources/himalayas.js'
+import { teletalkGovtSource } from './discovery/sources/teletalkGovt.js'
 import { pageEvidenceVerifier } from './verification/pageEvidenceVerifier.js'
 import { createClaudeRequirementsExtractor } from './scoring/requirementsExtractor.js'
 import { createClaudeMaterialsGenerator } from './materials/materialsGenerator.js'
@@ -26,7 +27,7 @@ export function mountRoutes(
   cronSecret: string,
   anthropicApiKey: string | undefined
 ) {
-  const sources = [remoteOkSource, weWorkRemotelySource, himalayasSource]
+  const sources = [remoteOkSource, weWorkRemotelySource, himalayasSource, teletalkGovtSource]
 
   app.route('/auth', createAuthRoutes(db, jwtSecret))
   app.route('/profile', createProfileRoutes(db, jwtSecret))
