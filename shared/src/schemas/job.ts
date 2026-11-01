@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const JobSourceIdSchema = z.enum(['remoteok', 'weworkremotely', 'himalayas'])
+export const JobSourceIdSchema = z.enum(['remoteok', 'weworkremotely', 'himalayas', 'teletalk-govt'])
 
 export const JobStatusSchema = z.enum(['discovered', 'verified', 'rejected'])
 
@@ -18,6 +18,19 @@ export const ScoreBreakdownSchema = z.object({
   salaryFit: z.number().int(),
   skillMatch: z.number().int(),
   locationFit: z.number().int(),
+})
+
+export const GovtJobDetailsSchema = z.object({
+  jobCode: z.string(),
+  vacancy: z.string(),
+  minAge: z.number().int().nullable(),
+  maxAge: z.number().int().nullable(),
+  genderRequirement: z.enum(['male', 'female', 'any', 'unknown']),
+  publishedDate: z.string().nullable(),
+  deadlineDate: z.string().nullable(),
+  advertisementNo: z.string().nullable(),
+  advertisementPdfUrl: z.string().nullable(),
+  applicationPortalUrl: z.string().nullable(),
 })
 
 export const JobSchema = z.object({
@@ -43,6 +56,7 @@ export const JobSchema = z.object({
   score: z.number().int().min(0).max(100).nullable(),
   scoreBreakdown: ScoreBreakdownSchema.nullable(),
   scoredAt: z.string().nullable(),
+  govtDetails: GovtJobDetailsSchema.nullable(),
 })
 
 export const PublicFeaturedJobSchema = z.object({
@@ -70,7 +84,10 @@ export type JobSourceId = z.infer<typeof JobSourceIdSchema>
 export type JobStatus = z.infer<typeof JobStatusSchema>
 export type JobRequirements = z.infer<typeof JobRequirementsSchema>
 export type ScoreBreakdown = z.infer<typeof ScoreBreakdownSchema>
+export type GovtJobDetails = z.infer<typeof GovtJobDetailsSchema>
 export type Job = z.infer<typeof JobSchema>
 export type PublicFeaturedJob = z.infer<typeof PublicFeaturedJobSchema>
 export type PublicSourceSummary = z.infer<typeof PublicSourceSummarySchema>
 export type PublicJobsSummary = z.infer<typeof PublicJobsSummarySchema>
+
+export const UNSCORED_JOB_SOURCE_IDS: JobSourceId[] = ['teletalk-govt']

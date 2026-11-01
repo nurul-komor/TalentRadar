@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { JobSchema } from '../src/index'
+import { JobSchema, UNSCORED_JOB_SOURCE_IDS } from '../src/index'
 
 const VALID_JOB = {
   sourceId: 'remoteok',
@@ -23,6 +23,7 @@ const VALID_JOB = {
   score: null,
   scoreBreakdown: null,
   scoredAt: null,
+  govtDetails: null,
 }
 
 describe('JobSchema', () => {
@@ -110,5 +111,49 @@ describe('JobSchema', () => {
   it('rejects a score outside the 0-100 range', () => {
     const result = JobSchema.safeParse({ ...VALID_JOB, score: 150 })
     expect(result.success).toBe(false)
+  })
+
+  it('accepts a teletalk-govt job with govtDetails populated', () => {
+    const result = JobSchema.safeParse({
+      ...VALID_JOB,
+      sourceId: 'teletalk-govt',
+      govtDetails: {
+        jobCode: 'GJOB15068',
+        vacancy: '02',
+        minAge: 18,
+        maxAge: 32,
+        genderRequirement: 'any',
+        publishedDate: '2026-11-01T03:00:00.000Z',
+        deadlineDate: '2026-11-22T10:00:00.000Z',
+        advertisementNo: '05.44.6500.402.06.012.26-206',
+        advertisementPdfUrl: 'https://alljobs.teletalk.com.bd/public/uploads/governments/jobs/advertisement-1793262869609.pdf',
+        applicationPortalUrl: 'https://dcnarail.teletalk.com.bd/',
+      },
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects govtDetails with an invalid genderRequirement', () => {
+    const result = JobSchema.safeParse({
+      ...VALID_JOB,
+      sourceId: 'teletalk-govt',
+      govtDetails: {
+        jobCode: 'GJOB15068',
+        vacancy: '02',
+        minAge: 18,
+        maxAge: 32,
+        genderRequirement: 'nonbinary', // not a valid enum value
+        publishedDate: null,
+        deadlineDate: null,
+        advertisementNo: null,
+        advertisementPdfUrl: null,
+        applicationPortalUrl: null,
+      },
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('UNSCORED_JOB_SOURCE_IDS contains exactly teletalk-govt', () => {
+    expect(UNSCORED_JOB_SOURCE_IDS).toEqual(['teletalk-govt'])
   })
 })
