@@ -1,6 +1,7 @@
 import { createHash } from 'crypto'
 import type { Db } from 'mongodb'
 import type { Job, Profile } from '@job-hunter/shared'
+import { UNSCORED_JOB_SOURCE_IDS } from '@job-hunter/shared'
 import { isWithinBudget, recordUsage } from './aiUsageService'
 import { computeScore } from './scoreCalculator'
 import type { JobRequirementsExtractor } from './types'
@@ -22,7 +23,9 @@ export async function runScoring(
   extractor: JobRequirementsExtractor
 ): Promise<ScoringResult> {
   const jobs = db.collection<Job>('jobs')
-  const verifiedJobs = await jobs.find({ status: 'verified' }).toArray()
+  const verifiedJobs = await jobs
+    .find({ status: 'verified', sourceId: { $nin: UNSCORED_JOB_SOURCE_IDS } })
+    .toArray()
 
   let scored = 0
   let deferred = 0

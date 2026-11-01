@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import type { Db, MongoClient } from 'mongodb'
 import { connectMongo } from '../../src/db'
@@ -183,5 +183,15 @@ describe('runScoring', () => {
     expect(result.scored).toBe(1)
     expect(result.errors).toHaveLength(1)
     expect(result.errors[0].message).toBe('extraction boom')
+  })
+
+  it('excludes teletalk-govt jobs from the verified-jobs query', async () => {
+    await insertVerifiedJob(db, { sourceId: 'teletalk-govt', sourceJobId: 'g1' })
+    const extractor = vi.fn()
+
+    const result = await runScoring(db, baseProfile(), extractor)
+
+    expect(result.checked).toBe(0)
+    expect(extractor).not.toHaveBeenCalled()
   })
 })

@@ -1,5 +1,6 @@
 import type { Db } from 'mongodb'
 import type { Job } from '@job-hunter/shared'
+import { UNSCORED_JOB_SOURCE_IDS } from '@job-hunter/shared'
 import type { JobVerifier } from './types.js'
 
 export interface VerificationResult {
@@ -12,7 +13,9 @@ export interface VerificationResult {
 
 export async function runVerification(db: Db, verifier: JobVerifier): Promise<VerificationResult> {
   const jobs = db.collection<Job>('jobs')
-  const discoveredJobs = await jobs.find({ status: 'discovered' }).toArray()
+  const discoveredJobs = await jobs
+    .find({ status: 'discovered', sourceId: { $nin: UNSCORED_JOB_SOURCE_IDS } })
+    .toArray()
 
   let verified = 0
   let rejected = 0

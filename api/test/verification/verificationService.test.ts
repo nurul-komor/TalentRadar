@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import type { Db, MongoClient } from 'mongodb'
 import { connectMongo } from '../../src/db'
@@ -127,5 +127,15 @@ describe('runVerification', () => {
     expect(result.errors).toEqual([{ jobId: 'remoteok:1', message: 'boom' }])
     const untouched = await db.collection('jobs').findOne({ sourceJobId: '1' })
     expect(untouched?.status).toBe('discovered')
+  })
+
+  it('excludes teletalk-govt jobs from the discovered-jobs query', async () => {
+    await insertDiscoveredJob(db, { sourceId: 'teletalk-govt', sourceJobId: 'g1' })
+    const verifier = vi.fn()
+
+    const result = await runVerification(db, verifier)
+
+    expect(result.checked).toBe(0)
+    expect(verifier).not.toHaveBeenCalled()
   })
 })
