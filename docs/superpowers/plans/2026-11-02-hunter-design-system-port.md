@@ -629,6 +629,20 @@ In `refreshApplication`, restore `latestRun` in the success branch's
         setAppState({ phase: 'loaded', application: body.application, latestRun: body.latestRun })
 ```
 
+**Also restore it in `openDrawer`'s own inline `setAppState` call** — Task
+4's rewrite of `openDrawer` added a second, separate `setAppState({ phase:
+'loaded', application: body.application })` call (not the one in
+`refreshApplication`) that also needs the field added:
+
+```tsx
+        setAppState({ phase: 'loaded', application: body.application, latestRun: body.latestRun })
+```
+
+(Same fix, two call sites — `refreshApplication`'s and `openDrawer`'s own.
+Both must have `latestRun: body.latestRun` added for the restored
+`ApplicationState` type to be satisfied; typecheck will not go green with
+only one fixed.)
+
 Add back the three deleted functions (place them where they were before,
 alongside `generateMaterials`):
 
