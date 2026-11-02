@@ -412,6 +412,15 @@ export function JobsPage() {
   const jobsCountLabel = loading ? 'Searching…' : `${total.toLocaleString()} jobs found`
   const { isSaved, toggleSaved } = useSavedJobs()
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  function handleToggleSaved(jobId: string) {
+    const willBeSaved = !isSaved(jobId)
+    toggleSaved(jobId)
+    setToastMessage(willBeSaved ? 'Saved' : 'Removed')
+    setTimeout(() => setToastMessage(null), 1800)
+  }
+
   return (
     <div>
       <AppNav />
@@ -570,7 +579,7 @@ export function JobsPage() {
                         className={`save-btn${isSaved(job._id) ? ' saved' : ''}`}
                         aria-pressed={isSaved(job._id)}
                         aria-label={isSaved(job._id) ? 'Remove from saved' : 'Save job'}
-                        onClick={() => toggleSaved(job._id)}
+                        onClick={() => handleToggleSaved(job._id)}
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
                           <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
@@ -604,6 +613,7 @@ export function JobsPage() {
           </div>
         </div>
       </section>
+      <div className={`toast${toastMessage ? ' show' : ''}`}>{toastMessage}</div>
     </div>
   )
 }
