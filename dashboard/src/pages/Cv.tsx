@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEv
 import { Link } from 'react-router-dom'
 import type { Profile } from '@job-hunter/shared'
 import { apiFetch, getToken } from '../api/client'
-import { AppNav } from '../components/Nav'
 import { Button } from '../components/Button'
 import { FormError } from '../components/FormError'
 
@@ -139,8 +138,7 @@ export function CvPage() {
   const wordCount = cvText ? cvText.trim().split(/\s+/).filter(Boolean).length : 0
 
   return (
-    <div>
-      <AppNav />
+    <>
       <header className="page-head">
         <div className="wrap">
           <div className="kicker">Profile</div>
@@ -248,6 +246,6 @@ export function CvPage() {
           )}
         </div>
       </section>
-    </div>
+    </>
   )
 }

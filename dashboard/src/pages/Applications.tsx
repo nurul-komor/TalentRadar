@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Application, ApplicationStatus, AutomationRun, Materials } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
-import { AppNav } from '../components/Nav'
 import { LogoChip } from '../components/LogoChip'
 import { Button } from '../components/Button'
 import { FormError } from '../components/FormError'
@@ -230,8 +229,7 @@ export function ApplicationsPage() {
   const hasApplications = (applications?.length ?? 0) > 0
 
   return (
-    <div>
-      <AppNav />
+    <>
       <header className="page-head">
         <div className="wrap">
           <div className="kicker">Applications</div>
@@ -485,6 +483,6 @@ export function ApplicationsPage() {
           )}
         </div>
       </section>
-    </div>
+    </>
   )
 }
