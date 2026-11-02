@@ -144,29 +144,14 @@ export function DashboardSidebar() {
 }
 
 export function DashboardSidebarTopBar() {
-  const { email, logout } = useAuth()
-
   return (
-    <nav className="nav app-sidebar-topbar">
-      <div className="wrap nav-row">
-        <NavLink to="/" className="brand">
-          <BrandMark />
-          Hunter
+    <nav className="app-mobile-tabs" aria-label="Main">
+      {SIDEBAR_LINKS.map(({ to, label, icon: Icon }) => (
+        <NavLink key={to} to={to} className={sidebarLinkClass}>
+          <Icon size={18} />
+          {label}
         </NavLink>
-        <div className="nav-links">
-          {SIDEBAR_LINKS.map(({ to, label }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'current' : '')}>
-              {label}
-            </NavLink>
-          ))}
-        </div>
-        <div className="nav-cta">
-          <ThemeToggle />
-          <button type="button" className="avatar" title={email ?? 'Account'} aria-label="Log out" onClick={logout}>
-            {initialsFromEmail(email)}
-          </button>
-        </div>
-      </div>
+      ))}
     </nav>
   )
 }
