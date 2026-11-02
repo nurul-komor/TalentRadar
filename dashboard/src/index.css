@@ -784,6 +784,14 @@ footer{padding-block:56px 64px;}
 .drawer .p-body{padding:24px;overflow:auto;flex:1;display:flex;flex-direction:column;gap:16px;}
 .doc-preview{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px 24px;font-size:13.5px;line-height:1.65;color:var(--fg-2);box-shadow:var(--shadow-card);}
 .doc-preview .dp-h{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11px;color:var(--faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:14px;}
+.missing{display:flex;flex-direction:column;gap:8px;margin-top:4px;}
+.mrow{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;}
+.mrow b{display:block;font-size:14px;}
+.mrow .btn{padding:8px 14px;font-size:13px;}
+.copy-btn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--fg-2);padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);cursor:pointer;}
+.copy-btn:hover{border-color:var(--line-strong);color:var(--fg);}
+.copy-btn.ok{background:var(--cyan-soft);color:var(--cyan-text);border-color:transparent;}
+.tab-row{display:flex;gap:8px;margin-bottom:4px;}
 .drawer .p-foot{padding:16px 24px calc(16px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px;}
 .btn-confirm{background:var(--ink-btn);color:var(--ink-btn-fg);width:100%;padding:16px;font-size:15px;border-radius:14px;}
 .btn-confirm.done{background:var(--cyan);color:#063E38;}

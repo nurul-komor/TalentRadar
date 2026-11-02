@@ -42,7 +42,11 @@ const SCORE_LABELS = {
 type ApplicationState =
   | { phase: 'none' }
   | { phase: 'loading' }
-  | { phase: 'loaded'; application: { jobId: string; status: string } }
+  | {
+      phase: 'loaded'
+      application: { jobId: string; status: string }
+      latestRun: { runNumber: number; status: string; blockReason: string | null; manualApplyUrl: string | null } | null
+    }
   | { phase: 'error'; message: string }
 
 export function JobDetailPage() {
@@ -55,6 +59,9 @@ export function JobDetailPage() {
   const [actionBusy, setActionBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [materialsPreview, setMaterialsPreview] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'manual' | 'automated'>('manual')
+  const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
+  const [skillBusy, setSkillBusy] = useState<string | null>(null)
 
   useEffect(() => {
     apiFetch(`/jobs/${id}`).then(async (res) => {
@@ -86,7 +93,7 @@ export function JobDetailPage() {
           return
         }
         const body = await res.json()
-        setAppState({ phase: 'loaded', application: body.application })
+        setAppState({ phase: 'loaded', application: body.application, latestRun: body.latestRun })
       })
       .catch(() => setAppState({ phase: 'error', message: 'Failed to load application status.' }))
   }
@@ -106,7 +113,7 @@ export function JobDetailPage() {
           return
         }
         const body = await res.json()
-        setAppState({ phase: 'loaded', application: body.application })
+        setAppState({ phase: 'loaded', application: body.application, latestRun: body.latestRun })
         if (!materialsPreview) await generateMaterials()
       })
       .catch(() => setAppState({ phase: 'error', message: 'Failed to load application status.' }))
@@ -150,6 +157,108 @@ export function JobDetailPage() {
         return
       }
       setMaterialsPreview(body.materials?.coverLetter ?? null)
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  async function addSkill(skill: string) {
+    if (!profile) return
+    setSkillBusy(skill)
+    try {
+      const skillGroups = profile.resume?.skillGroups ?? []
+      const existingIndex = skillGroups.findIndex((group) => group.category === 'Additional skills')
+      const nextSkillGroups =
+        existingIndex === -1
+          ? [...skillGroups, { category: 'Additional skills', skills: [skill] }]
+          : skillGroups.map((group, index) =>
+              index === existingIndex ? { ...group, skills: [...group.skills, skill] } : group,
+            )
+      const res = await apiFetch('/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ resume: { ...profile.resume, skillGroups: nextSkillGroups } }),
+      })
+      if (!res.ok) {
+        setActionError('Failed to add skill to your profile.')
+        return
+      }
+      setProfile(await res.json())
+    } finally {
+      setSkillBusy(null)
+    }
+  }
+
+  function copyCoverLetter() {
+    if (!materialsPreview) return
+    navigator.clipboard.writeText(materialsPreview).then(() => {
+      setCopyState('copied')
+      setTimeout(() => setCopyState('idle'), 1600)
+    })
+  }
+
+  async function downloadCv() {
+    const res = await apiFetch('/profile/cv/export')
+    if (!res.ok) {
+      setActionError('Failed to generate CV.')
+      return
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'cv.pdf'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  async function runAutomation() {
+    if (!jobId) return
+    setActionBusy(true)
+    setActionError(null)
+    try {
+      const res = await apiFetch(`/automation/${jobId}/run`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        setActionError(body?.error ?? 'Failed to run automation.')
+        return
+      }
+      refreshApplication()
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  async function approveRun(runNumber: number) {
+    if (!jobId) return
+    setActionBusy(true)
+    setActionError(null)
+    try {
+      const res = await apiFetch(`/applications/${jobId}/runs/${runNumber}/approve`, { method: 'POST' })
+      const body = await res.json().catch(() => null)
+      if (!res.ok || !body?.approved) {
+        setActionError(body?.reason ?? body?.error ?? 'Approval failed.')
+        return
+      }
+      refreshApplication()
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  async function submitRun(runNumber: number) {
+    if (!jobId) return
+    setActionBusy(true)
+    setActionError(null)
+    try {
+      const res = await apiFetch(`/automation/${jobId}/runs/${runNumber}/submit`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        setActionError(body?.error ?? 'Submission failed.')
+        return
+      }
+      refreshApplication()
     } finally {
       setActionBusy(false)
     }
@@ -350,70 +459,125 @@ export function JobDetailPage() {
 
             {appState.phase === 'loaded' && (
               <>
-                <div className="doc-preview">
-                  <div className="dp-h">
-                    <span>Status</span>
-                    <span>{appState.application.status}</span>
-                  </div>
-                  {appState.latestRun ? (
-                    <p>
-                      Latest automation run #{appState.latestRun.runNumber}: {appState.latestRun.status}
-                      {appState.latestRun.blockReason ? ` — ${appState.latestRun.blockReason}` : ''}
-                      {appState.latestRun.manualApplyUrl ? (
-                        <>
-                          {' '}
-                          <a href={appState.latestRun.manualApplyUrl} target="_blank" rel="noreferrer">
-                            Apply manually →
-                          </a>
-                        </>
-                      ) : null}
-                    </p>
-                  ) : (
-                    <p>No automation run yet.</p>
-                  )}
+                <div className="tab-row">
+                  <button
+                    type="button"
+                    className={`btn ${activeTab === 'manual' ? 'btn-indigo' : 'btn-ghost'}`}
+                    onClick={() => setActiveTab('manual')}
+                  >
+                    Prepare manually
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${activeTab === 'automated' ? 'btn-indigo' : 'btn-ghost'}`}
+                    onClick={() => setActiveTab('automated')}
+                  >
+                    Automated apply
+                  </button>
                 </div>
 
-                {materialsPreview && (
-                  <div className="doc-preview">
-                    <div className="dp-h">
-                      <span>Cover letter (draft)</span>
+                {activeTab === 'manual' && (
+                  <>
+                    {materialsPreview && (
+                      <div className="doc-preview">
+                        <div className="dp-h">
+                          <span>Cover letter (draft)</span>
+                          <button type="button" className={`copy-btn${copyState === 'copied' ? ' ok' : ''}`} onClick={copyCoverLetter}>
+                            {copyState === 'copied' ? 'Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p style={{ whiteSpace: 'pre-wrap' }}>{materialsPreview}</p>
+                      </div>
+                    )}
+
+                    {missingSkills.length > 0 && (
+                      <div>
+                        <div className="dp-h">
+                          <span>Missing skills for this role</span>
+                        </div>
+                        <div className="missing">
+                          {missingSkills.map((skill) => (
+                            <div className="mrow" key={skill}>
+                              <b>{skill}</b>
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                disabled={skillBusy === skill}
+                                onClick={() => addSkill(skill)}
+                              >
+                                {skillBusy === skill ? 'Adding…' : 'Add'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <button type="button" className="btn btn-indigo" onClick={downloadCv}>
+                      Download tailored CV (PDF)
+                    </button>
+                  </>
+                )}
+
+                {activeTab === 'automated' && (
+                  <>
+                    <div className="doc-preview">
+                      <div className="dp-h">
+                        <span>Status</span>
+                        <span>{appState.application.status}</span>
+                      </div>
+                      {appState.latestRun ? (
+                        <p>
+                          Latest automation run #{appState.latestRun.runNumber}: {appState.latestRun.status}
+                          {appState.latestRun.blockReason ? ` — ${appState.latestRun.blockReason}` : ''}
+                          {appState.latestRun.manualApplyUrl ? (
+                            <>
+                              {' '}
+                              <a href={appState.latestRun.manualApplyUrl} target="_blank" rel="noreferrer">
+                                Apply manually →
+                              </a>
+                            </>
+                          ) : null}
+                        </p>
+                      ) : (
+                        <p>No automation run yet.</p>
+                      )}
                     </div>
-                    <p style={{ whiteSpace: 'pre-wrap' }}>{materialsPreview}</p>
-                  </div>
-                )}
 
-                {appState.application.status === 'draft' && !appState.latestRun && (
-                  <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={generateMaterials}>
-                    Generate materials
-                  </button>
-                )}
+                    {appState.application.status === 'draft' && !appState.latestRun && (
+                      <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={generateMaterials}>
+                        Generate materials
+                      </button>
+                    )}
 
-                {appState.application.status === 'draft' && (
-                  <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={runAutomation}>
-                    Run automation
-                  </button>
-                )}
+                    {appState.application.status === 'draft' && (
+                      <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={runAutomation}>
+                        Run automation
+                      </button>
+                    )}
 
-                {appState.latestRun?.status === 'ready_for_approval' && (
-                  <button
-                    type="button"
-                    className="btn-confirm"
-                    disabled={actionBusy}
-                    onClick={() => approveRun(appState.latestRun!.runNumber)}
-                  >
-                    Review and confirm
-                  </button>
-                )}
+                    {appState.latestRun?.status === 'ready_for_approval' && (
+                      <button
+                        type="button"
+                        className="btn-confirm"
+                        disabled={actionBusy}
+                        onClick={() => approveRun(appState.latestRun!.runNumber)}
+                      >
+                        Review and confirm
+                      </button>
+                    )}
 
-                {appState.latestRun?.status === 'approved' && (
-                  <button
-                    type="button"
-                    className="btn-confirm"
-                    disabled={actionBusy}
-                    onClick={() => submitRun(appState.latestRun!.runNumber)}
-                  >
-                    Submit application
-                  </button>
+                    {appState.latestRun?.status === 'approved' && (
+                      <button
+                        type="button"
+                        className="btn-confirm"
+                        disabled={actionBusy}
+                        onClick={() => submitRun(appState.latestRun!.runNumber)}
+                      >
+                        Submit application
+                      </button>
+                    )}
+                  </>
                 )}
               </>
             )}
