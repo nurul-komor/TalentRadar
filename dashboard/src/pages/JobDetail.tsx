@@ -42,11 +42,7 @@ const SCORE_LABELS = {
 type ApplicationState =
   | { phase: 'none' }
   | { phase: 'loading' }
-  | {
-      phase: 'loaded'
-      application: { jobId: string; status: string; requiredAnswers: Array<{ answer: string | null }> }
-      latestRun: { runNumber: number; status: string; blockReason: string | null; manualApplyUrl: string | null } | null
-    }
+  | { phase: 'loaded'; application: { jobId: string; status: string } }
   | { phase: 'error'; message: string }
 
 export function JobDetailPage() {
@@ -90,14 +86,30 @@ export function JobDetailPage() {
           return
         }
         const body = await res.json()
-        setAppState({ phase: 'loaded', application: body.application, latestRun: body.latestRun })
+        setAppState({ phase: 'loaded', application: body.application })
       })
       .catch(() => setAppState({ phase: 'error', message: 'Failed to load application status.' }))
   }
 
   function openDrawer() {
     setDrawerOpen(true)
-    refreshApplication()
+    if (!jobId) return
+    setAppState({ phase: 'loading' })
+    apiFetch(`/applications/${jobId}`)
+      .then(async (res) => {
+        if (res.status === 404) {
+          await startApplication()
+          return
+        }
+        if (!res.ok) {
+          setAppState({ phase: 'error', message: 'Failed to load application status.' })
+          return
+        }
+        const body = await res.json()
+        setAppState({ phase: 'loaded', application: body.application })
+        if (!materialsPreview) await generateMaterials()
+      })
+      .catch(() => setAppState({ phase: 'error', message: 'Failed to load application status.' }))
   }
 
   async function startApplication() {
@@ -115,6 +127,7 @@ export function JobDetailPage() {
         return
       }
       refreshApplication()
+      await generateMaterials()
     } finally {
       setActionBusy(false)
     }
@@ -142,57 +155,6 @@ export function JobDetailPage() {
     }
   }
 
-  async function runAutomation() {
-    if (!jobId) return
-    setActionBusy(true)
-    setActionError(null)
-    try {
-      const res = await apiFetch(`/automation/${jobId}/run`, { method: 'POST' })
-      if (!res.ok) {
-        const body = await res.json().catch(() => null)
-        setActionError(body?.error ?? 'Failed to run automation.')
-        return
-      }
-      refreshApplication()
-    } finally {
-      setActionBusy(false)
-    }
-  }
-
-  async function approveRun(runNumber: number) {
-    if (!jobId) return
-    setActionBusy(true)
-    setActionError(null)
-    try {
-      const res = await apiFetch(`/applications/${jobId}/runs/${runNumber}/approve`, { method: 'POST' })
-      const body = await res.json().catch(() => null)
-      if (!res.ok || !body?.approved) {
-        setActionError(body?.reason ?? body?.error ?? 'Approval failed.')
-        return
-      }
-      refreshApplication()
-    } finally {
-      setActionBusy(false)
-    }
-  }
-
-  async function submitRun(runNumber: number) {
-    if (!jobId) return
-    setActionBusy(true)
-    setActionError(null)
-    try {
-      const res = await apiFetch(`/automation/${jobId}/runs/${runNumber}/submit`, { method: 'POST' })
-      if (!res.ok) {
-        const body = await res.json().catch(() => null)
-        setActionError(body?.error ?? 'Submission failed.')
-        return
-      }
-      refreshApplication()
-    } finally {
-      setActionBusy(false)
-    }
-  }
-
   if (!job && !error) {
     return (
       <div>
@@ -215,10 +177,14 @@ export function JobDetailPage() {
     )
   }
 
+  const flatProfileSkills = new Set(
+    (profile?.resume?.skillGroups ?? []).flatMap((group) => group.skills.map((skill) => skill.toLowerCase())),
+  )
   const matchedSkills = new Set(
-    (job.extractedRequirements?.requiredSkills ?? []).filter((skill) =>
-      profile?.cvText ? profile.cvText.toLowerCase().includes(skill.toLowerCase()) : false
-    )
+    (job.extractedRequirements?.requiredSkills ?? []).filter((skill) => flatProfileSkills.has(skill.toLowerCase())),
+  )
+  const missingSkills = (job.extractedRequirements?.requiredSkills ?? []).filter(
+    (skill) => !flatProfileSkills.has(skill.toLowerCase()),
   )
 
   return (
