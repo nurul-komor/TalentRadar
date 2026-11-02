@@ -62,6 +62,7 @@ export function JobDetailPage() {
   const [activeTab, setActiveTab] = useState<'manual' | 'automated'>('manual')
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
   const [skillBusy, setSkillBusy] = useState<string | null>(null)
+  const [relatedJobs, setRelatedJobs] = useState<Job[]>([])
 
   useEffect(() => {
     apiFetch(`/jobs/${id}`).then(async (res) => {
@@ -85,6 +86,15 @@ export function JobDetailPage() {
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [drawerOpen])
+
+  useEffect(() => {
+    if (!job) return
+    const params = new URLSearchParams({ sourceId: job.sourceId, status: 'verified', limit: '4' })
+    apiFetch(`/jobs?${params.toString()}`)
+      .then((res) => (res.ok ? res.json() : { jobs: [] }))
+      .then((body: { jobs: Job[] }) => setRelatedJobs(body.jobs.filter((candidate) => candidate._id !== job._id).slice(0, 3)))
+      .catch(() => setRelatedJobs([]))
+  }, [job])
 
   const jobId = job ? `${job.sourceId}:${job.sourceJobId}` : null
 
@@ -431,6 +441,38 @@ export function JobDetailPage() {
           )}
 
           <div className="ev-card">
+            <div className="ev-kv">
+              <div>
+                <div className="t">Compensation</div>
+                <div className="v">{formatSalary(job)}</div>
+              </div>
+              {job.extractedRequirements && (
+                <div>
+                  <div className="t">Work authorization</div>
+                  <div className="v">
+                    {{
+                      any: 'Open to anyone',
+                      citizen_only: 'Citizens/residents only',
+                      visa_sponsorship_available: 'Visa sponsorship available',
+                      unknown: 'Not specified',
+                    }[job.extractedRequirements.workAuthRequirement]}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="ev-card">
+            <div className="src-link">
+              <span className="fav">{job.sourceId.slice(0, 2).toUpperCase()}</span>
+              <div>
+                <span>{job.company}</span>
+                <small>via {job.sourceId}</small>
+              </div>
+            </div>
+          </div>
+
+          <div className="ev-card">
             <div className="ev-actions">
               <button type="button" className="btn btn-indigo" onClick={openDrawer}>
                 Apply
@@ -439,6 +481,32 @@ export function JobDetailPage() {
           </div>
         </aside>
       </div>
+
+      {relatedJobs.length > 0 && (
+        <div className="wrap related">
+          <h2>Related roles</h2>
+          <div className="jobs-grid">
+            {relatedJobs.map((related) => (
+              <Link to={`/jobs/${related._id}`} key={related._id} className="jobcard">
+                <div className="top">
+                  <div>
+                    <div className="role">{related.title}</div>
+                    <div className="co">{related.company}</div>
+                  </div>
+                  <ScoreRing score={related.score ?? 0} size={40} />
+                </div>
+                <div className="tags">
+                  <Pill tone="verified">Verified</Pill>
+                </div>
+                <div className="foot">
+                  <span className="src">{related.sourceId}</span>
+                  <span className="apply">View role →</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className={`drawer${drawerOpen ? ' open' : ''}`} role="dialog" aria-hidden={!drawerOpen}>
         <div className="scrim" onClick={() => setDrawerOpen(false)} />
