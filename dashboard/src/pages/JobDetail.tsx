@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import DOMPurify from 'dompurify'
 import { Briefcase, Building2, Calendar, MapPin, Wallet } from 'lucide-react'
 import type { Job, Profile } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
+import { gsap } from '../lib/gsap'
 import { AppNav } from '../components/Nav'
 import { FormError } from '../components/FormError'
 import { ScoreRing } from '../components/ScoreRing'
@@ -63,6 +64,7 @@ export function JobDetailPage() {
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
   const [skillBusy, setSkillBusy] = useState<string | null>(null)
   const [relatedJobs, setRelatedJobs] = useState<Job[]>([])
+  const scoreCardRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     apiFetch(`/jobs/${id}`).then(async (res) => {
@@ -95,6 +97,33 @@ export function JobDetailPage() {
       .then((body: { jobs: Job[] }) => setRelatedJobs(body.jobs.filter((candidate) => candidate._id !== job._id).slice(0, 3)))
       .catch(() => setRelatedJobs([]))
   }, [job])
+
+  // Reuses the same GSAP ScrollTrigger mechanism as useScrollReveal (see
+  // dashboard/src/hooks/useScrollReveal.ts and Landing.tsx) rather than
+  // introducing a second scroll-reveal implementation. That hook hardcodes
+  // an opacity/translateY tween, which doesn't fit a width-growing bar, so
+  // this animates `.bar-fill` width 0 -> final% directly with the same
+  // library/trigger/reduced-motion conventions once the bars have rendered.
+  useEffect(() => {
+    const container = scoreCardRef.current
+    if (!container || !job?.scoreBreakdown) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+    const ctx = gsap.context(() => {
+      gsap.from('.bar-fill', {
+        width: '0%',
+        duration: 1.1,
+        stagger: 0.08,
+        ease: 'power2.out',
+        scrollTrigger: {
+          trigger: container,
+          start: 'top 80%',
+        },
+      })
+    }, container)
+
+    return () => ctx.revert()
+  }, [job?.scoreBreakdown])
 
   const jobId = job ? `${job.sourceId}:${job.sourceJobId}` : null
 
@@ -412,7 +441,7 @@ export function JobDetailPage() {
 
         <aside className="evidence">
           {job.score !== null && job.scoreBreakdown && (
-            <div className="ev-card">
+            <div className="ev-card" ref={scoreCardRef}>
               <div className="head">
                 <div>
                   <div className="t">Match score</div>
