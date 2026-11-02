@@ -625,7 +625,12 @@ footer{padding-block:56px 64px;}
 .foot-col h4{font-family:var(--font-mono);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:0 0 14px;}
 .foot-col a{display:block;font-size:14px;color:var(--fg-2);margin-bottom:10px;}
 .foot-col a:hover{color:var(--fg);}
-.foot-bottom{margin-top:40px;font-family:var(--font-mono);font-size:12px;color:var(--faint);}
+.foot-bottom{
+  margin-top:40px;font-family:var(--font-mono);font-size:12px;color:var(--faint);
+  display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+}
+.foot-bottom a{color:var(--faint);}
+.foot-bottom a:hover{color:var(--fg-2);}
 
 /* =========================================================
    App pages (shared)
@@ -898,9 +903,10 @@ footer{padding-block:56px 64px;}
 /* ---------- dashboard sidebar shell ---------- */
 .app-shell{display:flex;min-height:100vh;}
 .app-sidebar{
-  position:fixed;top:0;left:0;bottom:0;width:256px;z-index:40;
+  position:fixed;top:16px;left:16px;bottom:16px;width:256px;z-index:40;
   display:flex;flex-direction:column;gap:4px;padding:24px 16px calc(20px + env(safe-area-inset-bottom,0px));
-  background:var(--surface);border-right:1px solid var(--line);
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--card-radius-lg);
+  box-shadow:var(--shadow-card);
 }
 .app-sidebar-brand{padding:0 10px;margin-bottom:20px;}
 .app-sidebar-nav{display:flex;flex-direction:column;gap:2px;flex:1;}
@@ -915,7 +921,7 @@ footer{padding-block:56px 64px;}
   display:flex;align-items:center;justify-content:space-between;gap:8px;
   margin-top:auto;padding-top:16px;border-top:1px solid var(--line);
 }
-.app-main{flex:1;min-width:0;margin-left:256px;padding:0 max(20px, env(safe-area-inset-right,0px)) 48px;}
+.app-main{flex:1;min-width:0;margin-left:288px;padding:0 max(20px, env(safe-area-inset-right,0px)) 48px;}
 .app-sidebar-topbar{display:none;}
 @media (max-width:900px){
   .app-sidebar{display:none;}

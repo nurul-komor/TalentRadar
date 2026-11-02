@@ -1,4 +1,11 @@
-import { useEffect, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from 'react'
+import {
+  useEffect,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { Link } from 'react-router-dom'
 import { CheckCircle2, Circle, FileText, Plus, X } from 'lucide-react'
 import { emptyResume } from '@job-hunter/shared'
@@ -12,7 +19,6 @@ import type {
   ResumeSkillGroup,
 } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
-import { AppNav } from '../components/Nav'
 import { Button } from '../components/Button'
 import { FormError } from '../components/FormError'
 import { ScoreRing } from '../components/ScoreRing'
@@ -158,7 +164,7 @@ function sanitizeResumeForSave(resume: Resume): Resume {
 interface EntryCardProps {
   label: string
   onRemove: () => void
-  children: React.ReactNode
+  children: ReactNode
 }
 
 function EntryCard({ label, onRemove, children }: EntryCardProps) {
@@ -521,8 +527,7 @@ export function ProfilePage() {
   )
 
   return (
-    <div>
-      <AppNav />
+    <>
       <header className="page-head">
         <div className="wrap">
           <div className="kicker">Account</div>
@@ -690,6 +695,6 @@ export function ProfilePage() {
           </form>
         )}
       </div>
-    </div>
+    </>
   )
 }

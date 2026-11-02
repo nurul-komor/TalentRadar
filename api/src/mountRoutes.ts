@@ -19,6 +19,7 @@ import { teletalkGovtSource } from './discovery/sources/teletalkGovt.js'
 import { pageEvidenceVerifier } from './verification/pageEvidenceVerifier.js'
 import { createClaudeRequirementsExtractor } from './scoring/requirementsExtractor.js'
 import { createClaudeMaterialsGenerator } from './materials/materialsGenerator.js'
+import { createClaudeResumeExtractor } from './profile/resumeExtractor.js'
 
 export function mountRoutes(
   app: Hono,
@@ -28,9 +29,10 @@ export function mountRoutes(
   anthropicApiKey: string | undefined
 ) {
   const sources = [remoteOkSource, weWorkRemotelySource, himalayasSource, teletalkGovtSource]
+  const resumeExtractor = anthropicApiKey ? createClaudeResumeExtractor(anthropicApiKey) : null
 
   app.route('/auth', createAuthRoutes(db, jwtSecret))
-  app.route('/profile', createProfileRoutes(db, jwtSecret))
+  app.route('/profile', createProfileRoutes(db, jwtSecret, undefined, resumeExtractor))
   app.route('/discovery', createDiscoveryRoutes(db, jwtSecret, sources))
   app.route('/verification', createVerificationRoutes(db, jwtSecret, pageEvidenceVerifier))
   app.route('/jobs', createJobsRoutes(db))

@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { Briefcase, ClipboardList, FileText, LayoutDashboard, User } from 'lucide-react'
+import { ClipboardList, FileText, LayoutDashboard, User } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
 import { ThemeToggle } from './ThemeToggle'
 
@@ -19,7 +19,6 @@ function sidebarLinkClass({ isActive }: { isActive: boolean }): string {
 
 const SIDEBAR_LINKS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/jobs', label: 'Jobs', icon: Briefcase },
   { to: '/applications', label: 'Applications', icon: ClipboardList },
   { to: '/profile', label: 'Profile', icon: User },
   { to: '/cv', label: 'CV', icon: FileText },

@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { Building2 } from 'lucide-react'
 import type { Application, ApplicationStatus, Job, Profile } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
-import { DashboardSidebar, DashboardSidebarTopBar } from '../components/DashboardSidebar'
 import { ScoreRing } from '../components/ScoreRing'
 import { Pill } from '../components/Pill'
 import { FormError } from '../components/FormError'
@@ -163,11 +162,7 @@ export function DashboardPage() {
   )
 
   return (
-    <div className="app-shell">
-      <DashboardSidebar />
-      <DashboardSidebarTopBar />
-
-      <main className="app-main">
+    <>
         <header className="page-head">
           <div className="wrap welcome">
             <div className="big-ring">
@@ -332,7 +327,6 @@ export function DashboardPage() {
             </div>
           </div>
         </section>
-      </main>
-    </div>
+    </>
   )
 }

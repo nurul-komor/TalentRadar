@@ -6,6 +6,7 @@ import {
   ProfileUpdateSchema,
   ResumeSchema,
   emptyResume,
+  isResumeEmpty,
 } from '../src/index'
 
 describe('auth schemas', () => {
@@ -122,5 +123,24 @@ describe('resume schema', () => {
       experience: [{ company: 'wOow Global', startDate: '03/2024', endDate: null, bullets: [] }],
     })
     expect(result.success).toBe(false)
+  })
+})
+
+describe('isResumeEmpty', () => {
+  it('returns true for a freshly created empty resume', () => {
+    expect(isResumeEmpty(emptyResume())).toBe(true)
+  })
+
+  it('returns false once a scalar field is filled in', () => {
+    expect(isResumeEmpty({ ...emptyResume(), fullName: 'Nurul Komor' })).toBe(false)
+  })
+
+  it('returns false once a list field has an entry', () => {
+    expect(
+      isResumeEmpty({
+        ...emptyResume(),
+        skillGroups: [{ category: 'Languages', skills: ['TypeScript'] }],
+      })
+    ).toBe(false)
   })
 })

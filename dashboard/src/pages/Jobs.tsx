@@ -3,7 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { Building2, CircleCheck, MapPin, Search, SlidersHorizontal, Wallet, X } from 'lucide-react'
 import type { Job, JobSourceId, JobStatus } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
-import { AppNav } from '../components/Nav'
+import { PublicNav } from '../components/Nav'
+import { Footer } from '../components/Footer'
 import { Button } from '../components/Button'
 import { FormError } from '../components/FormError'
 import { ScoreRing } from '../components/ScoreRing'
@@ -414,7 +415,7 @@ export function JobsPage() {
 
   return (
     <div>
-      <AppNav />
+      <PublicNav />
       <header className="page-head">
         <div className="wrap">
           <div className="kicker">Job feed</div>
@@ -604,6 +605,7 @@ export function JobsPage() {
           </div>
         </div>
       </section>
+      <Footer />
     </div>
   )
 }

@@ -30,7 +30,12 @@ export function Footer() {
             </div>
           </div>
         </div>
-        <div className="foot-bottom">© 2026 Hunter</div>
+        <div className="foot-bottom">
+          <span>© 2026 Hunter</span>
+          <a href="https://www.linkedin.com/in/nurul-komor/" target="_blank" rel="noreferrer">
+            Developed by: Nurul Komor
+          </a>
+        </div>
       </div>
     </footer>
   )

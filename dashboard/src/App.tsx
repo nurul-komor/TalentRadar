@@ -3,6 +3,7 @@ import { ThemeProvider } from './theme/ThemeContext'
 import { AuthProvider } from './auth/AuthContext'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AdminRoute } from './auth/AdminRoute'
+import { DashboardLayout } from './components/DashboardLayout'
 import { LandingPage } from './pages/Landing'
 import { LoginPage } from './pages/Login'
 import { RegisterPage } from './pages/Register'
@@ -32,10 +33,12 @@ export default function App() {
             <Route path="/jobs" element={<JobsPage />} />
             <Route path="/jobs/:id" element={<JobDetailPage />} />
             <Route element={<ProtectedRoute />}>
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/applications" element={<ApplicationsPage />} />
-              <Route path="/profile" element={<ProfilePage />} />
-              <Route path="/cv" element={<CvPage />} />
+              <Route element={<DashboardLayout />}>
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/applications" element={<ApplicationsPage />} />
+                <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/cv" element={<CvPage />} />
+              </Route>
               <Route element={<AdminRoute />}>
                 <Route path="/admin" element={<AdminPage />} />
               </Route>

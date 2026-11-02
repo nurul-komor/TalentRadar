@@ -1,14 +1,21 @@
 import { Hono } from 'hono'
 import { ObjectId, type Db } from 'mongodb'
-import type { Profile } from '@job-hunter/shared'
-import { ProfileUpdateSchema, emptyResume } from '@job-hunter/shared'
+import type { Profile, Resume } from '@job-hunter/shared'
+import { ProfileUpdateSchema, emptyResume, isResumeEmpty } from '@job-hunter/shared'
 import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
 import { parseCvFile, DOCX_MIME_TYPE, type CvParser } from '../profile/cvParser.js'
 import { renderResumePdf } from '../profile/cvExporter.js'
+import type { ResumeExtractor } from '../profile/types.js'
+import { isWithinBudget, recordUsage } from '../scoring/aiUsageService.js'
 
 const MAX_CV_FILE_BYTES = 10 * 1024 * 1024
 
-export function createProfileRoutes(db: Db, jwtSecret: string, cvParser: CvParser = parseCvFile) {
+export function createProfileRoutes(
+  db: Db,
+  jwtSecret: string,
+  cvParser: CvParser = parseCvFile,
+  resumeExtractor: ResumeExtractor | null = null
+) {
   const profileRoutes = new Hono<{ Variables: AuthVariables }>()
   profileRoutes.use('*', createRequireAuth(jwtSecret))
 
@@ -84,16 +91,46 @@ export function createProfileRoutes(db: Db, jwtSecret: string, cvParser: CvParse
       return c.json({ error: 'failed to parse file' }, 400)
     }
 
+    const profileId = new ObjectId(c.get('profileId'))
     const profiles = db.collection('profiles')
+
+    // Try to auto-fill the structured resume from the uploaded CV. This never blocks or fails
+    // the upload itself — extraction is best-effort: skipped if no extractor is configured, the
+    // AI budget is exceeded, or Claude errors, in which case the upload just stores cvText as before.
+    let resumeUpdate: Resume | undefined
+    let suggestedResume: Resume | null = null
+    console.error('DEBUG typeof env', typeof process.env.ANTHROPIC_DAILY_BUDGET_USD, JSON.stringify(process.env.ANTHROPIC_DAILY_BUDGET_USD), 'parsed', Number.parseFloat(process.env.ANTHROPIC_DAILY_BUDGET_USD ?? '1'))
+    if (resumeExtractor && (await isWithinBudget(db))) {
+      try {
+        const existing = (await profiles.findOne({ _id: profileId })) as Profile | null
+        const extraction = await resumeExtractor(cvText)
+        await recordUsage(db, extraction.usage, 'haiku')
+        console.error('DEBUG existing.resume', JSON.stringify(existing?.resume))
+        console.error('DEBUG isResumeEmpty', isResumeEmpty(existing?.resume ?? emptyResume()))
+        if (isResumeEmpty(existing?.resume ?? emptyResume())) {
+          resumeUpdate = extraction.resume
+        } else {
+          suggestedResume = extraction.resume
+        }
+      } catch (reason) {
+        console.error('failed to extract structured resume from CV', reason)
+      }
+    } else {
+      console.error('DEBUG skipped extraction, resumeExtractor=', Boolean(resumeExtractor))
+    }
+
+    const update: Record<string, unknown> = { cvText, updatedAt: new Date().toISOString() }
+    if (resumeUpdate) update.resume = resumeUpdate
+
     const result = await profiles.findOneAndUpdate(
-      { _id: new ObjectId(c.get('profileId')) },
-      { $set: { cvText, updatedAt: new Date().toISOString() } },
+      { _id: profileId },
+      { $set: update },
       { returnDocument: 'after', projection: { passwordHash: 0 } }
     )
     if (!result) {
       return c.json({ error: 'profile not found' }, 404)
     }
-    return c.json(result)
+    return c.json({ ...result, suggestedResume })
   })
 
   return profileRoutes

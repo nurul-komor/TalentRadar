@@ -2,13 +2,26 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { Hono } from 'hono'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import type { Db, MongoClient } from 'mongodb'
+import { emptyResume, type Resume } from '@job-hunter/shared'
 import { connectMongo } from '../src/db'
 import { createAuthRoutes } from '../src/routes/auth'
 import { createProfileRoutes } from '../src/routes/profile'
 import type { CvParser } from '../src/profile/cvParser'
+import type { ResumeExtractor } from '../src/profile/types'
 
 const JWT_SECRET = 'test-secret'
 const fakeCvParser: CvParser = async () => 'Parsed CV text from the fake extractor.'
+
+const extractedResume: Resume = {
+  ...emptyResume(),
+  fullName: 'Nurul Komor',
+  headline: 'Full-Stack Developer',
+}
+
+const fakeResumeExtractor: ResumeExtractor = async () => ({
+  resume: extractedResume,
+  usage: { inputTokens: 10, outputTokens: 5 },
+})
 
 interface AuthResponseBody {
   token: string
@@ -173,5 +186,85 @@ describe('profile routes', () => {
     expect(res.headers.get('Content-Type')).toBe('application/pdf')
     const buffer = Buffer.from(await res.arrayBuffer())
     expect(buffer.subarray(0, 4).toString()).toBe('%PDF')
+  })
+})
+
+describe('profile routes with resume extraction', () => {
+  let mongod: MongoMemoryServer
+  let client: MongoClient
+  let db: Db
+  let app: Hono
+  let originalDailyBudget: string | undefined
+
+  beforeAll(async () => {
+    mongod = await MongoMemoryServer.create()
+  })
+
+  afterAll(async () => {
+    await mongod.stop()
+  })
+
+  beforeEach(async () => {
+    const conn = await connectMongo(mongod.getUri(), uniqueDbName())
+    client = conn.client
+    db = conn.db
+    app = new Hono()
+    app.route('/auth', createAuthRoutes(db, JWT_SECRET))
+    app.route('/profile', createProfileRoutes(db, JWT_SECRET, fakeCvParser, fakeResumeExtractor))
+    originalDailyBudget = process.env.ANTHROPIC_DAILY_BUDGET_USD
+  })
+
+  afterEach(async () => {
+    await client.close()
+    process.env.ANTHROPIC_DAILY_BUDGET_USD = originalDailyBudget
+  })
+
+  async function uploadCv(token: string) {
+    const file = new File([Buffer.from('fake pdf bytes')], 'resume.pdf', { type: 'application/pdf' })
+    const formData = new FormData()
+    formData.append('file', file)
+    return app.request('/profile/cv', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    })
+  }
+
+  it('auto-fills an empty structured resume from the extracted CV', async () => {
+    const token = await registerAndGetToken(app)
+    const res = await uploadCv(token)
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { resume: Resume; suggestedResume: Resume | null }
+    expect(body.resume.fullName).toBe('Nurul Komor')
+    expect(body.suggestedResume).toBeNull()
+  })
+
+  it('suggests the extracted resume instead of overwriting an existing one', async () => {
+    const token = await registerAndGetToken(app)
+    await app.request('/profile', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resume: { ...emptyResume(), fullName: 'Existing Name' } }),
+    })
+
+    const res = await uploadCv(token)
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { resume: Resume; suggestedResume: Resume | null }
+    expect(body.resume.fullName).toBe('Existing Name')
+    expect(body.suggestedResume?.fullName).toBe('Nurul Komor')
+  })
+
+  it('skips extraction silently when the AI budget is exceeded', async () => {
+    process.env.ANTHROPIC_DAILY_BUDGET_USD = '0'
+    const token = await registerAndGetToken(app)
+    const res = await uploadCv(token)
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { cvText: string; resume: Resume; suggestedResume: Resume | null }
+    expect(body.cvText).toBe('Parsed CV text from the fake extractor.')
+    expect(body.resume).toEqual(emptyResume())
+    expect(body.suggestedResume).toBeNull()
   })
 })

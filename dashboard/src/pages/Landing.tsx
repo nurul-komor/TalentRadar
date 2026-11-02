@@ -9,7 +9,6 @@ import { useScrollReveal } from '../hooks/useScrollReveal'
 import { gsap } from '../lib/gsap'
 import { PublicNav } from '../components/Nav'
 import { Footer } from '../components/Footer'
-import { LogoChip } from '../components/LogoChip'
 import { ScoreRing } from '../components/ScoreRing'
 import { Pill } from '../components/Pill'
 
@@ -19,6 +18,14 @@ const SOURCE_LABELS: Record<JobSourceId, string> = {
   himalayas: 'Himalayas',
   'teletalk-govt': 'alljobs.teletalk.com.bd',
 }
+
+// Static illustrative cards for the hero's floating stack — not live data
+// (the public landing page is logged-out, so there's no profile to score against).
+const HERO_NOTICE_CARDS = [
+  { seal: 'LX', sealColor: '#4453FF', role: 'Senior Backend Engineer', company: 'Lightbox Labs', score: 88, sourceLabel: 'Remote OK' },
+  { seal: 'PV', sealColor: '#1FC9B7', role: 'Product Designer', company: 'Pavement', score: 74, sourceLabel: 'Himalayas' },
+  { seal: 'NR', sealColor: '#6B78FF', role: 'DevRel Lead', company: 'Norther', score: 62, sourceLabel: 'WeWorkRemotely' },
+] as const
 
 function relativeTimeFromNow(dateString: string): string {
   const diffDays = Math.round((Date.now() - new Date(dateString).getTime()) / (24 * 60 * 60 * 1000))
@@ -92,11 +99,14 @@ export function LandingPage() {
             </span>
 
             <h1 className="hero-reveal">
-              Remote jobs that are actually <em>open</em>, and actually <em>yours</em>.
+              Job boards lie. We don't.
+              <br />
+              <em>Verified</em> remote roles &amp; government circulars.
             </h1>
             <p className="hero-reveal lead">
-              We discover postings across the web, re-check each one against its live source, then
-              score the match against your profile. You only spend time on roles worth applying to.
+              We discover remote roles and Bangladesh government circulars, re-check each one against
+              its live source, then score the match against your profile. You only spend time on roles
+              worth applying to.
             </p>
 
             <form
@@ -151,20 +161,26 @@ export function LandingPage() {
           </div>
 
           <div className="hero-reveal stack" aria-hidden="true">
-            {(summary?.featuredJobs ?? []).slice(0, 3).map((job, index) => (
-              <div className={`fcard c${index + 1}`} key={job._id}>
+            {HERO_NOTICE_CARDS.map((card, index) => (
+              <div className={`fcard c${index + 1}`} key={card.company}>
                 <div className="fcard-top">
                   <div className="fcard-co">
-                    <LogoChip name={job.company} />
+                    <span
+                      className="logo-chip"
+                      style={{ width: 36, height: 36, fontSize: 13, background: card.sealColor }}
+                    >
+                      {card.seal}
+                    </span>
                     <div>
-                      <div className="fcard-role">{job.title}</div>
-                      <div className="fcard-co-name">{job.company}</div>
+                      <div className="fcard-role">{card.role}</div>
+                      <div className="fcard-co-name">{card.company}</div>
                     </div>
                   </div>
+                  <ScoreRing score={card.score} size={40} strokeWidth={4} />
                 </div>
                 <div className="fcard-meta">
                   <Pill tone="verified">Verified open</Pill>
-                  <Pill tone="mono">{SOURCE_LABELS[job.sourceId]}</Pill>
+                  <Pill tone="mono">{card.sourceLabel}</Pill>
                 </div>
               </div>
             ))}

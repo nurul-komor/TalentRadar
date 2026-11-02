@@ -64,6 +64,20 @@ export function emptyResume(): Resume {
   }
 }
 
+export function isResumeEmpty(resume: Resume): boolean {
+  return (
+    resume.fullName === null &&
+    resume.headline === null &&
+    resume.phone === null &&
+    resume.links.length === 0 &&
+    resume.summary === null &&
+    resume.experience.length === 0 &&
+    resume.projects.length === 0 &&
+    resume.skillGroups.length === 0 &&
+    resume.education.length === 0
+  )
+}
+
 export const ProfileSchema = z.object({
   _id: z.string().optional(),
   email: z.string().email(),
