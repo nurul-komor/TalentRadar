@@ -203,12 +203,12 @@ export function LandingPage() {
             </div>
             <div className="stat reveal-stat">
               <div className="k">Verification</div>
-              <div className="n mono">—</div>
+              <div className="n mono">0</div>
               <div className="l">Verified open rate</div>
             </div>
             <div className="stat reveal-stat">
               <div className="k">Matching</div>
-              <div className="n mono">—</div>
+              <div className="n mono">0</div>
               <div className="l">Avg. match score of applied jobs</div>
             </div>
           </div>
