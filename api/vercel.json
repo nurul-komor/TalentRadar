@@ -4,5 +4,5 @@
   "buildCommand": "cd .. && npm run build --workspace=shared",
   "outputDirectory": "public",
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
-  "crons": [{ "path": "/cron/discovery", "schedule": "*/30 * * * *" }]
+  "crons": [{ "path": "/cron/discovery", "schedule": "0 0 * * *" }]
 }
