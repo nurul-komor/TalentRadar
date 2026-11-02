@@ -1133,6 +1133,14 @@ footer{padding-block:56px 64px;}
 .tilex .kicker{margin-bottom:10px;} .tilex.b .kicker{color:var(--cyan-text);}
 .tilex .pill.mono{align-self:flex-start;background:var(--surface);}
 
+.showcase{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center;}
+@media (max-width:900px){.showcase{grid-template-columns:1fr;}}
+.cvdemo{display:grid;grid-template-columns:150px 1fr;gap:18px;background:var(--surface);border:1px solid var(--line);border-radius:var(--card-radius-lg);padding:22px;box-shadow:var(--shadow-card);}
+.cvdemo .thumb{height:196px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line);position:relative;overflow:hidden;display:flex;flex-direction:column;gap:7px;padding:16px 14px;}
+.cvdemo .thumb i{display:block;height:5px;border-radius:3px;background:var(--line-strong);opacity:.7;}
+.cvdemo .thumb i:first-child{height:9px;width:62%;}
+.cvdemo .kv > div{grid-template-columns:90px 1fr;}
+
 .badge-note{
   position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));right:calc(16px + env(safe-area-inset-right,0px));background:var(--ink-btn);color:var(--ink-btn-fg);font-family:var(--font-mono);font-size:11px;
   padding:8px 12px;border-radius:999px;opacity:.9;z-index:50;font-weight:600;letter-spacing:.02em;

@@ -328,6 +328,135 @@ export function LandingPage() {
         </div>
       </section>
 
+      <section className="band">
+        <div className="wrap">
+          <div className="section-head center">
+            <div className="kicker">Verification</div>
+            <h2>Every listing is re-checked before it reaches you.</h2>
+            <p>We re-fetch the source page and confirm the application form is still live before a job counts as verified.</p>
+          </div>
+          <div className="recheck-card">
+            <div className="rc">
+              <div className="t">Source page</div>
+              <div className="line">GET remoteok.com/l/...<br />200 OK · 1.2s</div>
+            </div>
+            <svg className="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M5 12h14M13 5l7 7-7 7" />
+            </svg>
+            <div className="rc">
+              <div className="t">Form check</div>
+              <div className="line">
+                <span className="ok">Apply form present</span>
+                <br />
+                <span className="ok">No "position filled" text</span>
+              </div>
+            </div>
+            <svg className="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M5 12h14M13 5l7 7-7 7" />
+            </svg>
+            <div className="rc verdict">
+              <div className="t">Verdict</div>
+              <div className="big">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+                Verified open
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="band band-alt">
+        <div className="wrap">
+          <div className="section-head center">
+            <div className="kicker">Tracking</div>
+            <h2>See exactly where every application stands.</h2>
+            <p>From drafted materials to a submitted application, nothing moves without your confirmation.</p>
+          </div>
+          <div className="track-strip">
+            <div className="tnode done">
+              <div className="dot">1</div>
+              <b>Draft</b>
+              <span>Application created</span>
+            </div>
+            <div className="tnode done">
+              <div className="dot">2</div>
+              <b>Materials ready</b>
+              <span>Cover letter drafted</span>
+            </div>
+            <div className="tnode you">
+              <div className="dot">3</div>
+              <b>Your review</b>
+              <span>Nothing sends without you</span>
+            </div>
+            <div className="tnode">
+              <div className="dot">4</div>
+              <b>Submitted</b>
+              <span>Tracked to the source</span>
+            </div>
+            <div className="tnode">
+              <div className="dot">5</div>
+              <b>Outcome</b>
+              <span>Logged for your records</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="band">
+        <div className="wrap">
+          <div className="showcase">
+            <div>
+              <div className="kicker">CV intelligence</div>
+              <h2>Upload once. We extract the rest.</h2>
+              <p className="lead">
+                Drop in a PDF or DOCX and your skills, experience, and education are parsed automatically — ready to
+                match against every job in your feed.
+              </p>
+            </div>
+            <div className="cvdemo">
+              <div className="thumb">
+                <i />
+                <i />
+                <i />
+              </div>
+              <div className="kv">
+                <div>
+                  <span className="t">Skills found</span>
+                  <span className="v">12</span>
+                </div>
+                <div>
+                  <span className="t">Experience</span>
+                  <span className="v">3 roles</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="band band-alt">
+        <div className="wrap">
+          <div className="duo">
+            <div className="tilex a">
+              <div>
+                <div className="kicker">Remote, global</div>
+                <h3>Built for remote-first roles.</h3>
+                <p>Remote OK, We Work Remotely, and Himalayas feed in continuously.</p>
+              </div>
+            </div>
+            <div className="tilex b">
+              <div>
+                <div className="kicker">Bangladesh</div>
+                <h3>Government jobs, included.</h3>
+                <p>Verified listings from alljobs.teletalk.com.bd, tagged so you can filter them separately.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <Footer />
     </div>
   )
