@@ -99,14 +99,11 @@ export function createProfileRoutes(
     // AI budget is exceeded, or Claude errors, in which case the upload just stores cvText as before.
     let resumeUpdate: Resume | undefined
     let suggestedResume: Resume | null = null
-    console.error('DEBUG typeof env', typeof process.env.ANTHROPIC_DAILY_BUDGET_USD, JSON.stringify(process.env.ANTHROPIC_DAILY_BUDGET_USD), 'parsed', Number.parseFloat(process.env.ANTHROPIC_DAILY_BUDGET_USD ?? '1'))
     if (resumeExtractor && (await isWithinBudget(db))) {
       try {
         const existing = (await profiles.findOne({ _id: profileId })) as Profile | null
         const extraction = await resumeExtractor(cvText)
         await recordUsage(db, extraction.usage, 'haiku')
-        console.error('DEBUG existing.resume', JSON.stringify(existing?.resume))
-        console.error('DEBUG isResumeEmpty', isResumeEmpty(existing?.resume ?? emptyResume()))
         if (isResumeEmpty(existing?.resume ?? emptyResume())) {
           resumeUpdate = extraction.resume
         } else {
@@ -115,8 +112,6 @@ export function createProfileRoutes(
       } catch (reason) {
         console.error('failed to extract structured resume from CV', reason)
       }
-    } else {
-      console.error('DEBUG skipped extraction, resumeExtractor=', Boolean(resumeExtractor))
     }
 
     const update: Record<string, unknown> = { cvText, updatedAt: new Date().toISOString() }

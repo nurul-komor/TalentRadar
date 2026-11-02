@@ -283,7 +283,7 @@ export function JobsPage() {
   const rangeEnd = Math.min(offset + PAGE_SIZE, total)
 
   const filterControls = (
-    <>
+    <div className="filter-rail">
       <div className="relative mt-4">
         <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -295,13 +295,13 @@ export function JobsPage() {
         />
       </div>
 
-      <Accordion defaultValue={['date', 'status', 'source']} className="mt-4 divide-y divide-border border-t border-b border-border">
+      <Accordion defaultValue={['date', 'status', 'source']}>
             <AccordionItem value="date">
-              <AccordionTrigger className="text-sm font-medium text-foreground">Date posted</AccordionTrigger>
+              <AccordionTrigger>Date posted</AccordionTrigger>
               <AccordionContent>
                 <div className="flex flex-col gap-2">
                   {DATE_FILTER_OPTIONS.map((option) => (
-                    <label key={option.value} className="flex items-center gap-2 text-sm text-foreground">
+                    <label key={option.value} className="check">
                       <Checkbox
                         checked={datePosted === option.value}
                         onCheckedChange={(checked) =>
@@ -316,11 +316,11 @@ export function JobsPage() {
             </AccordionItem>
 
             <AccordionItem value="status">
-              <AccordionTrigger className="text-sm font-medium text-foreground">Status</AccordionTrigger>
+              <AccordionTrigger>Status</AccordionTrigger>
               <AccordionContent>
                 <div className="flex flex-col gap-2">
                   {STATUS_OPTIONS.map((option) => (
-                    <label key={option.value} className="flex items-center gap-2 text-sm text-foreground">
+                    <label key={option.value} className="check">
                       <Checkbox
                         checked={status === option.value}
                         onCheckedChange={(checked) => updateFilters({ status: checked ? option.value : null })}
@@ -333,12 +333,12 @@ export function JobsPage() {
             </AccordionItem>
 
             <AccordionItem value="source">
-              <AccordionTrigger className="text-sm font-medium text-foreground">Source</AccordionTrigger>
+              <AccordionTrigger>Source</AccordionTrigger>
               <AccordionContent>
                 <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto">
                   {SOURCE_OPTIONS.map((option) => (
                     <li key={option.value}>
-                      <label className="flex items-center gap-2 text-sm text-foreground">
+                      <label className="check">
                         <Checkbox
                           checked={sourceSelection.kind === 'source' && sourceSelection.id === option.value}
                           onCheckedChange={(checked) =>
@@ -351,7 +351,7 @@ export function JobsPage() {
                   ))}
                   {trackedCompanies.map((trackedCompany) => (
                     <li key={trackedCompany.name} className="flex items-center justify-between gap-2">
-                      <label className="flex items-center gap-2 text-sm text-foreground">
+                      <label className="check">
                         <Checkbox
                           checked={sourceSelection.kind === 'company' && sourceSelection.name === trackedCompany.name}
                           onCheckedChange={(checked) =>
@@ -370,7 +370,7 @@ export function JobsPage() {
             </AccordionItem>
 
             <AccordionItem value="location">
-              <AccordionTrigger className="text-sm font-medium text-foreground">Location</AccordionTrigger>
+              <AccordionTrigger>Location</AccordionTrigger>
               <AccordionContent>
                 <input
                   type="text"
@@ -383,7 +383,7 @@ export function JobsPage() {
             </AccordionItem>
 
             <AccordionItem value="salary">
-              <AccordionTrigger className="text-sm font-medium text-foreground">Salary</AccordionTrigger>
+              <AccordionTrigger>Salary</AccordionTrigger>
               <AccordionContent>
                 <div className="flex items-center gap-2">
                   <input
@@ -407,11 +407,20 @@ export function JobsPage() {
               </AccordionContent>
             </AccordionItem>
           </Accordion>
-    </>
+    </div>
   )
 
   const jobsCountLabel = loading ? 'Searching…' : `${total.toLocaleString()} jobs found`
   const { isSaved, toggleSaved } = useSavedJobs()
+
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  function handleToggleSaved(jobId: string) {
+    const willBeSaved = !isSaved(jobId)
+    toggleSaved(jobId)
+    setToastMessage(willBeSaved ? 'Saved' : 'Removed')
+    setTimeout(() => setToastMessage(null), 1800)
+  }
 
   return (
     <div>
@@ -571,7 +580,7 @@ export function JobsPage() {
                         className={`save-btn${isSaved(job._id) ? ' saved' : ''}`}
                         aria-pressed={isSaved(job._id)}
                         aria-label={isSaved(job._id) ? 'Remove from saved' : 'Save job'}
-                        onClick={() => toggleSaved(job._id)}
+                        onClick={() => handleToggleSaved(job._id)}
                       >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
                           <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
@@ -606,6 +615,7 @@ export function JobsPage() {
         </div>
       </section>
       <Footer />
+      <div className={`toast${toastMessage ? ' show' : ''}`}>{toastMessage}</div>
     </div>
   )
 }

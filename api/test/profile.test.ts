@@ -216,7 +216,14 @@ describe('profile routes with resume extraction', () => {
 
   afterEach(async () => {
     await client.close()
-    process.env.ANTHROPIC_DAILY_BUDGET_USD = originalDailyBudget
+    // Assigning `undefined` to process.env.X stringifies it to "undefined" rather than
+    // unsetting it — delete when there was no original value, or the next test reads
+    // Number.parseFloat("undefined") === NaN and every budget check wrongly fails.
+    if (originalDailyBudget === undefined) {
+      delete process.env.ANTHROPIC_DAILY_BUDGET_USD
+    } else {
+      process.env.ANTHROPIC_DAILY_BUDGET_USD = originalDailyBudget
+    }
   })
 
   async function uploadCv(token: string) {

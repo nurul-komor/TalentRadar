@@ -2,7 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the concrete gap list between the dashboard app and the `hunter-design-preview` mockup — a richer shared sidebar, a rebuilt self-serve apply drawer, four missing landing sections, job-detail polish, a visual filter-rail restyle, and small save/close/animate polish — without touching backend contracts or the Applications page's own automation UI.
+**Goal:** Close the concrete gap list between the dashboard app and the `hunter-design-preview` mockup — a richer shared sidebar, a rebuilt apply drawer offering both the existing automated apply pipeline and a new self-serve manual flow (switchable via tabs), four missing landing sections, job-detail polish, a visual filter-rail restyle, and small save/close/animate polish — without touching backend contracts or the Applications page's own automation UI.
+
+> **Amendment (mid-execution, after Task 4 landed):** the original plan replaced the automation-run/approve/submit UI in the job-detail drawer entirely with the manual flow. The user redirected: both flows should be available, switchable via tabs. Task 4 (which deleted the automation state/functions) was already implemented and reviewed clean against its own original brief — not reverted. Task 5 below is rewritten to reinstate the deleted automation pieces alongside the new manual flow. See the ledger's `Ruling:` entry for the full record.
+
+> **Amendment 2 (after all 11 original tasks landed):** the controller's end-of-plan manual browser verification pass found a real, reproducible pre-existing bug — `/:jobId`-shaped routes 404 whenever a job's `sourceJobId` is itself a full URL (e.g. Himalayas-sourced jobs), because the raw, unencoded jobId breaks path-segment matching, and three backend handlers additionally mis-parse `sourceJobId` values that contain colons. The user asked to fix this now rather than deferring it. Task 12 below adds this fix — the one exception to the "no backend changes" constraint.
 
 **Architecture:** This is almost entirely a frontend-only change inside `dashboard/src/`. Every CSS class the mockup needs either already exists verbatim in `dashboard/src/index.css`, or is added following that file's existing naming convention (explicit classes like `.app-sidebar-*`, not mockup's descendant-selector convention like `.app .sidebar .sb-nav`). No new backend endpoints — the one functional change (the apply-drawer rebuild) reuses `PUT /profile` and `GET /profile/cv/export`, both already implemented.
 
@@ -14,7 +18,7 @@
 
 - The `dashboard` package has **no test runner configured** (no vitest/jest, `package.json` scripts are only `dev`/`build`/`typecheck`). Every task's verification step is therefore `npm run typecheck` (from `dashboard/`) plus a manual browser check via `npm run dev` — the same pattern already used earlier in this session for the sidebar float-styling change. Do not introduce a test framework as part of this plan — out of scope.
 - CSS variable names follow this project's existing tokens (`--card-radius-sm/md/lg`, `--muted-text`, `--surface`, `--line`, etc. — see `index.css:35-106`), **not** the mockup's token names (`--radius-lg`, `--muted`). Never copy a mockup CSS rule verbatim without translating its variable names.
-- No new backend routes, no changes under `api/`. If a task seems to need one, stop and flag it — don't invent one.
+- No new backend routes, no changes under `api/`, **except Task 12** (added after all other tasks landed, fixing a pre-existing bug discovered during manual browser verification — see Task 12 for why this one exception exists). Any other task needing a backend change should stop and flag it — don't invent one.
 - `Application.status` is `'draft' | 'ready' | 'submitted' | 'failed'` (see `shared/src/schemas/*.ts` usage in `dashboard/src/pages/Applications.tsx:22-27`) — **not** `'ready_for_approval'`. The technical spec doc uses the informal name "ready for approval" for the `'ready'` status; use the real enum value `'ready'` in all code.
 - Commit after each task, not after each step, using this repo's plain conventional-ish style (see `git log`, e.g. `feat(dashboard): ...`). Do not push.
 
@@ -583,16 +587,130 @@ pieces; Task 5 follows immediately.)
 
 ---
 
-### Task 5: JobDetail — rebuild the apply drawer (missing skills, copy, download)
+### Task 5: JobDetail — rebuild the apply drawer with both flows, tabbed
+
+> **Amended after Task 4 landed** — originally this task replaced the
+> automation UI entirely. The user asked for both the automated apply
+> pipeline and the new manual flow to stay available, switchable via tabs.
+> This version reinstates the `latestRun` state and the
+> `runAutomation`/`approveRun`/`submitRun` functions Task 4 deleted (they
+> are restored verbatim from the pre-Task-4 version of this file — see
+> `git show 099f334:dashboard/src/pages/JobDetail.tsx` if you need to
+> confirm exact original wording), and adds them back as an "Automated
+> apply" tab alongside a new "Prepare manually" tab.
 
 **Files:**
-- Modify: `dashboard/src/pages/JobDetail.tsx` (drawer JSX, `addSkill` function)
-- Modify: `dashboard/src/index.css` (add `.missing`/`.mrow`/`.icon-btn` block)
+- Modify: `dashboard/src/pages/JobDetail.tsx` (restore automation state/functions, add tab state, `addSkill`/`copyCoverLetter`/`downloadCv` functions, rewrite drawer JSX)
+- Modify: `dashboard/src/index.css` (add `.missing`/`.mrow`/`.copy-btn`/`.tab-row` block)
 
 **Interfaces:**
 - Consumes: `missingSkills`, `flatProfileSkills` from Task 4; `profile`/`setProfile` state already in the component; `apiFetch`.
 
-- [ ] **Step 1: Add the missing-skills CSS**
+- [ ] **Step 0: Reinstate the automation state and functions Task 4 removed**
+
+In `dashboard/src/pages/JobDetail.tsx`, change the `ApplicationState` type's
+`loaded` variant back to include `latestRun` (Task 4 left it as
+`{ phase: 'loaded'; application: { jobId: string; status: string } }`):
+
+```tsx
+type ApplicationState =
+  | { phase: 'none' }
+  | { phase: 'loading' }
+  | {
+      phase: 'loaded'
+      application: { jobId: string; status: string }
+      latestRun: { runNumber: number; status: string; blockReason: string | null; manualApplyUrl: string | null } | null
+    }
+  | { phase: 'error'; message: string }
+```
+
+In `refreshApplication`, restore `latestRun` in the success branch's
+`setAppState` call:
+
+```tsx
+        setAppState({ phase: 'loaded', application: body.application, latestRun: body.latestRun })
+```
+
+**Also restore it in `openDrawer`'s own inline `setAppState` call** — Task
+4's rewrite of `openDrawer` added a second, separate `setAppState({ phase:
+'loaded', application: body.application })` call (not the one in
+`refreshApplication`) that also needs the field added:
+
+```tsx
+        setAppState({ phase: 'loaded', application: body.application, latestRun: body.latestRun })
+```
+
+(Same fix, two call sites — `refreshApplication`'s and `openDrawer`'s own.
+Both must have `latestRun: body.latestRun` added for the restored
+`ApplicationState` type to be satisfied; typecheck will not go green with
+only one fixed.)
+
+Add back the three deleted functions (place them where they were before,
+alongside `generateMaterials`):
+
+```tsx
+  async function runAutomation() {
+    if (!jobId) return
+    setActionBusy(true)
+    setActionError(null)
+    try {
+      const res = await apiFetch(`/automation/${jobId}/run`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        setActionError(body?.error ?? 'Failed to run automation.')
+        return
+      }
+      refreshApplication()
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  async function approveRun(runNumber: number) {
+    if (!jobId) return
+    setActionBusy(true)
+    setActionError(null)
+    try {
+      const res = await apiFetch(`/applications/${jobId}/runs/${runNumber}/approve`, { method: 'POST' })
+      const body = await res.json().catch(() => null)
+      if (!res.ok || !body?.approved) {
+        setActionError(body?.reason ?? body?.error ?? 'Approval failed.')
+        return
+      }
+      refreshApplication()
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  async function submitRun(runNumber: number) {
+    if (!jobId) return
+    setActionBusy(true)
+    setActionError(null)
+    try {
+      const res = await apiFetch(`/automation/${jobId}/runs/${runNumber}/submit`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        setActionError(body?.error ?? 'Submission failed.')
+        return
+      }
+      refreshApplication()
+    } finally {
+      setActionBusy(false)
+    }
+  }
+```
+
+Run `cd dashboard && npm run typecheck` now — this step alone should bring
+the error count down from Task 4's 15 expected errors to just the ones
+caused by the still-unfixed drawer JSX referencing `addSkill`/tab state
+that don't exist yet (none at this point — the drawer JSX still references
+exactly what now exists again, so typecheck should actually be fully GREEN
+after this step alone, before Steps 1-3 add the new manual-flow pieces).
+Confirm it's green before continuing; if not, stop and report what's still
+red.
+
+- [ ] **Step 1: Add the missing-skills and tab-row CSS**
 
 Append to `dashboard/src/index.css` (anywhere after the `/* ---------- job
 details ---------- */` block, e.g. right after the existing `.doc-preview`
@@ -606,13 +724,15 @@ rules):
 .copy-btn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--fg-2);padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);cursor:pointer;}
 .copy-btn:hover{border-color:var(--line-strong);color:var(--fg);}
 .copy-btn.ok{background:var(--cyan-soft);color:var(--cyan-text);border-color:transparent;}
+.tab-row{display:flex;gap:8px;margin-bottom:4px;}
 ```
 
-- [ ] **Step 2: Add `addSkill` and a copy-state helper**
+- [ ] **Step 2: Add tab state, `addSkill`, and a copy-state helper**
 
 Add state near the existing `materialsPreview` state (line 61):
 
 ```tsx
+  const [activeTab, setActiveTab] = useState<'manual' | 'automated'>('manual')
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
   const [skillBusy, setSkillBusy] = useState<string | null>(null)
 ```
@@ -679,80 +799,170 @@ rather than extracted into a shared helper, since it's two call sites
 total and the existing codebase doesn't have a shared-helpers module for
 this kind of thing yet; not worth introducing one for two call sites.)
 
-- [ ] **Step 3: Rewrite the drawer body JSX**
+- [ ] **Step 3: Rewrite the drawer body JSX with two tabs**
 
 Replace the entire `{appState.phase === 'loaded' && ( ... )}` block inside
-the drawer (originally lines 385-452) with:
+the drawer with:
 
 ```tsx
             {appState.phase === 'loaded' && (
               <>
-                {materialsPreview && (
-                  <div className="doc-preview">
-                    <div className="dp-h">
-                      <span>Cover letter (draft)</span>
-                      <button type="button" className={`copy-btn${copyState === 'copied' ? ' ok' : ''}`} onClick={copyCoverLetter}>
-                        {copyState === 'copied' ? 'Copied' : 'Copy'}
-                      </button>
-                    </div>
-                    <p style={{ whiteSpace: 'pre-wrap' }}>{materialsPreview}</p>
-                  </div>
-                )}
+                <div className="tab-row">
+                  <button
+                    type="button"
+                    className={`btn ${activeTab === 'manual' ? 'btn-indigo' : 'btn-ghost'}`}
+                    onClick={() => setActiveTab('manual')}
+                  >
+                    Prepare manually
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${activeTab === 'automated' ? 'btn-indigo' : 'btn-ghost'}`}
+                    onClick={() => setActiveTab('automated')}
+                  >
+                    Automated apply
+                  </button>
+                </div>
 
-                {missingSkills.length > 0 && (
-                  <div>
-                    <div className="dp-h">
-                      <span>Missing skills for this role</span>
-                    </div>
-                    <div className="missing">
-                      {missingSkills.map((skill) => (
-                        <div className="mrow" key={skill}>
-                          <b>{skill}</b>
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            disabled={skillBusy === skill}
-                            onClick={() => addSkill(skill)}
-                          >
-                            {skillBusy === skill ? 'Adding…' : 'Add'}
+                {activeTab === 'manual' && (
+                  <>
+                    {materialsPreview && (
+                      <div className="doc-preview">
+                        <div className="dp-h">
+                          <span>Cover letter (draft)</span>
+                          <button type="button" className={`copy-btn${copyState === 'copied' ? ' ok' : ''}`} onClick={copyCoverLetter}>
+                            {copyState === 'copied' ? 'Copied' : 'Copy'}
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  </div>
+                        <p style={{ whiteSpace: 'pre-wrap' }}>{materialsPreview}</p>
+                      </div>
+                    )}
+
+                    {missingSkills.length > 0 && (
+                      <div>
+                        <div className="dp-h">
+                          <span>Missing skills for this role</span>
+                        </div>
+                        <div className="missing">
+                          {missingSkills.map((skill) => (
+                            <div className="mrow" key={skill}>
+                              <b>{skill}</b>
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                disabled={skillBusy === skill}
+                                onClick={() => addSkill(skill)}
+                              >
+                                {skillBusy === skill ? 'Adding…' : 'Add'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <button type="button" className="btn btn-indigo" onClick={downloadCv}>
+                      Download tailored CV (PDF)
+                    </button>
+                  </>
                 )}
 
-                <button type="button" className="btn btn-indigo" onClick={downloadCv}>
-                  Download tailored CV (PDF)
-                </button>
+                {activeTab === 'automated' && (
+                  <>
+                    <div className="doc-preview">
+                      <div className="dp-h">
+                        <span>Status</span>
+                        <span>{appState.application.status}</span>
+                      </div>
+                      {appState.latestRun ? (
+                        <p>
+                          Latest automation run #{appState.latestRun.runNumber}: {appState.latestRun.status}
+                          {appState.latestRun.blockReason ? ` — ${appState.latestRun.blockReason}` : ''}
+                          {appState.latestRun.manualApplyUrl ? (
+                            <>
+                              {' '}
+                              <a href={appState.latestRun.manualApplyUrl} target="_blank" rel="noreferrer">
+                                Apply manually →
+                              </a>
+                            </>
+                          ) : null}
+                        </p>
+                      ) : (
+                        <p>No automation run yet.</p>
+                      )}
+                    </div>
+
+                    {appState.application.status === 'draft' && !appState.latestRun && (
+                      <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={generateMaterials}>
+                        Generate materials
+                      </button>
+                    )}
+
+                    {appState.application.status === 'draft' && (
+                      <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={runAutomation}>
+                        Run automation
+                      </button>
+                    )}
+
+                    {appState.latestRun?.status === 'ready_for_approval' && (
+                      <button
+                        type="button"
+                        className="btn-confirm"
+                        disabled={actionBusy}
+                        onClick={() => approveRun(appState.latestRun!.runNumber)}
+                      >
+                        Review and confirm
+                      </button>
+                    )}
+
+                    {appState.latestRun?.status === 'approved' && (
+                      <button
+                        type="button"
+                        className="btn-confirm"
+                        disabled={actionBusy}
+                        onClick={() => submitRun(appState.latestRun!.runNumber)}
+                      >
+                        Submit application
+                      </button>
+                    )}
+                  </>
+                )}
               </>
             )}
 ```
 
+Note `appState.latestRun?.status === 'ready_for_approval'` here refers to
+the `AutomationRun`'s own `status` field — a different enum than
+`Application.status` (which is `'ready'`, not `'ready_for_approval'`) —
+this is correct as written, matching the original pre-Task-4 code exactly.
+
 - [ ] **Step 4: Verify types**
 
 Run: `cd dashboard && npm run typecheck`
-Expected: no errors (this resolves the red state left at the end of
-Task 4).
+Expected: no errors.
 
 - [ ] **Step 5: Manual browser verification**
 
 Open a job detail page for a job with `extractedRequirements.requiredSkills`
-set and click "Apply": confirm the drawer opens with no automation/approve/
-submit buttons, a cover letter appears automatically with a working "Copy"
-button (paste somewhere to confirm), a missing-skills list appears for any
+set and click "Apply": confirm the drawer opens on the "Prepare manually"
+tab by default, with a cover letter appearing automatically and a working
+"Copy" button (paste somewhere to confirm), a missing-skills list for any
 required skill not already in your profile's resume skill groups, clicking
 "Add" on one removes it from the list and — after navigating to
-`/profile` — shows up under a new "Additional skills" group, and
-"Download tailored CV (PDF)" downloads a PDF. Separately, confirm
-`/applications` still shows a `draft`-status row for this job (the silent
-auto-start from Task 4 still creates the tracked record).
+`/profile` — shows up under a new "Additional skills" group, and "Download
+tailored CV (PDF)" downloads a PDF. Switch to the "Automated apply" tab:
+confirm the original status/run-automation/approve/submit flow still works
+exactly as it did before Task 4 (status line, "Generate materials"/"Run
+automation" buttons when in `draft` with no run yet, "Review and confirm"
+once a run reaches `ready_for_approval`, "Submit application" once
+`approved`). Confirm `/applications` still shows a tracked row for this job
+regardless of which tab you used.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add dashboard/src/pages/JobDetail.tsx dashboard/src/index.css
-git commit -m "feat(jobdetail): rebuild apply drawer around cover-letter copy, missing-skill add, CV download"
+git commit -m "feat(jobdetail): add tabbed apply drawer with manual prep and automated apply flows"
 ```
 
 ---
@@ -1399,6 +1609,230 @@ git commit -m "feat(jobdetail): animate score bars in on scroll"
 
 (If Step 1 found an existing mechanism, adjust the `git add`/commit
 message to reflect reusing it instead of adding a new hook file.)
+
+---
+
+### Task 12: Fix `:jobId` route handling for sourceJobId values containing colons/slashes
+
+> **Added after the original 11 tasks landed** — found during the
+> controller's end-of-plan manual browser verification pass. This is a
+> pre-existing bug (predates this branch), not a regression from any
+> other task, but the user asked to fix it in this branch rather than
+> deferring it. It's the one exception to this plan's "no backend
+> changes" constraint.
+
+**Root cause:** `Application.jobId`/`Materials.jobId`/automation-run
+lookups are all keyed on the string `${sourceId}:${sourceJobId}` (see
+`api/src/applications/applicationsService.ts:16`). `sourceId` is always a
+short enum value (`remoteok`, `weworkremotely`, `himalayas`,
+`teletalk-govt` — never contains `:` or `/`), but `sourceJobId` can be a
+full URL for some sources (confirmed via manual testing: a Himalayas job
+whose `sourceJobId` is `https://himalayas.app/companies/.../senior-...`).
+Two independent bugs follow from this:
+
+1. **Frontend:** every `apiFetch` call that embeds `jobId` directly into a
+   template-literal URL path (e.g. `` `/applications/${jobId}` ``) sends
+   the raw, unencoded string. When `sourceJobId` contains `/` characters,
+   the resulting HTTP request path has more path segments than the
+   single-segment `/:jobId` route expects, so Hono's router never matches
+   it — the request 404s before any handler code runs. Reproduced live:
+   `GET http://localhost:8788/applications/himalayas:https://himalayas.app/companies/improvado/jobs/senior-revops-engineer-9561139637`
+   → 404, and the same for the equivalent `/materials/:jobId/generate`
+   request.
+2. **Backend:** three handlers destructure the (correctly single-segment,
+   once fixed) param via unlimited `.split(':')` —
+   `api/src/routes/materials.ts:19`, `api/src/routes/automation.ts:12`,
+   `api/src/routes/automation.ts:29`. For a `sourceJobId` that itself
+   contains a colon (any `https://...` URL), `jobId.split(':')` produces
+   more than two elements, and array-destructuring
+   `const [sourceId, sourceJobId] = jobId.split(':')` silently takes only
+   the first two — `sourceJobId` ends up truncated to `"https"`, silently
+   wrong rather than erroring.
+
+**Files:**
+- Modify: `dashboard/src/pages/JobDetail.tsx` (7 call sites)
+- Modify: `dashboard/src/pages/Applications.tsx` (3 call sites)
+- Modify: `api/src/routes/materials.ts` (1 split site, line 19)
+- Modify: `api/src/routes/automation.ts` (2 split sites, lines 12 and 29)
+
+**Interfaces:** none new — this is a bug fix to existing request/response
+shapes, not a contract change. `api/src/routes/applications.ts`'s two
+`:jobId` handlers (lines 41, 61) need NO backend change — they use the
+raw param directly as a MongoDB lookup key with no `.split()`, so once the
+frontend sends a properly encoded jobId and Hono decodes it back (standard
+router behavior — percent-decoding happens when a named param is
+extracted, which is why encoding `/` as `%2F` makes it match as a single
+segment in the first place), those two handlers work correctly with zero
+changes.
+
+- [ ] **Step 1: Encode `jobId` at every frontend call site**
+
+In `dashboard/src/pages/JobDetail.tsx`, wrap the `jobId` interpolation
+(not `runNumber`, which is always numeric and safe as-is) with
+`encodeURIComponent(...)` at all 7 call sites:
+
+```tsx
+apiFetch(`/applications/${encodeURIComponent(jobId)}`)
+```
+(lines 133 and 153 — both currently `` `/applications/${jobId}` ``)
+
+```tsx
+const res = await apiFetch(`/materials/${encodeURIComponent(jobId)}/generate`, { method: 'POST' })
+```
+(line 196)
+
+```tsx
+const res = await apiFetch(`/automation/${encodeURIComponent(jobId)}/run`, { method: 'POST' })
+```
+(line 269)
+
+```tsx
+const res = await apiFetch(`/applications/${encodeURIComponent(jobId)}/runs/${runNumber}/approve`, { method: 'POST' })
+```
+(line 286)
+
+```tsx
+const res = await apiFetch(`/automation/${encodeURIComponent(jobId)}/runs/${runNumber}/submit`, { method: 'POST' })
+```
+(line 303)
+
+Note: `jobId` in this file is declared as `const jobId = job ?
+\`${job.sourceId}:${job.sourceJobId}\` : null` and is typed
+`string | null` — every call site above already guards on it being
+non-null before use (existing code), so `encodeURIComponent(jobId)` is
+safe to add without extra null-handling.
+
+In `dashboard/src/pages/Applications.tsx`, same fix at 3 call sites:
+
+```tsx
+apiFetch(`/applications/${encodeURIComponent(jobId)}`)
+```
+(line 130)
+
+```tsx
+apiFetch(`/materials/${encodeURIComponent(jobId)}`)
+```
+(line 154)
+
+```tsx
+`/applications/${encodeURIComponent(detail.application.jobId)}/runs/${detail.latestRun.runNumber}/approve`,
+```
+(line 187 — note this one encodes `detail.application.jobId`, a
+differently-named variable holding the same kind of value, not the `jobId`
+used elsewhere in this file)
+
+- [ ] **Step 2: Fix the three backend `.split(':')` sites to split on the first colon only**
+
+In each of `api/src/routes/materials.ts:19`, `api/src/routes/automation.ts:12`,
+and `api/src/routes/automation.ts:29`, replace:
+
+```ts
+const [sourceId, sourceJobId] = c.req.param('jobId').split(':')
+```
+
+with:
+
+```ts
+const jobIdParam = c.req.param('jobId')
+const separatorIndex = jobIdParam.indexOf(':')
+const sourceId = separatorIndex === -1 ? '' : jobIdParam.slice(0, separatorIndex)
+const sourceJobId = separatorIndex === -1 ? '' : jobIdParam.slice(separatorIndex + 1)
+```
+
+(The existing `if (!sourceId || !sourceJobId) { return c.json({ error: 'invalid job id' }, 400) }` guard immediately below each site stays unchanged — it already correctly rejects the `separatorIndex === -1` case via the empty-string checks.)
+
+- [ ] **Step 3: Verify**
+
+Run `cd dashboard && npm run typecheck` and `cd api && npm run typecheck`
+(check `api/package.json` for the exact script name if `typecheck` isn't
+it — use whatever this package's existing verification command is).
+
+Then manually verify against a running API+dashboard pair (reuse the
+controller's existing isolated verification setup if still running, or
+start fresh): pick a Himalayas-sourced job (one whose `sourceJobId` is a
+full URL — any job tagged `himalayas` in `/jobs?sourceId=himalayas`),
+open its detail page, click Apply. Confirm the drawer reaches the
+`'loaded'` phase (not stuck showing "No application started for this job
+yet") and that clicking "Automated apply" → "Generate materials" and
+"Run automation" no longer 404 (they may still fail for OTHER reasons,
+e.g. missing `ANTHROPIC_API_KEY` in a local dev environment — that's fine
+and unrelated; the fix here is specifically that the request reaches the
+handler instead of 404ing at the router).
+
+Also run whatever existing backend test suite covers these routes (check
+`api/test/applications.test.ts`, `api/test/automation.test.ts`,
+`api/test/materials*.test.ts` if present) to confirm no regression for
+the common case (a `sourceJobId` with no colon in it, e.g. a plain numeric
+ID) — the `indexOf`-based split must behave identically to the old
+`.split(':')[0,1]` destructuring when there's exactly one colon in the
+input.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add dashboard/src/pages/JobDetail.tsx dashboard/src/pages/Applications.tsx api/src/routes/materials.ts api/src/routes/automation.ts
+git commit -m "fix(api,dashboard): encode jobId in URLs and stop truncating sourceJobId at the first colon"
+```
+
+---
+
+### Task 13: Add missing base `.kv`/`.kv > div` CSS (CV-intelligence card label/value gap)
+
+> **Added after Task 10 landed** — found during the controller's
+> end-of-plan browser verification pass. Task 10's brief claimed base
+> `.kv`/`.kv > div` CSS rules "already exist elsewhere in index.css from
+> the CV-upload page styling" and only added a narrowing override
+> (`.cvdemo .kv > div{grid-template-columns:90px 1fr;}`). That premise was
+> wrong — `grep -n "^\.kv{" dashboard/src/index.css` and
+> `grep -n "className=\"kv\"" dashboard/src/pages/*.tsx` both confirm no
+> base `.kv` rule and no other usage exist anywhere in the project
+> (`Cv.tsx` uses a different class, `.extract`, for its own key-value
+> rows). Without `display:grid` on `.kv > div`, the narrowing override has
+> nothing to apply to, so the `.t`/`.v` spans render as plain inline
+> elements with no gap — visually confirmed in-browser as "Skills
+> found12" / "Experience3 roles" running together with no space.
+
+**Files:**
+- Modify: `dashboard/src/index.css`
+
+**Interfaces:** none — pure CSS addition, no JSX/logic change (the
+existing `Landing.tsx` markup from Task 10, read at
+`dashboard/src/pages/Landing.tsx:424-433`, is already structurally
+correct — `<div className="kv"><div><span className="t">...</span><span
+className="v">...</span></div>...</div>` — it just has nothing styling it).
+
+- [ ] **Step 1: Add the base `.kv` rule**
+
+Add to `dashboard/src/index.css`, directly above the existing
+`.cvdemo .kv > div{grid-template-columns:90px 1fr;}` rule (added by
+Task 10):
+
+```css
+.kv{display:flex;flex-direction:column;}
+.kv > div{display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:baseline;}
+.kv .t{color:var(--muted-text);font-size:12.5px;}
+.kv .v{font-weight:600;}
+```
+
+(120px default label-column width, narrowed to 90px specifically inside
+`.cvdemo` by the existing Task 10 rule, which stays unchanged below this
+addition.)
+
+- [ ] **Step 2: Verify**
+
+Run `cd dashboard && npm run typecheck` (CSS-only change, should be
+unaffected, but confirm the command still exits clean). Then visually
+confirm in a running dev server: visit `/` (Landing page), scroll to the
+"CV intelligence" section, confirm "Skills found" and "12" (and
+"Experience" / "3 roles") now render with a clear visual gap between
+label and value, left-aligned in a consistent column.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add dashboard/src/index.css
+git commit -m "fix(landing): add missing base .kv CSS so CV-intelligence card label/value have a gap"
+```
 
 ---
 

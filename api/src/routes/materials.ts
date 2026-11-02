@@ -16,7 +16,10 @@ export function createMaterialsRoutes(db: Db, jwtSecret: string, generator: Mate
   materialsRoutes.use('*', createRequireAuth(jwtSecret))
 
   materialsRoutes.post('/:jobId/generate', async (c) => {
-    const [sourceId, sourceJobId] = c.req.param('jobId').split(':')
+    const jobIdParam = c.req.param('jobId')
+    const separatorIndex = jobIdParam.indexOf(':')
+    const sourceId = separatorIndex === -1 ? '' : jobIdParam.slice(0, separatorIndex)
+    const sourceJobId = separatorIndex === -1 ? '' : jobIdParam.slice(separatorIndex + 1)
     if (!sourceId || !sourceJobId) {
       return c.json({ error: 'invalid job id' }, 400)
     }

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import DOMPurify from 'dompurify'
 import { Briefcase, Building2, Calendar, MapPin, Wallet } from 'lucide-react'
 import type { Job, Profile } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
+import { gsap } from '../lib/gsap'
 import { AppNav } from '../components/Nav'
 import { FormError } from '../components/FormError'
 import { ScoreRing } from '../components/ScoreRing'
@@ -44,7 +45,7 @@ type ApplicationState =
   | { phase: 'loading' }
   | {
       phase: 'loaded'
-      application: { jobId: string; status: string; requiredAnswers: Array<{ answer: string | null }> }
+      application: { jobId: string; status: string }
       latestRun: { runNumber: number; status: string; blockReason: string | null; manualApplyUrl: string | null } | null
     }
   | { phase: 'error'; message: string }
@@ -59,6 +60,11 @@ export function JobDetailPage() {
   const [actionBusy, setActionBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [materialsPreview, setMaterialsPreview] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'manual' | 'automated'>('manual')
+  const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
+  const [skillBusy, setSkillBusy] = useState<string | null>(null)
+  const [relatedJobs, setRelatedJobs] = useState<Job[]>([])
+  const scoreCardRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     apiFetch(`/jobs/${id}`).then(async (res) => {
@@ -74,12 +80,57 @@ export function JobDetailPage() {
       .catch(() => setProfile(null))
   }, [id])
 
+  useEffect(() => {
+    if (!drawerOpen) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setDrawerOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [drawerOpen])
+
+  useEffect(() => {
+    if (!job) return
+    const params = new URLSearchParams({ sourceId: job.sourceId, status: 'verified', limit: '4' })
+    apiFetch(`/jobs?${params.toString()}`)
+      .then((res) => (res.ok ? res.json() : { jobs: [] }))
+      .then((body: { jobs: Job[] }) => setRelatedJobs(body.jobs.filter((candidate) => candidate._id !== job._id).slice(0, 3)))
+      .catch(() => setRelatedJobs([]))
+  }, [job])
+
+  // Reuses the same GSAP ScrollTrigger mechanism as useScrollReveal (see
+  // dashboard/src/hooks/useScrollReveal.ts and Landing.tsx) rather than
+  // introducing a second scroll-reveal implementation. That hook hardcodes
+  // an opacity/translateY tween, which doesn't fit a width-growing bar, so
+  // this animates `.bar-fill` width 0 -> final% directly with the same
+  // library/trigger/reduced-motion conventions once the bars have rendered.
+  useEffect(() => {
+    const container = scoreCardRef.current
+    if (!container || !job?.scoreBreakdown) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+    const ctx = gsap.context(() => {
+      gsap.from('.bar-fill', {
+        width: '0%',
+        duration: 1.1,
+        stagger: 0.08,
+        ease: 'power2.out',
+        scrollTrigger: {
+          trigger: container,
+          start: 'top 80%',
+        },
+      })
+    }, container)
+
+    return () => ctx.revert()
+  }, [job?.scoreBreakdown])
+
   const jobId = job ? `${job.sourceId}:${job.sourceJobId}` : null
 
   function refreshApplication() {
     if (!jobId) return
     setAppState({ phase: 'loading' })
-    apiFetch(`/applications/${jobId}`)
+    apiFetch(`/applications/${encodeURIComponent(jobId)}`)
       .then(async (res) => {
         if (res.status === 404) {
           setAppState({ phase: 'none' })
@@ -97,7 +148,23 @@ export function JobDetailPage() {
 
   function openDrawer() {
     setDrawerOpen(true)
-    refreshApplication()
+    if (!jobId) return
+    setAppState({ phase: 'loading' })
+    apiFetch(`/applications/${encodeURIComponent(jobId)}`)
+      .then(async (res) => {
+        if (res.status === 404) {
+          await startApplication()
+          return
+        }
+        if (!res.ok) {
+          setAppState({ phase: 'error', message: 'Failed to load application status.' })
+          return
+        }
+        const body = await res.json()
+        setAppState({ phase: 'loaded', application: body.application, latestRun: body.latestRun })
+        if (!materialsPreview) await generateMaterials()
+      })
+      .catch(() => setAppState({ phase: 'error', message: 'Failed to load application status.' }))
   }
 
   async function startApplication() {
@@ -115,6 +182,7 @@ export function JobDetailPage() {
         return
       }
       refreshApplication()
+      await generateMaterials()
     } finally {
       setActionBusy(false)
     }
@@ -125,7 +193,7 @@ export function JobDetailPage() {
     setActionBusy(true)
     setActionError(null)
     try {
-      const res = await apiFetch(`/materials/${jobId}/generate`, { method: 'POST' })
+      const res = await apiFetch(`/materials/${encodeURIComponent(jobId)}/generate`, { method: 'POST' })
       if (!res.ok) {
         const body = await res.json().catch(() => null)
         setActionError(body?.error ?? 'Materials generation is unavailable right now.')
@@ -142,12 +210,63 @@ export function JobDetailPage() {
     }
   }
 
+  async function addSkill(skill: string) {
+    if (!profile) return
+    setSkillBusy(skill)
+    try {
+      const skillGroups = profile.resume?.skillGroups ?? []
+      const existingIndex = skillGroups.findIndex((group) => group.category === 'Additional skills')
+      const nextSkillGroups =
+        existingIndex === -1
+          ? [...skillGroups, { category: 'Additional skills', skills: [skill] }]
+          : skillGroups.map((group, index) =>
+              index === existingIndex ? { ...group, skills: [...group.skills, skill] } : group,
+            )
+      const res = await apiFetch('/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ resume: { ...profile.resume, skillGroups: nextSkillGroups } }),
+      })
+      if (!res.ok) {
+        setActionError('Failed to add skill to your profile.')
+        return
+      }
+      setProfile(await res.json())
+    } finally {
+      setSkillBusy(null)
+    }
+  }
+
+  function copyCoverLetter() {
+    if (!materialsPreview) return
+    navigator.clipboard.writeText(materialsPreview).then(() => {
+      setCopyState('copied')
+      setTimeout(() => setCopyState('idle'), 1600)
+    })
+  }
+
+  async function downloadCv() {
+    const res = await apiFetch('/profile/cv/export')
+    if (!res.ok) {
+      setActionError('Failed to generate CV.')
+      return
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'cv.pdf'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
   async function runAutomation() {
     if (!jobId) return
     setActionBusy(true)
     setActionError(null)
     try {
-      const res = await apiFetch(`/automation/${jobId}/run`, { method: 'POST' })
+      const res = await apiFetch(`/automation/${encodeURIComponent(jobId)}/run`, { method: 'POST' })
       if (!res.ok) {
         const body = await res.json().catch(() => null)
         setActionError(body?.error ?? 'Failed to run automation.')
@@ -164,7 +283,7 @@ export function JobDetailPage() {
     setActionBusy(true)
     setActionError(null)
     try {
-      const res = await apiFetch(`/applications/${jobId}/runs/${runNumber}/approve`, { method: 'POST' })
+      const res = await apiFetch(`/applications/${encodeURIComponent(jobId)}/runs/${runNumber}/approve`, { method: 'POST' })
       const body = await res.json().catch(() => null)
       if (!res.ok || !body?.approved) {
         setActionError(body?.reason ?? body?.error ?? 'Approval failed.')
@@ -181,7 +300,7 @@ export function JobDetailPage() {
     setActionBusy(true)
     setActionError(null)
     try {
-      const res = await apiFetch(`/automation/${jobId}/runs/${runNumber}/submit`, { method: 'POST' })
+      const res = await apiFetch(`/automation/${encodeURIComponent(jobId)}/runs/${runNumber}/submit`, { method: 'POST' })
       if (!res.ok) {
         const body = await res.json().catch(() => null)
         setActionError(body?.error ?? 'Submission failed.')
@@ -215,10 +334,14 @@ export function JobDetailPage() {
     )
   }
 
+  const flatProfileSkills = new Set(
+    (profile?.resume?.skillGroups ?? []).flatMap((group) => group.skills.map((skill) => skill.toLowerCase())),
+  )
   const matchedSkills = new Set(
-    (job.extractedRequirements?.requiredSkills ?? []).filter((skill) =>
-      profile?.cvText ? profile.cvText.toLowerCase().includes(skill.toLowerCase()) : false
-    )
+    (job.extractedRequirements?.requiredSkills ?? []).filter((skill) => flatProfileSkills.has(skill.toLowerCase())),
+  )
+  const missingSkills = (job.extractedRequirements?.requiredSkills ?? []).filter(
+    (skill) => !flatProfileSkills.has(skill.toLowerCase()),
   )
 
   return (
@@ -318,7 +441,7 @@ export function JobDetailPage() {
 
         <aside className="evidence">
           {job.score !== null && job.scoreBreakdown && (
-            <div className="ev-card">
+            <div className="ev-card" ref={scoreCardRef}>
               <div className="head">
                 <div>
                   <div className="t">Match score</div>
@@ -347,6 +470,38 @@ export function JobDetailPage() {
           )}
 
           <div className="ev-card">
+            <div className="ev-kv">
+              <div>
+                <div className="t">Compensation</div>
+                <div className="v">{formatSalary(job)}</div>
+              </div>
+              {job.extractedRequirements && (
+                <div>
+                  <div className="t">Work authorization</div>
+                  <div className="v">
+                    {{
+                      any: 'Open to anyone',
+                      citizen_only: 'Citizens/residents only',
+                      visa_sponsorship_available: 'Visa sponsorship available',
+                      unknown: 'Not specified',
+                    }[job.extractedRequirements.workAuthRequirement]}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="ev-card">
+            <div className="src-link">
+              <span className="fav">{job.sourceId.slice(0, 2).toUpperCase()}</span>
+              <div>
+                <span>{job.company}</span>
+                <small>via {job.sourceId}</small>
+              </div>
+            </div>
+          </div>
+
+          <div className="ev-card">
             <div className="ev-actions">
               <button type="button" className="btn btn-indigo" onClick={openDrawer}>
                 Apply
@@ -355,6 +510,32 @@ export function JobDetailPage() {
           </div>
         </aside>
       </div>
+
+      {relatedJobs.length > 0 && (
+        <div className="wrap related">
+          <h2>Related roles</h2>
+          <div className="jobs-grid">
+            {relatedJobs.map((related) => (
+              <Link to={`/jobs/${related._id}`} key={related._id} className="jobcard">
+                <div className="top">
+                  <div>
+                    <div className="role">{related.title}</div>
+                    <div className="co">{related.company}</div>
+                  </div>
+                  <ScoreRing score={related.score ?? 0} size={40} />
+                </div>
+                <div className="tags">
+                  <Pill tone="verified">Verified</Pill>
+                </div>
+                <div className="foot">
+                  <span className="src">{related.sourceId}</span>
+                  <span className="apply">View role →</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className={`drawer${drawerOpen ? ' open' : ''}`} role="dialog" aria-hidden={!drawerOpen}>
         <div className="scrim" onClick={() => setDrawerOpen(false)} />
@@ -384,70 +565,125 @@ export function JobDetailPage() {
 
             {appState.phase === 'loaded' && (
               <>
-                <div className="doc-preview">
-                  <div className="dp-h">
-                    <span>Status</span>
-                    <span>{appState.application.status}</span>
-                  </div>
-                  {appState.latestRun ? (
-                    <p>
-                      Latest automation run #{appState.latestRun.runNumber}: {appState.latestRun.status}
-                      {appState.latestRun.blockReason ? ` — ${appState.latestRun.blockReason}` : ''}
-                      {appState.latestRun.manualApplyUrl ? (
-                        <>
-                          {' '}
-                          <a href={appState.latestRun.manualApplyUrl} target="_blank" rel="noreferrer">
-                            Apply manually →
-                          </a>
-                        </>
-                      ) : null}
-                    </p>
-                  ) : (
-                    <p>No automation run yet.</p>
-                  )}
+                <div className="tab-row">
+                  <button
+                    type="button"
+                    className={`btn ${activeTab === 'manual' ? 'btn-indigo' : 'btn-ghost'}`}
+                    onClick={() => setActiveTab('manual')}
+                  >
+                    Prepare manually
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${activeTab === 'automated' ? 'btn-indigo' : 'btn-ghost'}`}
+                    onClick={() => setActiveTab('automated')}
+                  >
+                    Automated apply
+                  </button>
                 </div>
 
-                {materialsPreview && (
-                  <div className="doc-preview">
-                    <div className="dp-h">
-                      <span>Cover letter (draft)</span>
+                {activeTab === 'manual' && (
+                  <>
+                    {materialsPreview && (
+                      <div className="doc-preview">
+                        <div className="dp-h">
+                          <span>Cover letter (draft)</span>
+                          <button type="button" className={`copy-btn${copyState === 'copied' ? ' ok' : ''}`} onClick={copyCoverLetter}>
+                            {copyState === 'copied' ? 'Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p style={{ whiteSpace: 'pre-wrap' }}>{materialsPreview}</p>
+                      </div>
+                    )}
+
+                    {missingSkills.length > 0 && (
+                      <div>
+                        <div className="dp-h">
+                          <span>Missing skills for this role</span>
+                        </div>
+                        <div className="missing">
+                          {missingSkills.map((skill) => (
+                            <div className="mrow" key={skill}>
+                              <b>{skill}</b>
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                disabled={skillBusy === skill}
+                                onClick={() => addSkill(skill)}
+                              >
+                                {skillBusy === skill ? 'Adding…' : 'Add'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <button type="button" className="btn btn-indigo" onClick={downloadCv}>
+                      Download tailored CV (PDF)
+                    </button>
+                  </>
+                )}
+
+                {activeTab === 'automated' && (
+                  <>
+                    <div className="doc-preview">
+                      <div className="dp-h">
+                        <span>Status</span>
+                        <span>{appState.application.status}</span>
+                      </div>
+                      {appState.latestRun ? (
+                        <p>
+                          Latest automation run #{appState.latestRun.runNumber}: {appState.latestRun.status}
+                          {appState.latestRun.blockReason ? ` — ${appState.latestRun.blockReason}` : ''}
+                          {appState.latestRun.manualApplyUrl ? (
+                            <>
+                              {' '}
+                              <a href={appState.latestRun.manualApplyUrl} target="_blank" rel="noreferrer">
+                                Apply manually →
+                              </a>
+                            </>
+                          ) : null}
+                        </p>
+                      ) : (
+                        <p>No automation run yet.</p>
+                      )}
                     </div>
-                    <p style={{ whiteSpace: 'pre-wrap' }}>{materialsPreview}</p>
-                  </div>
-                )}
 
-                {appState.application.status === 'draft' && !appState.latestRun && (
-                  <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={generateMaterials}>
-                    Generate materials
-                  </button>
-                )}
+                    {appState.application.status === 'draft' && !appState.latestRun && (
+                      <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={generateMaterials}>
+                        Generate materials
+                      </button>
+                    )}
 
-                {appState.application.status === 'draft' && (
-                  <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={runAutomation}>
-                    Run automation
-                  </button>
-                )}
+                    {appState.application.status === 'draft' && (
+                      <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={runAutomation}>
+                        Run automation
+                      </button>
+                    )}
 
-                {appState.latestRun?.status === 'ready_for_approval' && (
-                  <button
-                    type="button"
-                    className="btn-confirm"
-                    disabled={actionBusy}
-                    onClick={() => approveRun(appState.latestRun!.runNumber)}
-                  >
-                    Review and confirm
-                  </button>
-                )}
+                    {appState.latestRun?.status === 'ready_for_approval' && (
+                      <button
+                        type="button"
+                        className="btn-confirm"
+                        disabled={actionBusy}
+                        onClick={() => approveRun(appState.latestRun!.runNumber)}
+                      >
+                        Review and confirm
+                      </button>
+                    )}
 
-                {appState.latestRun?.status === 'approved' && (
-                  <button
-                    type="button"
-                    className="btn-confirm"
-                    disabled={actionBusy}
-                    onClick={() => submitRun(appState.latestRun!.runNumber)}
-                  >
-                    Submit application
-                  </button>
+                    {appState.latestRun?.status === 'approved' && (
+                      <button
+                        type="button"
+                        className="btn-confirm"
+                        disabled={actionBusy}
+                        onClick={() => submitRun(appState.latestRun!.runNumber)}
+                      >
+                        Submit application
+                      </button>
+                    )}
+                  </>
                 )}
               </>
             )}
