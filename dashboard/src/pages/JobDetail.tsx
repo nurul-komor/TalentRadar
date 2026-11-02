@@ -77,6 +77,15 @@ export function JobDetailPage() {
       .catch(() => setProfile(null))
   }, [id])
 
+  useEffect(() => {
+    if (!drawerOpen) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setDrawerOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [drawerOpen])
+
   const jobId = job ? `${job.sourceId}:${job.sourceJobId}` : null
 
   function refreshApplication() {
