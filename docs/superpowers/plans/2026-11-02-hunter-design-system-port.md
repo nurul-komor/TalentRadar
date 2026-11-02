@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the concrete gap list between the dashboard app and the `hunter-design-preview` mockup — a richer shared sidebar, a rebuilt self-serve apply drawer, four missing landing sections, job-detail polish, a visual filter-rail restyle, and small save/close/animate polish — without touching backend contracts or the Applications page's own automation UI.
+**Goal:** Close the concrete gap list between the dashboard app and the `hunter-design-preview` mockup — a richer shared sidebar, a rebuilt apply drawer offering both the existing automated apply pipeline and a new self-serve manual flow (switchable via tabs), four missing landing sections, job-detail polish, a visual filter-rail restyle, and small save/close/animate polish — without touching backend contracts or the Applications page's own automation UI.
+
+> **Amendment (mid-execution, after Task 4 landed):** the original plan replaced the automation-run/approve/submit UI in the job-detail drawer entirely with the manual flow. The user redirected: both flows should be available, switchable via tabs. Task 4 (which deleted the automation state/functions) was already implemented and reviewed clean against its own original brief — not reverted. Task 5 below is rewritten to reinstate the deleted automation pieces alongside the new manual flow. See the ledger's `Ruling:` entry for the full record.
 
 **Architecture:** This is almost entirely a frontend-only change inside `dashboard/src/`. Every CSS class the mockup needs either already exists verbatim in `dashboard/src/index.css`, or is added following that file's existing naming convention (explicit classes like `.app-sidebar-*`, not mockup's descendant-selector convention like `.app .sidebar .sb-nav`). No new backend endpoints — the one functional change (the apply-drawer rebuild) reuses `PUT /profile` and `GET /profile/cv/export`, both already implemented.
 
@@ -583,16 +585,116 @@ pieces; Task 5 follows immediately.)
 
 ---
 
-### Task 5: JobDetail — rebuild the apply drawer (missing skills, copy, download)
+### Task 5: JobDetail — rebuild the apply drawer with both flows, tabbed
+
+> **Amended after Task 4 landed** — originally this task replaced the
+> automation UI entirely. The user asked for both the automated apply
+> pipeline and the new manual flow to stay available, switchable via tabs.
+> This version reinstates the `latestRun` state and the
+> `runAutomation`/`approveRun`/`submitRun` functions Task 4 deleted (they
+> are restored verbatim from the pre-Task-4 version of this file — see
+> `git show 099f334:dashboard/src/pages/JobDetail.tsx` if you need to
+> confirm exact original wording), and adds them back as an "Automated
+> apply" tab alongside a new "Prepare manually" tab.
 
 **Files:**
-- Modify: `dashboard/src/pages/JobDetail.tsx` (drawer JSX, `addSkill` function)
-- Modify: `dashboard/src/index.css` (add `.missing`/`.mrow`/`.icon-btn` block)
+- Modify: `dashboard/src/pages/JobDetail.tsx` (restore automation state/functions, add tab state, `addSkill`/`copyCoverLetter`/`downloadCv` functions, rewrite drawer JSX)
+- Modify: `dashboard/src/index.css` (add `.missing`/`.mrow`/`.copy-btn`/`.tab-row` block)
 
 **Interfaces:**
 - Consumes: `missingSkills`, `flatProfileSkills` from Task 4; `profile`/`setProfile` state already in the component; `apiFetch`.
 
-- [ ] **Step 1: Add the missing-skills CSS**
+- [ ] **Step 0: Reinstate the automation state and functions Task 4 removed**
+
+In `dashboard/src/pages/JobDetail.tsx`, change the `ApplicationState` type's
+`loaded` variant back to include `latestRun` (Task 4 left it as
+`{ phase: 'loaded'; application: { jobId: string; status: string } }`):
+
+```tsx
+type ApplicationState =
+  | { phase: 'none' }
+  | { phase: 'loading' }
+  | {
+      phase: 'loaded'
+      application: { jobId: string; status: string }
+      latestRun: { runNumber: number; status: string; blockReason: string | null; manualApplyUrl: string | null } | null
+    }
+  | { phase: 'error'; message: string }
+```
+
+In `refreshApplication`, restore `latestRun` in the success branch's
+`setAppState` call:
+
+```tsx
+        setAppState({ phase: 'loaded', application: body.application, latestRun: body.latestRun })
+```
+
+Add back the three deleted functions (place them where they were before,
+alongside `generateMaterials`):
+
+```tsx
+  async function runAutomation() {
+    if (!jobId) return
+    setActionBusy(true)
+    setActionError(null)
+    try {
+      const res = await apiFetch(`/automation/${jobId}/run`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        setActionError(body?.error ?? 'Failed to run automation.')
+        return
+      }
+      refreshApplication()
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  async function approveRun(runNumber: number) {
+    if (!jobId) return
+    setActionBusy(true)
+    setActionError(null)
+    try {
+      const res = await apiFetch(`/applications/${jobId}/runs/${runNumber}/approve`, { method: 'POST' })
+      const body = await res.json().catch(() => null)
+      if (!res.ok || !body?.approved) {
+        setActionError(body?.reason ?? body?.error ?? 'Approval failed.')
+        return
+      }
+      refreshApplication()
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  async function submitRun(runNumber: number) {
+    if (!jobId) return
+    setActionBusy(true)
+    setActionError(null)
+    try {
+      const res = await apiFetch(`/automation/${jobId}/runs/${runNumber}/submit`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        setActionError(body?.error ?? 'Submission failed.')
+        return
+      }
+      refreshApplication()
+    } finally {
+      setActionBusy(false)
+    }
+  }
+```
+
+Run `cd dashboard && npm run typecheck` now — this step alone should bring
+the error count down from Task 4's 15 expected errors to just the ones
+caused by the still-unfixed drawer JSX referencing `addSkill`/tab state
+that don't exist yet (none at this point — the drawer JSX still references
+exactly what now exists again, so typecheck should actually be fully GREEN
+after this step alone, before Steps 1-3 add the new manual-flow pieces).
+Confirm it's green before continuing; if not, stop and report what's still
+red.
+
+- [ ] **Step 1: Add the missing-skills and tab-row CSS**
 
 Append to `dashboard/src/index.css` (anywhere after the `/* ---------- job
 details ---------- */` block, e.g. right after the existing `.doc-preview`
@@ -606,13 +708,15 @@ rules):
 .copy-btn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--fg-2);padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);cursor:pointer;}
 .copy-btn:hover{border-color:var(--line-strong);color:var(--fg);}
 .copy-btn.ok{background:var(--cyan-soft);color:var(--cyan-text);border-color:transparent;}
+.tab-row{display:flex;gap:8px;margin-bottom:4px;}
 ```
 
-- [ ] **Step 2: Add `addSkill` and a copy-state helper**
+- [ ] **Step 2: Add tab state, `addSkill`, and a copy-state helper**
 
 Add state near the existing `materialsPreview` state (line 61):
 
 ```tsx
+  const [activeTab, setActiveTab] = useState<'manual' | 'automated'>('manual')
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
   const [skillBusy, setSkillBusy] = useState<string | null>(null)
 ```
@@ -679,80 +783,170 @@ rather than extracted into a shared helper, since it's two call sites
 total and the existing codebase doesn't have a shared-helpers module for
 this kind of thing yet; not worth introducing one for two call sites.)
 
-- [ ] **Step 3: Rewrite the drawer body JSX**
+- [ ] **Step 3: Rewrite the drawer body JSX with two tabs**
 
 Replace the entire `{appState.phase === 'loaded' && ( ... )}` block inside
-the drawer (originally lines 385-452) with:
+the drawer with:
 
 ```tsx
             {appState.phase === 'loaded' && (
               <>
-                {materialsPreview && (
-                  <div className="doc-preview">
-                    <div className="dp-h">
-                      <span>Cover letter (draft)</span>
-                      <button type="button" className={`copy-btn${copyState === 'copied' ? ' ok' : ''}`} onClick={copyCoverLetter}>
-                        {copyState === 'copied' ? 'Copied' : 'Copy'}
-                      </button>
-                    </div>
-                    <p style={{ whiteSpace: 'pre-wrap' }}>{materialsPreview}</p>
-                  </div>
-                )}
+                <div className="tab-row">
+                  <button
+                    type="button"
+                    className={`btn ${activeTab === 'manual' ? 'btn-indigo' : 'btn-ghost'}`}
+                    onClick={() => setActiveTab('manual')}
+                  >
+                    Prepare manually
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${activeTab === 'automated' ? 'btn-indigo' : 'btn-ghost'}`}
+                    onClick={() => setActiveTab('automated')}
+                  >
+                    Automated apply
+                  </button>
+                </div>
 
-                {missingSkills.length > 0 && (
-                  <div>
-                    <div className="dp-h">
-                      <span>Missing skills for this role</span>
-                    </div>
-                    <div className="missing">
-                      {missingSkills.map((skill) => (
-                        <div className="mrow" key={skill}>
-                          <b>{skill}</b>
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            disabled={skillBusy === skill}
-                            onClick={() => addSkill(skill)}
-                          >
-                            {skillBusy === skill ? 'Adding…' : 'Add'}
+                {activeTab === 'manual' && (
+                  <>
+                    {materialsPreview && (
+                      <div className="doc-preview">
+                        <div className="dp-h">
+                          <span>Cover letter (draft)</span>
+                          <button type="button" className={`copy-btn${copyState === 'copied' ? ' ok' : ''}`} onClick={copyCoverLetter}>
+                            {copyState === 'copied' ? 'Copied' : 'Copy'}
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  </div>
+                        <p style={{ whiteSpace: 'pre-wrap' }}>{materialsPreview}</p>
+                      </div>
+                    )}
+
+                    {missingSkills.length > 0 && (
+                      <div>
+                        <div className="dp-h">
+                          <span>Missing skills for this role</span>
+                        </div>
+                        <div className="missing">
+                          {missingSkills.map((skill) => (
+                            <div className="mrow" key={skill}>
+                              <b>{skill}</b>
+                              <button
+                                type="button"
+                                className="btn btn-ghost"
+                                disabled={skillBusy === skill}
+                                onClick={() => addSkill(skill)}
+                              >
+                                {skillBusy === skill ? 'Adding…' : 'Add'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <button type="button" className="btn btn-indigo" onClick={downloadCv}>
+                      Download tailored CV (PDF)
+                    </button>
+                  </>
                 )}
 
-                <button type="button" className="btn btn-indigo" onClick={downloadCv}>
-                  Download tailored CV (PDF)
-                </button>
+                {activeTab === 'automated' && (
+                  <>
+                    <div className="doc-preview">
+                      <div className="dp-h">
+                        <span>Status</span>
+                        <span>{appState.application.status}</span>
+                      </div>
+                      {appState.latestRun ? (
+                        <p>
+                          Latest automation run #{appState.latestRun.runNumber}: {appState.latestRun.status}
+                          {appState.latestRun.blockReason ? ` — ${appState.latestRun.blockReason}` : ''}
+                          {appState.latestRun.manualApplyUrl ? (
+                            <>
+                              {' '}
+                              <a href={appState.latestRun.manualApplyUrl} target="_blank" rel="noreferrer">
+                                Apply manually →
+                              </a>
+                            </>
+                          ) : null}
+                        </p>
+                      ) : (
+                        <p>No automation run yet.</p>
+                      )}
+                    </div>
+
+                    {appState.application.status === 'draft' && !appState.latestRun && (
+                      <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={generateMaterials}>
+                        Generate materials
+                      </button>
+                    )}
+
+                    {appState.application.status === 'draft' && (
+                      <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={runAutomation}>
+                        Run automation
+                      </button>
+                    )}
+
+                    {appState.latestRun?.status === 'ready_for_approval' && (
+                      <button
+                        type="button"
+                        className="btn-confirm"
+                        disabled={actionBusy}
+                        onClick={() => approveRun(appState.latestRun!.runNumber)}
+                      >
+                        Review and confirm
+                      </button>
+                    )}
+
+                    {appState.latestRun?.status === 'approved' && (
+                      <button
+                        type="button"
+                        className="btn-confirm"
+                        disabled={actionBusy}
+                        onClick={() => submitRun(appState.latestRun!.runNumber)}
+                      >
+                        Submit application
+                      </button>
+                    )}
+                  </>
+                )}
               </>
             )}
 ```
 
+Note `appState.latestRun?.status === 'ready_for_approval'` here refers to
+the `AutomationRun`'s own `status` field — a different enum than
+`Application.status` (which is `'ready'`, not `'ready_for_approval'`) —
+this is correct as written, matching the original pre-Task-4 code exactly.
+
 - [ ] **Step 4: Verify types**
 
 Run: `cd dashboard && npm run typecheck`
-Expected: no errors (this resolves the red state left at the end of
-Task 4).
+Expected: no errors.
 
 - [ ] **Step 5: Manual browser verification**
 
 Open a job detail page for a job with `extractedRequirements.requiredSkills`
-set and click "Apply": confirm the drawer opens with no automation/approve/
-submit buttons, a cover letter appears automatically with a working "Copy"
-button (paste somewhere to confirm), a missing-skills list appears for any
+set and click "Apply": confirm the drawer opens on the "Prepare manually"
+tab by default, with a cover letter appearing automatically and a working
+"Copy" button (paste somewhere to confirm), a missing-skills list for any
 required skill not already in your profile's resume skill groups, clicking
 "Add" on one removes it from the list and — after navigating to
-`/profile` — shows up under a new "Additional skills" group, and
-"Download tailored CV (PDF)" downloads a PDF. Separately, confirm
-`/applications` still shows a `draft`-status row for this job (the silent
-auto-start from Task 4 still creates the tracked record).
+`/profile` — shows up under a new "Additional skills" group, and "Download
+tailored CV (PDF)" downloads a PDF. Switch to the "Automated apply" tab:
+confirm the original status/run-automation/approve/submit flow still works
+exactly as it did before Task 4 (status line, "Generate materials"/"Run
+automation" buttons when in `draft` with no run yet, "Review and confirm"
+once a run reaches `ready_for_approval`, "Submit application" once
+`approved`). Confirm `/applications` still shows a tracked row for this job
+regardless of which tab you used.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add dashboard/src/pages/JobDetail.tsx dashboard/src/index.css
-git commit -m "feat(jobdetail): rebuild apply drawer around cover-letter copy, missing-skill add, CV download"
+git commit -m "feat(jobdetail): add tabbed apply drawer with manual prep and automated apply flows"
 ```
 
 ---

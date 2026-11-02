@@ -48,6 +48,13 @@ on mobile, matching the mockup).
 
 ## 2. Apply-drawer rebuild
 
+> **Amendment (mid-execution):** this section originally called for
+> removing the automation-run/approve/submit UI entirely. The user later
+> asked for both the automated pipeline and the new manual flow to stay
+> available, switchable via tabs in the drawer — see the implementation
+> plan's Task 5 (amended) for the current, authoritative design. The
+> automation functions/state described as "removed" below were restored.
+
 **File:** `dashboard/src/pages/JobDetail.tsx` (drawer JSX ~L359-461, state
 ~L42-121).
 
