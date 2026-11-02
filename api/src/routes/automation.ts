@@ -9,7 +9,10 @@ export function createAutomationRoutes(db: Db, jwtSecret: string) {
   automationRoutes.use('*', createRequireAuth(jwtSecret))
 
   automationRoutes.post('/:jobId/run', async (c) => {
-    const [sourceId, sourceJobId] = c.req.param('jobId').split(':')
+    const jobIdParam = c.req.param('jobId')
+    const separatorIndex = jobIdParam.indexOf(':')
+    const sourceId = separatorIndex === -1 ? '' : jobIdParam.slice(0, separatorIndex)
+    const sourceJobId = separatorIndex === -1 ? '' : jobIdParam.slice(separatorIndex + 1)
     if (!sourceId || !sourceJobId) {
       return c.json({ error: 'invalid job id' }, 400)
     }
@@ -26,7 +29,10 @@ export function createAutomationRoutes(db: Db, jwtSecret: string) {
   })
 
   automationRoutes.post('/:jobId/runs/:runNumber/submit', async (c) => {
-    const [sourceId, sourceJobId] = c.req.param('jobId').split(':')
+    const jobIdParam = c.req.param('jobId')
+    const separatorIndex = jobIdParam.indexOf(':')
+    const sourceId = separatorIndex === -1 ? '' : jobIdParam.slice(0, separatorIndex)
+    const sourceJobId = separatorIndex === -1 ? '' : jobIdParam.slice(separatorIndex + 1)
     const runNumber = Number(c.req.param('runNumber'))
     if (!sourceId || !sourceJobId) {
       return c.json({ error: 'invalid job id' }, 400)

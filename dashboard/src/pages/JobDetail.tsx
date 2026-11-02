@@ -130,7 +130,7 @@ export function JobDetailPage() {
   function refreshApplication() {
     if (!jobId) return
     setAppState({ phase: 'loading' })
-    apiFetch(`/applications/${jobId}`)
+    apiFetch(`/applications/${encodeURIComponent(jobId)}`)
       .then(async (res) => {
         if (res.status === 404) {
           setAppState({ phase: 'none' })
@@ -150,7 +150,7 @@ export function JobDetailPage() {
     setDrawerOpen(true)
     if (!jobId) return
     setAppState({ phase: 'loading' })
-    apiFetch(`/applications/${jobId}`)
+    apiFetch(`/applications/${encodeURIComponent(jobId)}`)
       .then(async (res) => {
         if (res.status === 404) {
           await startApplication()
@@ -193,7 +193,7 @@ export function JobDetailPage() {
     setActionBusy(true)
     setActionError(null)
     try {
-      const res = await apiFetch(`/materials/${jobId}/generate`, { method: 'POST' })
+      const res = await apiFetch(`/materials/${encodeURIComponent(jobId)}/generate`, { method: 'POST' })
       if (!res.ok) {
         const body = await res.json().catch(() => null)
         setActionError(body?.error ?? 'Materials generation is unavailable right now.')
@@ -266,7 +266,7 @@ export function JobDetailPage() {
     setActionBusy(true)
     setActionError(null)
     try {
-      const res = await apiFetch(`/automation/${jobId}/run`, { method: 'POST' })
+      const res = await apiFetch(`/automation/${encodeURIComponent(jobId)}/run`, { method: 'POST' })
       if (!res.ok) {
         const body = await res.json().catch(() => null)
         setActionError(body?.error ?? 'Failed to run automation.')
@@ -283,7 +283,7 @@ export function JobDetailPage() {
     setActionBusy(true)
     setActionError(null)
     try {
-      const res = await apiFetch(`/applications/${jobId}/runs/${runNumber}/approve`, { method: 'POST' })
+      const res = await apiFetch(`/applications/${encodeURIComponent(jobId)}/runs/${runNumber}/approve`, { method: 'POST' })
       const body = await res.json().catch(() => null)
       if (!res.ok || !body?.approved) {
         setActionError(body?.reason ?? body?.error ?? 'Approval failed.')
@@ -300,7 +300,7 @@ export function JobDetailPage() {
     setActionBusy(true)
     setActionError(null)
     try {
-      const res = await apiFetch(`/automation/${jobId}/runs/${runNumber}/submit`, { method: 'POST' })
+      const res = await apiFetch(`/automation/${encodeURIComponent(jobId)}/runs/${runNumber}/submit`, { method: 'POST' })
       if (!res.ok) {
         const body = await res.json().catch(() => null)
         setActionError(body?.error ?? 'Submission failed.')

@@ -127,7 +127,7 @@ export function ApplicationsPage() {
     setDetailError(null)
     setApproveResult(null)
     setApproveError(null)
-    apiFetch(`/applications/${jobId}`)
+    apiFetch(`/applications/${encodeURIComponent(jobId)}`)
       .then(async (res) => {
         if (!res.ok) {
           setDetailError('Failed to load application detail.')
@@ -151,7 +151,7 @@ export function ApplicationsPage() {
   function loadMaterials(jobId: string) {
     setMaterialsStatus('loading')
     setMaterials(null)
-    apiFetch(`/materials/${jobId}`)
+    apiFetch(`/materials/${encodeURIComponent(jobId)}`)
       .then(async (res) => {
         if (res.status === 404) {
           setMaterialsStatus('none')
@@ -184,7 +184,7 @@ export function ApplicationsPage() {
     setApproveResult(null)
     try {
       const res = await apiFetch(
-        `/applications/${detail.application.jobId}/runs/${detail.latestRun.runNumber}/approve`,
+        `/applications/${encodeURIComponent(detail.application.jobId)}/runs/${detail.latestRun.runNumber}/approve`,
         { method: 'POST' },
       )
       if (!res.ok) {
