@@ -23,6 +23,42 @@ TalentRadar crawls multiple job boards, de-duplicates and verifies that each pos
 
 ## 🏗️ Architecture
 
+### System design
+
+```mermaid
+flowchart TB
+    subgraph Client["dashboard - React + Vite"]
+        UI["Jobs - Profile - Applications - Admin"]
+    end
+    subgraph Sources["Job sources"]
+        S1["RemoteOK"]
+        S2["We Work Remotely"]
+        S3["Himalayas"]
+        S4["Teletalk Govt"]
+    end
+    subgraph API["api - Hono"]
+        Disc["Discovery"]
+        Ver["Verification"]
+        Score["Scoring"]
+        Mat["Materials"]
+        Autom["Automation"]
+    end
+    DB[("MongoDB")]
+    Claude["Anthropic Claude<br/>Haiku + Opus"]
+    PW["Playwright<br/>form automation"]
+    Cron["Vercel Cron (daily)"]
+
+    UI -->|REST + JWT| API
+    Sources --> Disc
+    Disc --> Ver --> Score --> Mat --> Autom
+    Score -. extract + score .-> Claude
+    Mat -. generate .-> Claude
+    Autom --> PW
+    PW -->|requires human approval| Autom
+    API --- DB
+    Cron --> Disc
+```
+
 TalentRadar is an **npm workspaces monorepo** with three packages:
 
 | Package | Stack | Responsibility |
