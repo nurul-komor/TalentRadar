@@ -1,7 +1,7 @@
 import type { Db } from 'mongodb'
 import type { Job, Materials, Profile } from '@job-hunter/shared'
-import { isWithinBudget, recordUsage } from '../scoring/aiUsageService'
-import { NotFoundError } from '../lib/errors'
+import { isWithinBudget, recordUsage } from '../scoring/aiUsageService.js'
+import { NotFoundError } from '../lib/errors.js'
 import type { MaterialsGenerator } from './types'
 
 export interface GenerateMaterialsResult {

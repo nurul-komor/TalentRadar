@@ -1,5 +1,5 @@
 import type { Materials, Profile } from '@job-hunter/shared'
-import { exportToPdf } from '../materials/exporters'
+import { exportToPdf } from '../materials/exporters.js'
 import type { DiscoveredForm } from './formDiscovery'
 import type { Page } from './browser'
 

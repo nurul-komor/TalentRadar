@@ -1,12 +1,12 @@
 import { ObjectId, type Db } from 'mongodb'
 import type { Application, Approval, AutomationRun, Job, Materials, Profile } from '@job-hunter/shared'
-import { recordRunResult, canSubmit } from '../applications/automationRunsService'
-import { writeAuditLog } from '../applications/auditLog'
-import { ForbiddenError, NotFoundError } from '../lib/errors'
-import { launchBrowser } from './browser'
-import { discoverForm } from './formDiscovery'
-import { detectBlocker } from './blockerDetection'
-import { fillForm } from './fillStrategy'
+import { recordRunResult, canSubmit } from '../applications/automationRunsService.js'
+import { writeAuditLog } from '../applications/auditLog.js'
+import { ForbiddenError, NotFoundError } from '../lib/errors.js'
+import { launchBrowser } from './browser.js'
+import { discoverForm } from './formDiscovery.js'
+import { detectBlocker } from './blockerDetection.js'
+import { fillForm } from './fillStrategy.js'
 
 async function loadJobMaterialsAndProfile(
   db: Db,

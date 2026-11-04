@@ -2,8 +2,8 @@ import { createHash } from 'crypto'
 import type { Db } from 'mongodb'
 import type { Job, Profile } from '@job-hunter/shared'
 import { UNSCORED_JOB_SOURCE_IDS } from '@job-hunter/shared'
-import { isWithinBudget, recordUsage } from './aiUsageService'
-import { computeScore } from './scoreCalculator'
+import { isWithinBudget, recordUsage } from './aiUsageService.js'
+import { computeScore } from './scoreCalculator.js'
 import type { JobRequirementsExtractor } from './types'
 
 export interface ScoringResult {

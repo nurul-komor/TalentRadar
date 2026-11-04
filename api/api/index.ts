@@ -19,7 +19,9 @@ async function buildApp() {
   if (!mongodbUri) throw new Error('MONGODB_URI is required')
   if (!jwtSecret) throw new Error('JWT_SECRET is required')
   if (!cronSecret) throw new Error('CRON_SECRET is required')
-  if (!anthropicApiKey) throw new Error('ANTHROPIC_API_KEY is required')
+  if (!anthropicApiKey) {
+    console.warn('ANTHROPIC_API_KEY is not set — /scoring and /materials routes will be disabled')
+  }
 
   const { db } = await connectMongo(mongodbUri, process.env.MONGODB_DB_NAME ?? 'job_hunter')
   await ensureJobIndexes(db)
