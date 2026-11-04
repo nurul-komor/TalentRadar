@@ -44,9 +44,86 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
       "Bangladesh government job circulars, pulled from the official portal's org-list and per-posting detail endpoints. These carry fields the general boards don't: vacancy count, age limits, gender requirement, publication and deadline dates, and a link to the official advertisement PDF.",
     isGovt: true,
   },
+  'brainstation-23': {
+    label: 'Brain Station 23',
+    initials: 'BS',
+    color: '#2FC1E1',
+    description:
+      "A Bangladesh software firm that recruits through the easy.jobs ATS rather than a general board. We pull its public career API directly — title, full job description, and location — and fetch each posting's detail page for the description the scoring pipeline needs.",
+  },
+  'riseup-labs': {
+    label: 'Riseup Labs',
+    initials: 'RL',
+    color: '#1A6CFF',
+    description:
+      'A Bangladesh software and game studio. Its careers section runs on WordPress, so we pull the jobs straight from the public WP REST API — title, permalink, publish date, and the full HTML body.',
+  },
+  enosis: {
+    label: 'Enosis Solutions',
+    initials: 'EN',
+    color: '#00A36C',
+    description:
+      'A Dhaka/Atlanta software firm recruiting through the Pinpoint ATS, which exposes a public postings feed. We read title, location, salary (when the employer makes it visible), and the full description in one request.',
+  },
+  bdtask: {
+    label: 'Bdtask',
+    initials: 'BT',
+    color: '#F5A623',
+    description:
+      'A Bangladesh software product company. Its careers page is plain server-rendered HTML with no API, so we parse the job list and fetch each detail page for the location and description.',
+  },
+  selise: {
+    label: 'SELISE Digital Platforms',
+    initials: 'SE',
+    color: '#E4002B',
+    description:
+      'A Swiss-Bangladeshi engineering company recruiting through the hirebee.ai ATS. The listings are server-rendered HTML, so we scrape the job list (title and city) and each detail page for the full description.',
+  },
+  bjit: {
+    label: 'BJIT Limited',
+    initials: 'BJ',
+    color: '#0057B8',
+    description:
+      'A Bangladesh-Japan software firm. Its Next.js career page loads jobs from a public JSON API that already includes the full requirements, posting date, and country.',
+  },
+  cefalo: {
+    label: 'Cefalo Bangladesh',
+    initials: 'CE',
+    color: '#5B2A86',
+    description:
+      'A Norwegian-Bangladeshi software company running its own ATS. We read the public jobs endpoint, skip expired postings, and fetch each job for its full description and posting date.',
+  },
+  vivasoft: {
+    label: 'Vivasoft Limited',
+    initials: 'VS',
+    color: '#FF6B35',
+    description:
+      'A Bangladesh software outsourcing firm recruiting through the Novara ATS. We pull the public jobs API — title, city/country, salary when set — and fetch each job for the full HTML description and posting date.',
+  },
+  dsinnovators: {
+    label: 'Dynamic Solution Innovators',
+    initials: 'DS',
+    color: '#2E8B57',
+    description:
+      'A Dhaka software company recruiting through the hrythmic ATS. The openings page is server-rendered HTML, so we scrape the job list and each detail page for the description and posting date.',
+  },
 }
 
-const SOURCE_ORDER: JobSourceId[] = ['remoteok', 'weworkremotely', 'himalayas', 'teletalk-govt']
+const SOURCE_ORDER: JobSourceId[] = [
+  'remoteok',
+  'weworkremotely',
+  'himalayas',
+  'teletalk-govt',
+  'brainstation-23',
+  'riseup-labs',
+  'enosis',
+  'bdtask',
+  'selise',
+  'bjit',
+  'cefalo',
+  'vivasoft',
+  'dsinnovators',
+]
 
 export function SourcesPage() {
   const [summary, setSummary] = useState<PublicJobsSummary | null>(null)

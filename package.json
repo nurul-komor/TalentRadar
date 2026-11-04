@@ -7,6 +7,7 @@
     "dashboard"
   ],
   "scripts": {
+    "postinstall": "npm install @tailwindcss/oxide-linux-x64-gnu@4.3.3 --no-save --ignore-scripts",
     "dev": "npm run dev --workspace=api & npm run dev --workspace=dashboard & wait",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",

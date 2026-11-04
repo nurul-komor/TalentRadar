@@ -1,5 +1,5 @@
 {
-  "_comment": "Seed data for the `companies` collection (Company Directory). Reproduces the 'seed script adds examples' feature from the design spec. Compiled from web search 2026-10-20, career URLs confirmed 2026-10-20. All entries verified except note TigerIT has no standalone careers page (atsType: external, points at its Indeed listing instead of a schema.org JobPosting page) — the career-page discovery adapter won't work for it as-is.",
+  "_comment": "Seed data for the `companies` collection (Company Directory). Reproduces the 'seed script adds examples' feature from the design spec. Compiled from web search 2026-10-20, career URLs confirmed 2026-10-20. Every company listed here has a working discovery source in api/src/discovery/sources (confirmed against the live careers API/page). Companies without a usable source were removed: DataSoft (JS-rendered shell, no accessible job data), Kaz Software (site refused connections), TigerIT (no standalone careers page — posts to Indeed only), and REVE Systems (no structured job listings, only a generic resume-drop form).",
   "companies": [
     {
       "name": "Brain Station 23",
@@ -26,22 +26,6 @@
       "notes": "Named repeatedly for strong engineering culture."
     },
     {
-      "name": "DataSoft Systems Bangladesh",
-      "website": "https://datasoft-bd.com",
-      "careersUrl": "https://datasoft-bd.com/career",
-      "atsType": "career-page",
-      "verified": true,
-      "notes": "Software, logistics and automation, 20+ years operating."
-    },
-    {
-      "name": "Kaz Software",
-      "website": "https://kaz.com.bd",
-      "careersUrl": "https://kaz.com.bd/careers",
-      "atsType": "career-page",
-      "verified": true,
-      "notes": "Boutique custom-software house, strong client-satisfaction reputation."
-    },
-    {
       "name": "SELISE Digital Platforms",
       "website": "https://selisegroup.com",
       "careersUrl": "https://ats.hirebee.ai/en/company/selise-bangladesh-ltd",
@@ -64,22 +48,6 @@
       "atsType": "career-page",
       "verified": true,
       "notes": "Repeatedly named among top BD software companies."
-    },
-    {
-      "name": "TigerIT Bangladesh",
-      "website": "https://www.tigerit.com",
-      "careersUrl": "https://www.indeed.com/cmp/Tiger-IT-Bangladesh",
-      "atsType": "external",
-      "verified": true,
-      "notes": "Biometrics and e-governance, based in Banani, Dhaka. No standalone careers page on their own domain — vacancies are posted on Indeed/LinkedIn instead; the career-page adapter won't apply here, this needs a different discovery path (or manual tracking)."
-    },
-    {
-      "name": "REVE Systems",
-      "website": "https://www.revesoft.com",
-      "careersUrl": "https://www.revesoft.com/career",
-      "atsType": "career-page",
-      "verified": true,
-      "notes": "Telecom software (VoIP)."
     },
     {
       "name": "Riseup Labs",

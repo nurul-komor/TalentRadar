@@ -16,6 +16,15 @@ import { remoteOkSource } from './discovery/sources/remoteok.js'
 import { weWorkRemotelySource } from './discovery/sources/weworkremotely.js'
 import { himalayasSource } from './discovery/sources/himalayas.js'
 import { teletalkGovtSource } from './discovery/sources/teletalkGovt.js'
+import { brainStation23Source } from './discovery/sources/brainStation23.js'
+import { riseupLabsSource } from './discovery/sources/riseupLabs.js'
+import { enosisSource } from './discovery/sources/enosis.js'
+import { bdtaskSource } from './discovery/sources/bdtask.js'
+import { seliseSource } from './discovery/sources/selise.js'
+import { bjitSource } from './discovery/sources/bjit.js'
+import { cefaloSource } from './discovery/sources/cefalo.js'
+import { vivasoftSource } from './discovery/sources/vivasoft.js'
+import { dsInnovatorsSource } from './discovery/sources/dsInnovators.js'
 import { pageEvidenceVerifier } from './verification/pageEvidenceVerifier.js'
 import { createClaudeRequirementsExtractor } from './scoring/requirementsExtractor.js'
 import { createClaudeMaterialsGenerator } from './materials/materialsGenerator.js'
@@ -28,7 +37,21 @@ export function mountRoutes(
   cronSecret: string,
   anthropicApiKey: string | undefined
 ) {
-  const sources = [remoteOkSource, weWorkRemotelySource, himalayasSource, teletalkGovtSource]
+  const sources = [
+    remoteOkSource,
+    weWorkRemotelySource,
+    himalayasSource,
+    teletalkGovtSource,
+    brainStation23Source,
+    riseupLabsSource,
+    enosisSource,
+    bdtaskSource,
+    seliseSource,
+    bjitSource,
+    cefaloSource,
+    vivasoftSource,
+    dsInnovatorsSource,
+  ]
   const resumeExtractor = anthropicApiKey ? createClaudeResumeExtractor(anthropicApiKey) : null
 
   app.route('/auth', createAuthRoutes(db, jwtSecret))

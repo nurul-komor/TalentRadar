@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { Briefcase, ClipboardList, FileText, LayoutDashboard, Search, User } from 'lucide-react'
+import { Briefcase, ClipboardList, FileText, LayoutDashboard, RefreshCw, Search, User } from 'lucide-react'
 import type { Application, Profile } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { canSync } from '../lib/syncAccess'
 import { useSavedJobs } from '../hooks/useSavedJobs'
 import { profileCompletenessPercent } from '../lib/profileCompleteness'
 import { ThemeToggle } from './ThemeToggle'
@@ -116,6 +117,13 @@ export function DashboardSidebar() {
           <ClipboardList size={18} />
           Government jobs
         </NavLink>
+
+        {canSync(email) && (
+          <NavLink to="/sync" className={sidebarLinkClass}>
+            <RefreshCw size={18} />
+            Job sync
+          </NavLink>
+        )}
       </div>
 
       {readyCount > 0 && (

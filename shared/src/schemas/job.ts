@@ -1,6 +1,20 @@
 import { z } from 'zod'
 
-export const JobSourceIdSchema = z.enum(['remoteok', 'weworkremotely', 'himalayas', 'teletalk-govt'])
+export const JobSourceIdSchema = z.enum([
+  'remoteok',
+  'weworkremotely',
+  'himalayas',
+  'teletalk-govt',
+  'brainstation-23',
+  'riseup-labs',
+  'enosis',
+  'bdtask',
+  'selise',
+  'bjit',
+  'cefalo',
+  'vivasoft',
+  'dsinnovators',
+])
 
 export const JobStatusSchema = z.enum(['discovered', 'verified', 'rejected'])
 

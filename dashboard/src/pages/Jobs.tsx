@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Building2, CircleCheck, MapPin, Search, SlidersHorizontal, Wallet, X } from 'lucide-react'
-import type { Job, JobSourceId, JobStatus } from '@job-hunter/shared'
+import type { Job, JobSourceId } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { PublicNav } from '../components/Nav'
 import { Footer } from '../components/Footer'
@@ -27,7 +27,6 @@ const PAGE_SIZE = 20
 const DEBOUNCE_MS = 300
 
 type CategoryFilter = 'all' | 'government' | 'private'
-type StatusFilter = JobStatus | 'all'
 type SourceSelection = { kind: 'all' } | { kind: 'source'; id: JobSourceId } | { kind: 'company'; name: string }
 type DateFilter = 'all' | 'today' | 'week' | 'month'
 
@@ -43,17 +42,21 @@ function dateFilterCutoffIso(filter: DateFilter): string | undefined {
   return new Date(Date.now() - option.days * 24 * 60 * 60 * 1000).toISOString()
 }
 
-const STATUS_OPTIONS: Array<{ value: JobStatus; label: string }> = [
-  { value: 'discovered', label: 'Discovered' },
-  { value: 'verified', label: 'Verified' },
-  { value: 'rejected', label: 'Rejected' },
-]
 
 const SOURCE_OPTIONS: Array<{ value: JobSourceId; label: string }> = [
   { value: 'remoteok', label: 'Remote OK' },
   { value: 'weworkremotely', label: 'We Work Remotely' },
   { value: 'himalayas', label: 'Himalayas' },
   { value: 'teletalk-govt', label: 'alljobs.teletalk.com.bd (Govt)' },
+  { value: 'brainstation-23', label: 'Brain Station 23' },
+  { value: 'riseup-labs', label: 'Riseup Labs' },
+  { value: 'enosis', label: 'Enosis Solutions' },
+  { value: 'bdtask', label: 'Bdtask' },
+  { value: 'selise', label: 'SELISE Digital Platforms' },
+  { value: 'bjit', label: 'BJIT Limited' },
+  { value: 'cefalo', label: 'Cefalo Bangladesh' },
+  { value: 'vivasoft', label: 'Vivasoft Limited' },
+  { value: 'dsinnovators', label: 'Dynamic Solution Innovators' },
 ]
 
 const SOURCE_LABELS: Record<JobSourceId, string> = Object.fromEntries(
@@ -168,7 +171,6 @@ export function JobsPage() {
   const [trackedCompanies, setTrackedCompanies] = useState<TrackedCompany[]>([])
 
   const category = (searchParams.get('category') as CategoryFilter) || 'all'
-  const status = (searchParams.get('status') as StatusFilter) || 'all'
   const sourceSelection = parseSourceSelection(searchParams)
   const sourceSelectionKey =
     sourceSelection.kind === 'source'
@@ -201,7 +203,6 @@ export function JobsPage() {
 
   const activeFilterCount =
     Number(category !== 'all') +
-    Number(status !== 'all') +
     Number(sourceSelection.kind !== 'all') +
     Number(datePosted !== 'all') +
     Number(keyword.trim() !== '') +
@@ -256,7 +257,6 @@ export function JobsPage() {
     setError(null)
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) })
     if (category !== 'all') params.set('category', category)
-    if (status !== 'all') params.set('status', status)
     if (sourceSelection.kind === 'source') params.set('sourceId', sourceSelection.id)
     if (sourceSelection.kind === 'company') params.set('company', sourceSelection.name)
     const discoveredAfter = dateFilterCutoffIso(datePosted)
@@ -277,7 +277,7 @@ export function JobsPage() {
         setTotal(data.total)
       })
       .finally(() => setLoading(false))
-  }, [category, status, sourceSelectionKey, datePosted, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset])
+  }, [category, sourceSelectionKey, datePosted, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset])
 
   const rangeStart = total === 0 ? 0 : offset + 1
   const rangeEnd = Math.min(offset + PAGE_SIZE, total)
@@ -295,7 +295,7 @@ export function JobsPage() {
         />
       </div>
 
-      <Accordion defaultValue={['date', 'status', 'source']}>
+      <Accordion defaultValue={['date', 'source']}>
             <AccordionItem value="date">
               <AccordionTrigger>Date posted</AccordionTrigger>
               <AccordionContent>
@@ -307,23 +307,6 @@ export function JobsPage() {
                         onCheckedChange={(checked) =>
                           updateFilters({ datePosted: checked ? option.value : null })
                         }
-                      />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-
-            <AccordionItem value="status">
-              <AccordionTrigger>Status</AccordionTrigger>
-              <AccordionContent>
-                <div className="flex flex-col gap-2">
-                  {STATUS_OPTIONS.map((option) => (
-                    <label key={option.value} className="check">
-                      <Checkbox
-                        checked={status === option.value}
-                        onCheckedChange={(checked) => updateFilters({ status: checked ? option.value : null })}
                       />
                       {option.label}
                     </label>

@@ -17,6 +17,15 @@ const SOURCE_LABELS: Record<JobSourceId, string> = {
   weworkremotely: 'We Work Remotely',
   himalayas: 'Himalayas',
   'teletalk-govt': 'alljobs.teletalk.com.bd',
+  'brainstation-23': 'Brain Station 23',
+  'riseup-labs': 'Riseup Labs',
+  enosis: 'Enosis Solutions',
+  bdtask: 'Bdtask',
+  selise: 'SELISE Digital Platforms',
+  bjit: 'BJIT Limited',
+  cefalo: 'Cefalo Bangladesh',
+  vivasoft: 'Vivasoft Limited',
+  dsinnovators: 'Dynamic Solution Innovators',
 }
 
 // Static illustrative cards for the hero's floating stack — not live data
