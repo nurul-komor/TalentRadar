@@ -10,6 +10,7 @@ import { FormError } from '../components/FormError'
 import { ScoreRing } from '../components/ScoreRing'
 import { Pill } from '../components/Pill'
 import { LogoChip } from '../components/LogoChip'
+import { materialFileName } from '../lib/filename'
 
 function formatDate(value: string | null): string {
   if (!value) return '—'
@@ -66,8 +67,19 @@ export function JobDetailPage() {
   const [actionBusy, setActionBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [materialsPreview, setMaterialsPreview] = useState<string | null>(null)
+  const [cvPreview, setCvPreview] = useState<string | null>(null)
+  // Nothing is generated automatically — these flip true only when the user
+  // clicks "Generate cover letter" / "Generate résumé", which is what reveals
+  // (and, if needed, generates) each document.
+  const [coverRequested, setCoverRequested] = useState(false)
+  const [cvRequested, setCvRequested] = useState(false)
+  // Independent busy flags so the cover-letter and résumé buttons act separately —
+  // generating one neither disables nor shows a skeleton on the other.
+  const [coverBusy, setCoverBusy] = useState(false)
+  const [cvBusy, setCvBusy] = useState(false)
   const [activeTab, setActiveTab] = useState<'manual' | 'automated' | 'onsite'>('manual')
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
+  const [cvCopyState, setCvCopyState] = useState<'idle' | 'copied'>('idle')
   const [skillBusy, setSkillBusy] = useState<string | null>(null)
   const [relatedJobs, setRelatedJobs] = useState<Job[]>([])
   const scoreCardRef = useRef<HTMLDivElement | null>(null)
@@ -168,29 +180,55 @@ export function JobDetailPage() {
         }
         const body = await res.json()
         setAppState({ phase: 'loaded', application: body.application, latestRun: body.latestRun })
-        if (!materialsPreview) await loadOrGenerateMaterials()
+        // No automatic generation — the user generates cover letter / résumé on demand.
       })
       .catch(() => setAppState({ phase: 'error', message: 'Failed to load application status.' }))
   }
 
-  // Reuse the cover letter already saved under the logged-in user's profile
-  // (the `materials` collection is keyed by profileId) instead of regenerating
-  // — and spending AI budget — every time the drawer opens. Only fall back to a
-  // fresh generation when nothing has been saved for this job yet.
-  async function loadOrGenerateMaterials() {
-    if (!jobId) return
-    setActionBusy(true)
-    try {
-      const res = await apiFetch(`/materials/${encodeURIComponent(jobId)}`)
-      if (res.ok) {
-        const saved = await res.json()
-        setMaterialsPreview(saved.coverLetter ?? null)
-        return
-      }
-    } finally {
-      setActionBusy(false)
+  // Runs one generation and returns the materials object (or null on failure).
+  // The backend produces all docs in one call; each caller reads only its own.
+  async function runGenerate(): Promise<{ coverLetter?: string; tailoredCv?: string } | null> {
+    if (!jobId) return null
+    const res = await apiFetch(`/materials/${encodeURIComponent(jobId)}/generate`, { method: 'POST' })
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      setActionError(body?.error ?? 'Materials generation is unavailable right now.')
+      return null
     }
-    await generateMaterials()
+    const body = await res.json()
+    if (body.status === 'deferred') {
+      setActionError(`Materials deferred: ${body.reason}`)
+      return null
+    }
+    return body.materials ?? null
+  }
+
+  // Cover-letter and résumé buttons act independently: each has its own busy flag
+  // and skeleton, and only updates its own document.
+  async function generateCoverLetter() {
+    setCoverRequested(true)
+    setMaterialsPreview(null) // clear so the skeleton shows
+    setCoverBusy(true)
+    setActionError(null)
+    try {
+      const m = await runGenerate()
+      if (m) setMaterialsPreview(m.coverLetter ?? null)
+    } finally {
+      setCoverBusy(false)
+    }
+  }
+
+  async function generateResume() {
+    setCvRequested(true)
+    setCvPreview(null) // clear so the skeleton shows
+    setCvBusy(true)
+    setActionError(null)
+    try {
+      const m = await runGenerate()
+      if (m) setCvPreview(m.tailoredCv ?? null)
+    } finally {
+      setCvBusy(false)
+    }
   }
 
   async function startApplication() {
@@ -208,7 +246,6 @@ export function JobDetailPage() {
         return
       }
       refreshApplication()
-      await generateMaterials()
     } finally {
       setActionBusy(false)
     }
@@ -231,6 +268,7 @@ export function JobDetailPage() {
         return
       }
       setMaterialsPreview(body.materials?.coverLetter ?? null)
+      setCvPreview(body.materials?.tailoredCv ?? null)
     } finally {
       setActionBusy(false)
     }
@@ -270,21 +308,49 @@ export function JobDetailPage() {
     })
   }
 
-  async function downloadCv() {
-    const res = await apiFetch('/profile/cv/export')
-    if (!res.ok) {
-      setActionError('Failed to generate CV.')
-      return
+  function copyCv() {
+    if (!cvPreview) return
+    navigator.clipboard.writeText(cvPreview).then(() => {
+      setCvCopyState('copied')
+      setTimeout(() => setCvCopyState('idle'), 1600)
+    })
+  }
+
+  // Downloads a generated document (tailored CV or cover letter) for THIS job as a
+  // PDF, named with the logged-in user's name + email. Generates once if missing.
+  async function downloadDoc(docType: 'tailoredCv' | 'coverLetter', kind: 'cv' | 'cover') {
+    if (!jobId) return
+    setActionBusy(true)
+    setActionError(null)
+    try {
+      const path = `/materials/${encodeURIComponent(jobId)}/export?doc=${docType}&format=pdf`
+      let res = await apiFetch(path)
+      if (res.status === 404) {
+        // No materials yet — generate them, then retry the export once.
+        await generateMaterials()
+        res = await apiFetch(path)
+      }
+      if (!res.ok) {
+        setActionError('Failed to prepare the document for download.')
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = materialFileName({
+        fullName: profile?.resume?.fullName,
+        email: profile?.email,
+        kind,
+        ext: 'pdf',
+      })
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } finally {
+      setActionBusy(false)
     }
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'cv.pdf'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
   }
 
   async function runAutomation() {
@@ -617,7 +683,22 @@ export function JobDetailPage() {
 
                 {activeTab === 'manual' && (
                   <>
-                    {actionBusy && !materialsPreview && (
+                    {/* Nothing is generated until the user clicks. The buttons stay
+                        available so each document can be regenerated on demand. */}
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <button type="button" className="btn btn-indigo" onClick={generateCoverLetter} disabled={coverBusy}>
+                        {coverBusy
+                          ? 'Generating…'
+                          : materialsPreview
+                            ? 'Regenerate cover letter'
+                            : 'Generate cover letter'}
+                      </button>
+                      <button type="button" className="btn btn-indigo" onClick={generateResume} disabled={cvBusy}>
+                        {cvBusy ? 'Generating…' : cvPreview ? 'Regenerate résumé (ATS)' : 'Generate résumé (ATS)'}
+                      </button>
+                    </div>
+
+                    {coverBusy && (
                       <div className="doc-preview" aria-hidden="true">
                         <div className="dp-h">
                           <span>Cover letter (draft)</span>
@@ -635,7 +716,7 @@ export function JobDetailPage() {
                       </div>
                     )}
 
-                    {materialsPreview && (
+                    {coverRequested && materialsPreview && !coverBusy && (
                       <div className="doc-preview">
                         <div className="dp-h">
                           <span>Cover letter (draft)</span>
@@ -644,6 +725,55 @@ export function JobDetailPage() {
                           </button>
                         </div>
                         <p style={{ whiteSpace: 'pre-wrap' }}>{materialsPreview}</p>
+                        <button
+                          type="button"
+                          className="btn btn-indigo"
+                          onClick={() => downloadDoc('coverLetter', 'cover')}
+                          disabled={actionBusy}
+                          style={{ marginTop: 14 }}
+                        >
+                          {actionBusy ? 'Preparing…' : 'Download cover letter (PDF)'}
+                        </button>
+                      </div>
+                    )}
+
+                    {cvBusy && (
+                      <div className="doc-preview" aria-hidden="true">
+                        <div className="dp-h">
+                          <span>Tailored CV</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          <div className="sk" style={{ width: '42%' }} />
+                          <div className="sk" style={{ width: '70%' }} />
+                          <div className="sk" style={{ width: '30%', marginTop: 8 }} />
+                          <div className="sk" style={{ width: '100%' }} />
+                          <div className="sk" style={{ width: '95%' }} />
+                          <div className="sk" style={{ width: '88%' }} />
+                          <div className="sk" style={{ width: '34%', marginTop: 8 }} />
+                          <div className="sk" style={{ width: '98%' }} />
+                          <div className="sk" style={{ width: '91%' }} />
+                        </div>
+                      </div>
+                    )}
+
+                    {cvRequested && cvPreview && !cvBusy && (
+                      <div className="doc-preview">
+                        <div className="dp-h">
+                          <span>Tailored CV (ATS-optimized)</span>
+                          <button type="button" className={`copy-btn${cvCopyState === 'copied' ? ' ok' : ''}`} onClick={copyCv}>
+                            {cvCopyState === 'copied' ? 'Copied' : 'Copy'}
+                          </button>
+                        </div>
+                        <p style={{ whiteSpace: 'pre-wrap', maxHeight: 360, overflowY: 'auto' }}>{cvPreview}</p>
+                        <button
+                          type="button"
+                          className="btn btn-indigo"
+                          onClick={() => downloadDoc('tailoredCv', 'cv')}
+                          disabled={actionBusy}
+                          style={{ marginTop: 14 }}
+                        >
+                          {actionBusy ? 'Preparing…' : 'Download tailored CV (PDF)'}
+                        </button>
                       </div>
                     )}
 
@@ -670,9 +800,6 @@ export function JobDetailPage() {
                       </div>
                     )}
 
-                    <button type="button" className="btn btn-indigo" onClick={downloadCv}>
-                      Download tailored CV (PDF)
-                    </button>
                   </>
                 )}
 

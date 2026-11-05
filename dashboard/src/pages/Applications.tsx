@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Application, ApplicationStatus, AutomationRun, Materials } from '@job-hunter/shared'
+import type { Application, ApplicationStatus, AutomationRun, Materials, Profile } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { LogoChip } from '../components/LogoChip'
 import { Button } from '../components/Button'
 import { FormError } from '../components/FormError'
 import { ScoreRing } from '../components/ScoreRing'
+import { materialFileName } from '../lib/filename'
 
 interface ApplicationsResponseBody {
   applications: Application[]
@@ -88,6 +89,7 @@ function buildTimeline(application: Application, latestRun: AutomationRun | null
 
 export function ApplicationsPage() {
   const [applications, setApplications] = useState<Application[] | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const [listError, setListError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | null>(null)
 
@@ -101,11 +103,20 @@ export function ApplicationsPage() {
 
   // Tracks which lifecycle action is in flight so only its button shows a busy
   // state and the others disable while it runs.
-  const [actionBusy, setActionBusy] = useState<null | 'generate' | 'run' | 'answers' | 'submit'>(null)
+  const [actionBusy, setActionBusy] = useState<null | 'generate' | 'run' | 'answers' | 'submit' | 'download'>(null)
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   // Draft edits for the required answers, keyed by question, before they're saved.
   const [answerDraft, setAnswerDraft] = useState<Record<string, string>>({})
+  // Which document was just copied to the clipboard (for transient "Copied" feedback).
+  const [copied, setCopied] = useState<string | null>(null)
+
+  function copyText(key: string, text: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key)
+      setTimeout(() => setCopied(null), 1600)
+    })
+  }
 
   function loadApplications() {
     setListError(null)
@@ -123,6 +134,11 @@ export function ApplicationsPage() {
 
   useEffect(() => {
     loadApplications()
+    // Load the profile once so downloads can be named with the user's name + email.
+    apiFetch('/profile')
+      .then((res) => (res.ok ? (res.json() as Promise<Profile>) : null))
+      .then(setProfile)
+      .catch(() => setProfile(null))
   }, [])
 
   // Default to the first application once the list arrives, if nothing is selected yet.
@@ -220,6 +236,41 @@ export function ApplicationsPage() {
       loadApplications()
     } catch {
       setActionError('Failed to generate materials.')
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  // Download the ATS-tailored CV (latest version) for the selected application.
+  async function downloadTailoredCv(format: 'pdf' | 'docx') {
+    if (!detail) return
+    const jobId = detail.application.jobId
+    setActionBusy('download')
+    setActionError(null)
+    try {
+      const res = await apiFetch(
+        `/materials/${encodeURIComponent(jobId)}/export?doc=tailoredCv&format=${format}`,
+      )
+      if (!res.ok) {
+        setActionError('Failed to download tailored CV.')
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = materialFileName({
+        fullName: profile?.resume?.fullName,
+        email: profile?.email,
+        kind: 'cv',
+        ext: format,
+      })
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      setActionError('Failed to download tailored CV.')
     } finally {
       setActionBusy(null)
     }
@@ -542,10 +593,18 @@ export function ApplicationsPage() {
                         <div className="t" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--faint)' }}>
                           Materials preview
                         </div>
-                        {materialsStatus === 'loading' && (
-                          <p style={{ marginTop: 8, color: 'var(--muted-text)', fontSize: 13.5 }}>Loading…</p>
+                        {(materialsStatus === 'loading' || actionBusy === 'generate' || actionBusy === 'run') && (
+                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }} aria-hidden="true">
+                            <div className="sk" style={{ width: '32%' }} />
+                            <div className="sk" style={{ width: '100%' }} />
+                            <div className="sk" style={{ width: '92%' }} />
+                            <div className="sk" style={{ width: '70%' }} />
+                            <div className="sk" style={{ width: '28%', marginTop: 8 }} />
+                            <div className="sk" style={{ width: '96%' }} />
+                            <div className="sk" style={{ width: '60%' }} />
+                          </div>
                         )}
-                        {materialsStatus === 'none' && (
+                        {materialsStatus === 'none' && actionBusy !== 'generate' && actionBusy !== 'run' && (
                           <p style={{ marginTop: 8, color: 'var(--muted-text)', fontSize: 13.5 }}>
                             No materials generated for this application yet.
                           </p>
@@ -555,19 +614,45 @@ export function ApplicationsPage() {
                             <FormError message="Failed to load materials." />
                           </div>
                         )}
-                        {materialsStatus === 'ready' && materials && (
+                        {materialsStatus === 'ready' && materials && actionBusy !== 'generate' && actionBusy !== 'run' && (
                           <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
                             <div>
-                              <strong style={{ fontSize: 13 }}>Cover letter</strong>
+                              <div className="dp-h">
+                                <span>Cover letter</span>
+                                <button
+                                  type="button"
+                                  className={`copy-btn${copied === 'cover' ? ' ok' : ''}`}
+                                  onClick={() => copyText('cover', materials.coverLetter)}
+                                >
+                                  {copied === 'cover' ? 'Copied' : 'Copy'}
+                                </button>
+                              </div>
                               <p style={{ marginTop: 4, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
                                 {truncate(materials.coverLetter, 320)}
                               </p>
                             </div>
                             <div>
-                              <strong style={{ fontSize: 13 }}>Tailored CV</strong>
+                              <div className="dp-h">
+                                <span>Tailored CV</span>
+                                <button
+                                  type="button"
+                                  className={`copy-btn${copied === 'cv' ? ' ok' : ''}`}
+                                  onClick={() => copyText('cv', materials.tailoredCv)}
+                                >
+                                  {copied === 'cv' ? 'Copied' : 'Copy'}
+                                </button>
+                              </div>
                               <p style={{ marginTop: 4, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
                                 {truncate(materials.tailoredCv, 320)}
                               </p>
+                              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                                <Button variant="ghost" onClick={() => downloadTailoredCv('pdf')} disabled={actionBusy !== null}>
+                                  {actionBusy === 'download' ? 'Preparing…' : 'Download CV (PDF)'}
+                                </Button>
+                                <Button variant="ghost" onClick={() => downloadTailoredCv('docx')} disabled={actionBusy !== null}>
+                                  Download CV (DOCX)
+                                </Button>
+                              </div>
                             </div>
                             {materials.unmetRequirements.length > 0 && (
                               <div>

@@ -48,21 +48,35 @@ function parseListing(html: string): ListingRow[] {
   return rows
 }
 
-// Extract the inner HTML of the first <div class="...job_details_content..."> by
-// counting opening/closing <div> tags so nested markup is handled correctly.
+// A detail page splits the posting across several sibling
+// <div class="job_details_content"> blocks — one per section (Job Context, Job
+// Requirements, Skills, Salary, …). Extract the inner HTML of every block and
+// join them so the whole description is captured, not just the first section.
+// Each block's end is found by counting opening/closing <div> tags so nested
+// markup is handled correctly.
 function extractContent(html: string): string {
-  const open = /<div[^>]*class="[^"]*job_details_content[^"]*"[^>]*>/.exec(html)
-  if (!open) return ''
-  let depth = 1
-  const start = open.index + open[0].length
-  const tag = /<\/?div\b[^>]*>/g
-  tag.lastIndex = start
+  const open = /<div[^>]*class="[^"]*job_details_content[^"]*"[^>]*>/g
+  const sections: string[] = []
   let match: RegExpExecArray | null
-  while ((match = tag.exec(html)) !== null) {
-    depth += match[0].startsWith('</') ? -1 : 1
-    if (depth === 0) return html.slice(start, match.index).trim()
+  while ((match = open.exec(html)) !== null) {
+    let depth = 1
+    const start = match.index + match[0].length
+    const tag = /<\/?div\b[^>]*>/g
+    tag.lastIndex = start
+    let end = html.length
+    let inner: RegExpExecArray | null
+    while ((inner = tag.exec(html)) !== null) {
+      depth += inner[0].startsWith('</') ? -1 : 1
+      if (depth === 0) {
+        end = inner.index
+        break
+      }
+    }
+    sections.push(html.slice(start, end).trim())
+    // Resume scanning after this block so its closing </div> isn't re-counted.
+    open.lastIndex = end
   }
-  return html.slice(start).trim()
+  return sections.join('\n').trim()
 }
 
 function labelledValue(html: string, label: string): string | null {

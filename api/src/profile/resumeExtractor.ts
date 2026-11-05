@@ -1,10 +1,7 @@
 import { ResumeSchema, type Resume } from '@job-hunter/shared'
 import type { LlmProvider } from '../llm/types.js'
+import { RESUME_EXTRACTION_SYSTEM_PROMPT, buildResumeExtractionUserPrompt } from '../llm/prompts.js'
 import type { ResumeExtractionResult, ResumeExtractor } from './types.js'
-
-const SYSTEM_PROMPT = `You extract a structured resume from a candidate's CV text.
-
-Extract only what the CV text actually states. If a field isn't mentioned, use null (for fullName/headline/phone/summary) or an empty array (for links/experience/projects/skillGroups/education) — never guess or invent experience, dates, or credentials the CV doesn't show.`
 
 // Same deviation as scoring/requirementsExtractor.ts and materials/materialsGenerator.ts:
 // `zodOutputFormat()` requires a Zod v4 schema, but `ResumeSchema` is Zod v3 — hand-write the
@@ -83,8 +80,8 @@ export function createResumeExtractor(provider: LlmProvider, model: string): Res
     const { output, usage } = await provider.complete<Resume>({
       model,
       maxOutputTokens: 2048,
-      system: SYSTEM_PROMPT,
-      user: `CV text:\n${cvText}`,
+      system: RESUME_EXTRACTION_SYSTEM_PROMPT,
+      user: buildResumeExtractionUserPrompt(cvText),
       schemaName: 'resume',
       jsonSchema: RESUME_JSON_SCHEMA,
       parse: (content: string): Resume => ResumeSchema.parse(JSON.parse(content)),

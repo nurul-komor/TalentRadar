@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { ObjectId, type Db } from 'mongodb'
 import type { Materials, Profile } from '@job-hunter/shared'
 import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
@@ -65,18 +65,58 @@ export function createMaterialsRoutes(db: Db, jwtSecret: string, generator: Mate
     return c.json(materials)
   })
 
+  // Renders a single document from a materials record to PDF/DOCX. The tailored CV
+  // is rendered with resume structure (headings, bullets); other docs stay plain.
+  async function renderExport(c: Context, materials: Materials, doc: ExportableDoc, format: 'pdf' | 'docx') {
+    const text = materials[doc]
+    const asResume = doc === 'tailoredCv'
+    const buffer =
+      format === 'pdf'
+        ? await exportToPdf(text, { resume: asResume })
+        : await exportToDocx(text, { resume: asResume })
+    const contentType = format === 'pdf' ? 'application/pdf' : DOCX_MIME_TYPE
+    const filename = doc === 'tailoredCv' ? `tailored-cv.${format}` : `${doc}.${format}`
+
+    c.header('Content-Type', contentType)
+    c.header('Content-Disposition', `attachment; filename="${filename}"`)
+    // Hono's `c.body()` types accept ArrayBuffer/Uint8Array<ArrayBuffer>, not Node's
+    // Buffer<ArrayBufferLike> directly — slice to a definite ArrayBuffer view.
+    return c.body(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer)
+  }
+
+  function parseExportQuery(c: Context): { doc: ExportableDoc; format: 'pdf' | 'docx' } | { error: string } {
+    const doc = c.req.query('doc')
+    const format = c.req.query('format')
+    if (!EXPORTABLE_DOCS.includes(doc as ExportableDoc)) return { error: 'invalid doc' }
+    if (format !== 'pdf' && format !== 'docx') return { error: 'invalid format' }
+    return { doc: doc as ExportableDoc, format }
+  }
+
+  // Export the latest version of a document for the caller's profile — lets the UI
+  // download the tailored CV without tracking the exact version number.
+  materialsRoutes.get('/:jobId/export', async (c) => {
+    const jobId = c.req.param('jobId')
+    const parsed = parseExportQuery(c)
+    if ('error' in parsed) return c.json({ error: parsed.error }, 400)
+
+    const latest = await db
+      .collection<Materials>('materials')
+      .find({ jobId, profileId: c.get('profileId') })
+      .sort({ version: -1 })
+      .limit(1)
+      .toArray()
+    const materials = latest[0]
+    if (!materials) {
+      return c.json({ error: 'materials not found' }, 404)
+    }
+    return renderExport(c, materials, parsed.doc, parsed.format)
+  })
+
   materialsRoutes.get('/:jobId/:version/export', async (c) => {
     const jobId = c.req.param('jobId')
     const version = Number(c.req.param('version'))
-    const doc = c.req.query('doc')
-    const format = c.req.query('format')
-
-    if (!EXPORTABLE_DOCS.includes(doc as ExportableDoc)) {
-      return c.json({ error: 'invalid doc' }, 400)
-    }
-    if (format !== 'pdf' && format !== 'docx') {
-      return c.json({ error: 'invalid format' }, 400)
-    }
+    const parsed = parseExportQuery(c)
+    if ('error' in parsed) return c.json({ error: parsed.error }, 400)
 
     const materials = await db.collection<Materials>('materials').findOne({ jobId, version })
     if (!materials) {
@@ -85,16 +125,7 @@ export function createMaterialsRoutes(db: Db, jwtSecret: string, generator: Mate
     if (materials.profileId !== c.get('profileId')) {
       return c.json({ error: 'forbidden' }, 403)
     }
-
-    const text = materials[doc as ExportableDoc]
-    const buffer = format === 'pdf' ? await exportToPdf(text) : await exportToDocx(text)
-    const contentType = format === 'pdf' ? 'application/pdf' : DOCX_MIME_TYPE
-
-    c.header('Content-Type', contentType)
-    c.header('Content-Disposition', `attachment; filename="${doc}.${format}"`)
-    // Hono's `c.body()` types accept ArrayBuffer/Uint8Array<ArrayBuffer>, not Node's
-    // Buffer<ArrayBufferLike> directly — slice to a definite ArrayBuffer view.
-    return c.body(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer)
+    return renderExport(c, materials, parsed.doc, parsed.format)
   })
 
   return materialsRoutes

@@ -25,10 +25,16 @@ const DETAIL_HTML = `
     <p>We are hiring a backend engineer.</p>
     <div class="inner"><ul><li>Django</li></ul></div>
   </div>
-  <div class="sidebar">
-    <h3>Job Location</h3>
+  <div class="job_details_content">
+    <h3 class="mb-30">Job Requirements</h3>
+    <p>3+ years of Python experience.</p>
+  </div>
+  <div class="job_details_content">
+    <h3 class="mb-30">Job Location</h3>
     <p>4th Floor, Mannan Plaza, Khilkhet, Dhaka-1229</p>
-    <h3>Salary</h3>
+  </div>
+  <div class="job_details_content">
+    <h3 class="mb-30">Salary</h3>
     <p>Negotiable</p>
   </div>
 </div>`
@@ -56,7 +62,10 @@ describe('bdtaskSource', () => {
       title: 'Senior Software Engineer (Python/Django)',
       company: 'Bdtask',
       rawDescription:
-        '<h3 class="mb-30">Job Context</h3>\n    <p>We are hiring a backend engineer.</p>\n    <div class="inner"><ul><li>Django</li></ul></div>',
+        '<h3 class="mb-30">Job Context</h3>\n    <p>We are hiring a backend engineer.</p>\n    <div class="inner"><ul><li>Django</li></ul></div>\n' +
+        '<h3 class="mb-30">Job Requirements</h3>\n    <p>3+ years of Python experience.</p>\n' +
+        '<h3 class="mb-30">Job Location</h3>\n    <p>4th Floor, Mannan Plaza, Khilkhet, Dhaka-1229</p>\n' +
+        '<h3 class="mb-30">Salary</h3>\n    <p>Negotiable</p>',
       location: '4th Floor, Mannan Plaza, Khilkhet, Dhaka-1229',
       salaryMin: null,
       salaryMax: null,

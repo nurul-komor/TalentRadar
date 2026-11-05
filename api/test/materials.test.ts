@@ -163,6 +163,36 @@ describe('materials routes', () => {
     expect(res.status).toBe(404)
   })
 
+  it('exports the latest tailored CV as a PDF without a version in the path', async () => {
+    const token = await registerAndGetToken(app)
+    // Two generations — the latest-version export must pick v2.
+    await app.request('/materials/remoteok:1/generate', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    await app.request('/materials/remoteok:1/generate', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    const res = await app.request('/materials/remoteok:1/export?doc=tailoredCv&format=pdf', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('application/pdf')
+    expect(res.headers.get('Content-Disposition')).toContain('tailored-cv.pdf')
+    const buffer = Buffer.from(await res.arrayBuffer())
+    expect(buffer.subarray(0, 5).toString('ascii')).toBe('%PDF-')
+  })
+
+  it('404s the latest-version export when the job has no materials', async () => {
+    const token = await registerAndGetToken(app)
+    const res = await app.request('/materials/remoteok:1/export?doc=tailoredCv&format=pdf', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(res.status).toBe(404)
+  })
+
   it('gets the latest generated materials for a job', async () => {
     const token = await registerAndGetToken(app)
     await app.request('/materials/remoteok:1/generate', {
