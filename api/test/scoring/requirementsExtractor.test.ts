@@ -1,36 +1,28 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import { createRequirementsExtractor } from '../../src/scoring/requirementsExtractor'
+import type { LlmProvider } from '../../src/llm/types'
 
-const mockParse = vi.fn()
+const PARSED_REQUIREMENTS = {
+  requiredSkills: ['typescript', 'react'],
+  niceToHaveSkills: ['graphql'],
+  minExperienceYears: 2,
+  workAuthRequirement: 'any',
+  remoteType: 'fully_remote',
+}
 
-vi.mock('@anthropic-ai/sdk', () => {
-  return {
-    default: class MockAnthropic {
-      messages = { parse: mockParse }
-    },
-  }
-})
-
-describe('createClaudeRequirementsExtractor', () => {
-  afterEach(() => {
-    mockParse.mockReset()
+function fakeProvider(output: unknown) {
+  const complete = vi.fn().mockResolvedValue({
+    output,
+    usage: { inputTokens: 1500, outputTokens: 120 },
   })
+  const provider: LlmProvider = { name: 'anthropic', complete }
+  return { provider, complete }
+}
 
-  it('calls Claude Haiku and returns the parsed requirements with token usage', async () => {
-    mockParse.mockResolvedValue({
-      parsed_output: {
-        requiredSkills: ['typescript', 'react'],
-        niceToHaveSkills: ['graphql'],
-        minExperienceYears: 2,
-        workAuthRequirement: 'any',
-        remoteType: 'fully_remote',
-      },
-      usage: { input_tokens: 1500, output_tokens: 120 },
-    })
-
-    const { createClaudeRequirementsExtractor } = await import(
-      '../../src/scoring/requirementsExtractor'
-    )
-    const extractor = createClaudeRequirementsExtractor('test-api-key')
+describe('createRequirementsExtractor', () => {
+  it('asks the provider for schema-validated output and maps the result + model + usage', async () => {
+    const { provider, complete } = fakeProvider(PARSED_REQUIREMENTS)
+    const extractor = createRequirementsExtractor(provider, 'claude-haiku-4-5')
 
     const result = await extractor({
       title: 'Senior Backend Engineer',
@@ -38,33 +30,32 @@ describe('createClaudeRequirementsExtractor', () => {
       rawDescription: '<p>We need 2+ years of TypeScript and React experience.</p>',
     })
 
-    expect(result.requirements).toEqual({
-      requiredSkills: ['typescript', 'react'],
-      niceToHaveSkills: ['graphql'],
-      minExperienceYears: 2,
-      workAuthRequirement: 'any',
-      remoteType: 'fully_remote',
-    })
+    expect(result.requirements).toEqual(PARSED_REQUIREMENTS)
     expect(result.usage).toEqual({ inputTokens: 1500, outputTokens: 120 })
+    expect(result.model).toBe('claude-haiku-4-5')
 
-    const callArgs = mockParse.mock.calls[0][0]
-    expect(callArgs.model).toBe('claude-haiku-4-5')
-    expect(callArgs.messages[0].content).toContain('We need 2+ years')
+    const req = complete.mock.calls[0][0]
+    expect(req.model).toBe('claude-haiku-4-5')
+    expect(req.schemaName).toBe('job_requirements')
+    expect(req.user).toContain('We need 2+ years')
+    expect(req.jsonSchema.required).toContain('requiredSkills')
   })
 
-  it('throws if Claude returns no parsed output', async () => {
-    mockParse.mockResolvedValue({
-      parsed_output: null,
-      usage: { input_tokens: 1500, output_tokens: 120 },
-    })
+  it('uses whatever model it is configured with (provider-agnostic)', async () => {
+    const { provider, complete } = fakeProvider(PARSED_REQUIREMENTS)
+    const extractor = createRequirementsExtractor(provider, 'gemini-2.0-flash')
 
-    const { createClaudeRequirementsExtractor } = await import(
-      '../../src/scoring/requirementsExtractor'
-    )
-    const extractor = createClaudeRequirementsExtractor('test-api-key')
+    const result = await extractor({ title: 'Engineer', company: 'Acme', rawDescription: 'desc' })
 
+    expect(result.model).toBe('gemini-2.0-flash')
+    expect(complete.mock.calls[0][0].model).toBe('gemini-2.0-flash')
+  })
+
+  it('propagates provider errors', async () => {
+    const complete = vi.fn().mockRejectedValue(new Error('provider boom'))
+    const extractor = createRequirementsExtractor({ name: 'openai', complete }, 'gpt-4o-mini')
     await expect(
       extractor({ title: 'Engineer', company: 'Acme', rawDescription: 'desc' })
-    ).rejects.toThrow('did not return parseable output')
+    ).rejects.toThrow('provider boom')
   })
 })

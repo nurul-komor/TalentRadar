@@ -5,6 +5,7 @@ import { ensureJobIndexes } from '../src/discovery/discoveryService.js'
 import { ensureMaterialsIndexes } from '../src/materials/materialsService.js'
 import { ensureApplicationIndexes } from '../src/applications/applicationsService.js'
 import { ensureAutomationRunIndexes } from '../src/applications/automationRunsService.js'
+import { createLlmConfig } from '../src/llm/config.js'
 
 // Fluid Compute reuses warm instances across invocations, so the Mongo
 // connection and assembled app are cached at module scope instead of being
@@ -15,12 +16,17 @@ async function buildApp() {
   const mongodbUri = process.env.MONGODB_URI
   const jwtSecret = process.env.JWT_SECRET
   const cronSecret = process.env.CRON_SECRET
-  const anthropicApiKey = process.env.ANTHROPIC_API_KEY
   if (!mongodbUri) throw new Error('MONGODB_URI is required')
   if (!jwtSecret) throw new Error('JWT_SECRET is required')
   if (!cronSecret) throw new Error('CRON_SECRET is required')
-  if (!anthropicApiKey) {
-    console.warn('ANTHROPIC_API_KEY is not set — /scoring and /materials routes will be disabled')
+
+  // LLM_PROVIDER (default "anthropic") picks the provider + models; null when its key is absent.
+  const llmConfig = createLlmConfig(process.env)
+  if (!llmConfig) {
+    const provider = (process.env.LLM_PROVIDER ?? 'anthropic').toLowerCase()
+    console.warn(
+      `LLM API key for provider "${provider}" is not set — /scoring and /materials routes will be disabled`
+    )
   }
 
   const { db } = await connectMongo(mongodbUri, process.env.MONGODB_DB_NAME ?? 'job_hunter')
@@ -28,7 +34,7 @@ async function buildApp() {
   await ensureMaterialsIndexes(db)
   await ensureApplicationIndexes(db)
   await ensureAutomationRunIndexes(db)
-  return mountRoutes(createApp(), db, jwtSecret, cronSecret, anthropicApiKey)
+  return mountRoutes(createApp(), db, jwtSecret, cronSecret, llmConfig)
 }
 
 // A bare `export default function handler(request)` is treated by Vercel as the

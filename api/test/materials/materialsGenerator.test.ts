@@ -1,81 +1,78 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { emptyResume } from '@job-hunter/shared'
+import { createMaterialsGenerator } from '../../src/materials/materialsGenerator'
+import type { LlmProvider } from '../../src/llm/types'
 
-const mockParse = vi.fn()
+const PARSED_CONTENT = {
+  unmetRequirements: ['5+ years Kubernetes'],
+  tailoredCv: 'Tailored CV text',
+  coverLetter: 'Cover letter text',
+  outreachMessage: 'Outreach text',
+}
 
-vi.mock('@anthropic-ai/sdk', () => {
-  return {
-    default: class MockAnthropic {
-      messages = { parse: mockParse }
-    },
-  }
-})
+const PROFILE = {
+  email: 'user@example.com',
+  eligibility: { workAuthorization: 'citizen' as const, countries: [] },
+  preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
+  cvText: 'Experienced backend engineer.',
+  resume: emptyResume(),
+}
 
-describe('createClaudeMaterialsGenerator', () => {
-  afterEach(() => {
-    mockParse.mockReset()
+function fakeProvider(output: unknown) {
+  const complete = vi.fn().mockResolvedValue({
+    output,
+    usage: { inputTokens: 4000, outputTokens: 1200 },
   })
+  const provider: LlmProvider = { name: 'anthropic', complete }
+  return { provider, complete }
+}
 
-  it('calls Claude Opus and returns the parsed content with token usage', async () => {
-    mockParse.mockResolvedValue({
-      parsed_output: {
-        unmetRequirements: ['5+ years Kubernetes'],
-        tailoredCv: 'Tailored CV text',
-        coverLetter: 'Cover letter text',
-        outreachMessage: 'Outreach text',
-      },
-      usage: { input_tokens: 4000, output_tokens: 1200 },
-    })
-
-    const { createClaudeMaterialsGenerator } = await import(
-      '../../src/materials/materialsGenerator'
-    )
-    const generator = createClaudeMaterialsGenerator('test-api-key')
+describe('createMaterialsGenerator', () => {
+  it('asks the provider for schema-validated output and maps the result + model + usage', async () => {
+    const { provider, complete } = fakeProvider(PARSED_CONTENT)
+    const generator = createMaterialsGenerator(provider, 'claude-opus-4-8', true)
 
     const result = await generator({
       job: { title: 'Backend Engineer', company: 'Acme', rawDescription: 'We need Kubernetes experts.' },
-      profile: {
-        email: 'user@example.com',
-        eligibility: { workAuthorization: 'citizen', countries: [] },
-        preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
-        cvText: 'Experienced backend engineer.',
-        resume: emptyResume(),
-      },
+      profile: PROFILE,
       requirements: null,
     })
 
     expect(result.content.tailoredCv).toBe('Tailored CV text')
     expect(result.usage).toEqual({ inputTokens: 4000, outputTokens: 1200 })
+    expect(result.model).toBe('claude-opus-4-8')
 
-    const callArgs = mockParse.mock.calls[0][0]
-    expect(callArgs.model).toBe('claude-opus-4-8')
-    expect(callArgs.messages[0].content).toContain('Experienced backend engineer.')
-    expect(callArgs.messages[0].content).toContain('We need Kubernetes experts.')
+    const req = complete.mock.calls[0][0]
+    expect(req.model).toBe('claude-opus-4-8')
+    expect(req.reasoning).toBe(true)
+    expect(req.schemaName).toBe('generated_content')
+    expect(req.user).toContain('Experienced backend engineer.')
+    expect(req.user).toContain('We need Kubernetes experts.')
   })
 
-  it('throws if Claude returns no parsed output', async () => {
-    mockParse.mockResolvedValue({
-      parsed_output: null,
-      usage: { input_tokens: 4000, output_tokens: 1200 },
+  it('passes the reasoning flag through (off for non-reasoning models like gpt-4o-mini)', async () => {
+    const { provider, complete } = fakeProvider(PARSED_CONTENT)
+    const generator = createMaterialsGenerator(provider, 'gpt-4o-mini', false)
+
+    const result = await generator({
+      job: { title: 'Engineer', company: 'Acme', rawDescription: 'desc' },
+      profile: PROFILE,
+      requirements: null,
     })
 
-    const { createClaudeMaterialsGenerator } = await import(
-      '../../src/materials/materialsGenerator'
-    )
-    const generator = createClaudeMaterialsGenerator('test-api-key')
+    expect(result.model).toBe('gpt-4o-mini')
+    expect(complete.mock.calls[0][0].reasoning).toBe(false)
+  })
 
+  it('propagates provider errors', async () => {
+    const complete = vi.fn().mockRejectedValue(new Error('provider boom'))
+    const generator = createMaterialsGenerator({ name: 'gemini', complete }, 'gemini-2.0-flash', false)
     await expect(
       generator({
         job: { title: 'Engineer', company: 'Acme', rawDescription: 'desc' },
-        profile: {
-          email: 'user@example.com',
-          eligibility: { workAuthorization: 'citizen', countries: [] },
-          preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
-          cvText: null,
-          resume: emptyResume(),
-        },
+        profile: PROFILE,
         requirements: null,
       })
-    ).rejects.toThrow('did not return parseable output')
+    ).rejects.toThrow('provider boom')
   })
 })

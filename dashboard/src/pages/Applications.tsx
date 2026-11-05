@@ -20,6 +20,12 @@ interface ApproveResponseBody {
   reason: string | null
 }
 
+// Automated apply (run/submit) drives a real headless browser and is only wired
+// up for local development — gate those actions so deployed builds don't show
+// buttons that can't work. Viewing applications and materials works everywhere.
+const IS_LOCALHOST =
+  typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)
+
 const STATUS_COLUMNS: Array<{ status: ApplicationStatus; label: string }> = [
   { status: 'draft', label: 'Draft' },
   { status: 'ready', label: 'Ready for approval' },
@@ -93,9 +99,13 @@ export function ApplicationsPage() {
   const [materials, setMaterials] = useState<Materials | null>(null)
   const [materialsStatus, setMaterialsStatus] = useState<'idle' | 'loading' | 'ready' | 'none' | 'error'>('idle')
 
-  const [approving, setApproving] = useState(false)
-  const [approveResult, setApproveResult] = useState<ApproveResponseBody | null>(null)
-  const [approveError, setApproveError] = useState<string | null>(null)
+  // Tracks which lifecycle action is in flight so only its button shows a busy
+  // state and the others disable while it runs.
+  const [actionBusy, setActionBusy] = useState<null | 'generate' | 'run' | 'answers' | 'submit'>(null)
+  const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  // Draft edits for the required answers, keyed by question, before they're saved.
+  const [answerDraft, setAnswerDraft] = useState<Record<string, string>>({})
 
   function loadApplications() {
     setListError(null)
@@ -125,8 +135,8 @@ export function ApplicationsPage() {
   function loadDetail(jobId: string) {
     setDetailLoading(true)
     setDetailError(null)
-    setApproveResult(null)
-    setApproveError(null)
+    setActionMessage(null)
+    setActionError(null)
     apiFetch(`/applications/${encodeURIComponent(jobId)}`)
       .then(async (res) => {
         if (!res.ok) {
@@ -136,6 +146,11 @@ export function ApplicationsPage() {
         }
         const data: ApplicationDetailResponseBody = await res.json()
         setDetail(data)
+        // Seed the editable answer drafts from whatever's stored so the inputs
+        // show current values and edits are diffed against them on save.
+        setAnswerDraft(
+          Object.fromEntries(data.application.requiredAnswers.map((a) => [a.question, a.answer ?? ''])),
+        )
       })
       .catch(() => {
         setDetailError('Failed to load application detail.')
@@ -177,28 +192,132 @@ export function ApplicationsPage() {
     setStatusFilter((current) => (current === status ? null : status))
   }
 
-  async function handleApprove() {
-    if (!detail?.latestRun) return
-    setApproving(true)
-    setApproveError(null)
-    setApproveResult(null)
+  async function readError(res: Response, fallback: string): Promise<string> {
+    const body = await res.json().catch(() => null)
+    return body?.error ?? body?.reason ?? fallback
+  }
+
+  // Generate (or regenerate) tailored materials for the selected application.
+  async function handleGenerateMaterials() {
+    if (!detail) return
+    const jobId = detail.application.jobId
+    setActionBusy('generate')
+    setActionError(null)
+    setActionMessage(null)
     try {
-      const res = await apiFetch(
-        `/applications/${encodeURIComponent(detail.application.jobId)}/runs/${detail.latestRun.runNumber}/approve`,
-        { method: 'POST' },
-      )
+      const res = await apiFetch(`/materials/${encodeURIComponent(jobId)}/generate`, { method: 'POST' })
       if (!res.ok) {
-        setApproveError('Failed to approve this application.')
+        setActionError(await readError(res, 'Failed to generate materials.'))
         return
       }
-      const result: ApproveResponseBody = await res.json()
-      setApproveResult(result)
-      loadDetail(detail.application.jobId)
+      const body = await res.json()
+      if (body.status === 'deferred') {
+        setActionError(`Materials deferred: ${body.reason}`)
+        return
+      }
+      setActionMessage('Materials generated.')
+      loadDetail(jobId)
       loadApplications()
     } catch {
-      setApproveError('Failed to approve this application.')
+      setActionError('Failed to generate materials.')
     } finally {
-      setApproving(false)
+      setActionBusy(null)
+    }
+  }
+
+  // Launch the headless-browser automation run that fills the application form.
+  async function handleRunAutomation() {
+    if (!detail) return
+    const jobId = detail.application.jobId
+    setActionBusy('run')
+    setActionError(null)
+    setActionMessage(null)
+    try {
+      const res = await apiFetch(`/automation/${encodeURIComponent(jobId)}/run`, { method: 'POST' })
+      if (!res.ok) {
+        setActionError(await readError(res, 'Failed to run automation.'))
+        return
+      }
+      setActionMessage('Automation run complete.')
+      loadDetail(jobId)
+      loadApplications()
+    } catch {
+      setActionError('Failed to run automation.')
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  // Persist the edited required answers so the run can clear the submit gate.
+  async function handleSaveAnswers() {
+    if (!detail) return
+    const jobId = detail.application.jobId
+    setActionBusy('answers')
+    setActionError(null)
+    setActionMessage(null)
+    try {
+      const answers = detail.application.requiredAnswers.map((entry) => ({
+        question: entry.question,
+        answer: answerDraft[entry.question]?.trim() ? answerDraft[entry.question].trim() : null,
+      }))
+      const res = await apiFetch(`/applications/${encodeURIComponent(jobId)}/answers`, {
+        method: 'PUT',
+        body: JSON.stringify({ answers }),
+      })
+      if (!res.ok) {
+        setActionError(await readError(res, 'Failed to save answers.'))
+        return
+      }
+      setActionMessage('Answers saved.')
+      loadDetail(jobId)
+    } catch {
+      setActionError('Failed to save answers.')
+    } finally {
+      setActionBusy(null)
+    }
+  }
+
+  // Approve the run, then — if approval succeeds — submit the application. These
+  // are two backend steps; the UI drives them as one "Confirm & submit" action.
+  async function handleConfirmAndSubmit() {
+    if (!detail?.latestRun) return
+    const jobId = detail.application.jobId
+    const runNumber = detail.latestRun.runNumber
+    setActionBusy('submit')
+    setActionError(null)
+    setActionMessage(null)
+    try {
+      const approveRes = await apiFetch(
+        `/applications/${encodeURIComponent(jobId)}/runs/${runNumber}/approve`,
+        { method: 'POST' },
+      )
+      if (!approveRes.ok) {
+        setActionError(await readError(approveRes, 'Failed to approve this application.'))
+        return
+      }
+      const approval: ApproveResponseBody = await approveRes.json()
+      if (!approval.approved) {
+        setActionError(approval.reason ?? 'Not approved — resolve the required answers first.')
+        return
+      }
+
+      const submitRes = await apiFetch(`/automation/${encodeURIComponent(jobId)}/runs/${runNumber}/submit`, {
+        method: 'POST',
+      })
+      if (!submitRes.ok) {
+        setActionError(await readError(submitRes, 'Approved, but submission failed.'))
+        loadDetail(jobId)
+        loadApplications()
+        return
+      }
+      const run: AutomationRun = await submitRes.json()
+      setActionMessage(run.status === 'submitted' ? 'Application submitted.' : 'Submission attempt recorded as failed.')
+      loadDetail(jobId)
+      loadApplications()
+    } catch {
+      setActionError('Failed to submit this application.')
+    } finally {
+      setActionBusy(null)
     }
   }
 
@@ -218,13 +337,11 @@ export function ApplicationsPage() {
     return base
   }, [applications])
 
-  const applicationsByStatus = useMemo(() => {
-    const grouped: Record<ApplicationStatus, Application[]> = { draft: [], ready: [], submitted: [], failed: [] }
-    for (const application of applications ?? []) {
-      grouped[application.status].push(application)
-    }
-    return grouped
-  }, [applications])
+  // The master list: every application, narrowed to the active status filter.
+  const filteredApplications = useMemo(
+    () => (applications ?? []).filter((application) => !statusFilter || application.status === statusFilter),
+    [applications, statusFilter],
+  )
 
   const hasApplications = (applications?.length ?? 0) > 0
 
@@ -271,52 +388,47 @@ export function ApplicationsPage() {
                 ))}
               </div>
 
-              <div className="board">
-                {STATUS_COLUMNS.filter(({ status }) => !statusFilter || statusFilter === status).map(
-                  ({ status, label }) => (
-                    <div className="col" key={status}>
-                      <div className="col-h">
-                        <span>
-                          <i />
-                          {label}
-                        </span>
-                        <span className="n">{applicationsByStatus[status].length}</span>
+              <div className="app-workspace">
+                <div className="app-list">
+                  <div className="app-list-h">
+                    <span>{statusFilter ? STATUS_LABELS[statusFilter] : 'All applications'}</span>
+                    <span className="n">{filteredApplications.length}</span>
+                  </div>
+                  {filteredApplications.map((application) => (
+                    <button
+                      key={application.jobId}
+                      type="button"
+                      className={`acard${selectedJobId === application.jobId ? ' on' : ''}`}
+                      onClick={() => selectApplication(application.jobId)}
+                    >
+                      <div className="r">
+                        <LogoChip name={application.company} />
+                        <div>
+                          <b>{application.title}</b>
+                          <small>{application.company}</small>
+                        </div>
                       </div>
-                      {applicationsByStatus[status].map((application) => (
-                        <button
-                          key={application.jobId}
-                          type="button"
-                          className="acard"
-                          style={{ width: '100%', textAlign: 'left', cursor: 'pointer', border: 'none', font: 'inherit' }}
-                          onClick={() => selectApplication(application.jobId)}
-                        >
-                          <div className="r">
-                            <LogoChip name={application.company} />
-                            <div>
-                              <b>{application.title}</b>
-                              <small>{application.company}</small>
-                            </div>
-                          </div>
-                          <div style={{ marginTop: 10 }}>
-                            <span className={statusPillClass(application.status)}>{STATUS_LABELS[application.status]}</span>
-                          </div>
-                          <div className="foot">
-                            <span>{application.materialsVersion != null ? `v${application.materialsVersion}` : 'no materials'}</span>
-                            <span>{formatDateTime(application.updatedAt)}</span>
-                          </div>
-                        </button>
-                      ))}
-                      {applicationsByStatus[status].length === 0 && (
-                        <p style={{ color: 'var(--muted-text)', fontSize: 13 }}>Nothing here.</p>
-                      )}
-                    </div>
-                  ),
-                )}
-              </div>
+                      <div style={{ marginTop: 10 }}>
+                        <span className={statusPillClass(application.status)}>{STATUS_LABELS[application.status]}</span>
+                      </div>
+                      <div className="foot">
+                        <span>{application.materialsVersion != null ? `v${application.materialsVersion}` : 'no materials'}</span>
+                        <span>{formatDateTime(application.updatedAt)}</span>
+                      </div>
+                    </button>
+                  ))}
+                  {filteredApplications.length === 0 && (
+                    <p style={{ color: 'var(--muted-text)', fontSize: 13, padding: '4px 2px' }}>
+                      No applications in this status.
+                    </p>
+                  )}
+                </div>
 
-              {selectedJobId && (
+                {!selectedJobId ? (
+                  <div className="app-detail-empty">Select an application to see its details.</div>
+                ) : (
                 <div className="timeline">
-                  <div>
+                  <div className="tl-activity ev-card">
                     <h2 style={{ fontSize: 18, marginBottom: 14 }}>Activity</h2>
                     {detailLoading ? (
                       <p style={{ color: 'var(--muted-text)', fontSize: 14 }}>Loading…</p>
@@ -335,7 +447,7 @@ export function ApplicationsPage() {
                   </div>
 
                   {detail && (
-                    <div className="ev-card">
+                    <div className="ev-card tl-detail">
                       <div className="head">
                         <div>
                           <div className="t">Application</div>
@@ -399,13 +511,30 @@ export function ApplicationsPage() {
                               {requiredAnswersProgress.answered} of {requiredAnswersProgress.total} answered
                             </span>
                           </div>
-                          <ul style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13.5 }}>
+                          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
                             {detail.application.requiredAnswers.map((item, index) => (
-                              <li key={index}>
-                                <strong>{item.question}</strong>: {item.answer ?? <em>Not answered</em>}
-                              </li>
+                              <label key={index} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
+                                <span style={{ color: 'var(--fg-2)' }}>{item.question}</span>
+                                <input
+                                  className="field"
+                                  type="text"
+                                  value={answerDraft[item.question] ?? ''}
+                                  placeholder="Your answer"
+                                  disabled={detail.application.status === 'submitted' || actionBusy !== null}
+                                  onChange={(event) =>
+                                    setAnswerDraft((current) => ({ ...current, [item.question]: event.target.value }))
+                                  }
+                                />
+                              </label>
                             ))}
-                          </ul>
+                          </div>
+                          {detail.application.status !== 'submitted' && (
+                            <div style={{ marginTop: 10 }}>
+                              <Button variant="ghost" onClick={handleSaveAnswers} disabled={actionBusy !== null}>
+                                {actionBusy === 'answers' ? 'Saving…' : 'Save answers'}
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -454,31 +583,61 @@ export function ApplicationsPage() {
                         )}
                       </div>
 
-                      {approveError && (
+                      {actionError && (
                         <div style={{ marginTop: 14 }}>
-                          <FormError message={approveError} />
+                          <FormError message={actionError} />
                         </div>
                       )}
 
-                      {approveResult && (
-                        <p style={{ marginTop: 14, fontSize: 13.5, color: approveResult.approved ? 'var(--cyan-text)' : '#E5484D' }}>
-                          {approveResult.approved ? 'Approved and submitted.' : approveResult.reason ?? 'Not approved.'}
-                        </p>
+                      {actionMessage && (
+                        <p style={{ marginTop: 14, fontSize: 13.5, color: 'var(--cyan-text)' }}>{actionMessage}</p>
                       )}
 
-                      <div className="ev-actions">
-                        <Button
-                          variant="indigo"
-                          onClick={handleApprove}
-                          disabled={detail.application.status !== 'ready' || !detail.latestRun || approving}
-                        >
-                          {approving ? 'Confirming…' : 'Confirm & submit'}
-                        </Button>
-                      </div>
+                      {detail.application.status === 'submitted' ? (
+                        <p style={{ marginTop: 18, fontSize: 13.5, color: 'var(--cyan-text)' }}>
+                          This application has been submitted — no further action needed.
+                        </p>
+                      ) : !IS_LOCALHOST ? (
+                        <p style={{ marginTop: 18, fontSize: 13, color: 'var(--muted-text)' }}>
+                          Automated apply (run &amp; submit) is available in local development. You can still generate and
+                          copy materials to apply manually.
+                        </p>
+                      ) : (
+                        <div className="ev-actions" style={{ flexWrap: 'wrap', gap: 10 }}>
+                          <Button variant="ghost" onClick={handleGenerateMaterials} disabled={actionBusy !== null}>
+                            {actionBusy === 'generate'
+                              ? 'Generating…'
+                              : materialsStatus === 'ready'
+                                ? 'Regenerate materials'
+                                : 'Generate materials'}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            onClick={handleRunAutomation}
+                            disabled={actionBusy !== null || materialsStatus !== 'ready'}
+                          >
+                            {actionBusy === 'run' ? 'Running…' : detail.latestRun ? 'Re-run automation' : 'Run automation'}
+                          </Button>
+                          <Button
+                            variant="indigo"
+                            onClick={handleConfirmAndSubmit}
+                            disabled={
+                              actionBusy !== null ||
+                              !detail.latestRun ||
+                              (detail.latestRun.status !== 'ready_for_approval' &&
+                                detail.latestRun.status !== 'approved') ||
+                              requiredAnswersProgress.answered < requiredAnswersProgress.total
+                            }
+                          >
+                            {actionBusy === 'submit' ? 'Submitting…' : 'Confirm & submit'}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
+                )}
+              </div>
             </>
           )}
         </div>

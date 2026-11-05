@@ -63,7 +63,7 @@ function fixedExtractor(): { extractor: JobRequirementsExtractor; callCount: () 
   let calls = 0
   const extractor: JobRequirementsExtractor = async () => {
     calls += 1
-    return { requirements: FIXED_REQUIREMENTS, usage: { inputTokens: 1000, outputTokens: 100 } }
+    return { requirements: FIXED_REQUIREMENTS, model: 'claude-haiku-4-5', usage: { inputTokens: 1000, outputTokens: 100 } }
   }
   return { extractor, callCount: () => calls }
 }
@@ -177,7 +177,7 @@ describe('runScoring', () => {
       if (callNumber === 1) {
         throw new Error('extraction boom')
       }
-      return { requirements: FIXED_REQUIREMENTS, usage: { inputTokens: 1000, outputTokens: 100 } }
+      return { requirements: FIXED_REQUIREMENTS, model: 'claude-haiku-4-5', usage: { inputTokens: 1000, outputTokens: 100 } }
     }
 
     const result = await runScoring(db, baseProfile(), sometimesFailingExtractor)

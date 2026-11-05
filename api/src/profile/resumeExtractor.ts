@@ -1,5 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { ResumeSchema, type Resume } from '@job-hunter/shared'
+import type { LlmProvider } from '../llm/types.js'
 import type { ResumeExtractionResult, ResumeExtractor } from './types.js'
 
 const SYSTEM_PROMPT = `You extract a structured resume from a candidate's CV text.
@@ -76,36 +76,20 @@ const RESUME_JSON_SCHEMA = {
   additionalProperties: false,
 } satisfies Record<string, unknown>
 
-const resumeOutputFormat = {
-  type: 'json_schema' as const,
-  schema: RESUME_JSON_SCHEMA,
-  parse: (content: string): Resume => ResumeSchema.parse(JSON.parse(content)),
-}
-
-export function createClaudeResumeExtractor(apiKey: string): ResumeExtractor {
-  const client = new Anthropic({ apiKey })
-
+// Provider-agnostic: the configured provider (Anthropic / OpenAI) and model are injected,
+// so this capability only owns the prompt + schema, not the SDK.
+export function createResumeExtractor(provider: LlmProvider, model: string): ResumeExtractor {
   return async (cvText: string): Promise<ResumeExtractionResult> => {
-    const response = await client.messages.parse({
-      model: 'claude-haiku-4-5',
-      max_tokens: 2048,
+    const { output, usage } = await provider.complete<Resume>({
+      model,
+      maxOutputTokens: 2048,
       system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: `CV text:\n${cvText}` }],
-      output_config: {
-        format: resumeOutputFormat,
-      },
+      user: `CV text:\n${cvText}`,
+      schemaName: 'resume',
+      jsonSchema: RESUME_JSON_SCHEMA,
+      parse: (content: string): Resume => ResumeSchema.parse(JSON.parse(content)),
     })
 
-    if (!response.parsed_output) {
-      throw new Error('Claude did not return parseable output for this CV')
-    }
-
-    return {
-      resume: response.parsed_output,
-      usage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
-      },
-    }
+    return { resume: output, model, usage }
   }
 }

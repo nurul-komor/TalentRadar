@@ -273,4 +273,67 @@ describe('applications routes', () => {
     const otherBody = (await otherListRes.json()) as { applications: unknown[] }
     expect(otherBody.applications).toHaveLength(0)
   })
+
+  it('saves required answers merged by question and ignores unknown questions', async () => {
+    const token = await registerAndGetToken(app)
+    await app.request('/applications', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceId: 'remoteok', sourceJobId: '1' }),
+    })
+    await db.collection('applications').updateOne(
+      { jobId: 'remoteok:1' },
+      {
+        $set: {
+          requiredAnswers: [
+            { question: 'Why this role?', answer: null },
+            { question: 'Years of experience?', answer: null },
+          ],
+        },
+      },
+    )
+
+    const res = await app.request('/applications/remoteok:1/answers', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        answers: [
+          { question: 'Why this role?', answer: 'Great mission' },
+          { question: 'Not a real question', answer: 'ignored' },
+          { question: 'Years of experience?', answer: '' },
+        ],
+      }),
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { requiredAnswers: Array<{ question: string; answer: string | null }> }
+    expect(body.requiredAnswers).toHaveLength(2)
+    expect(body.requiredAnswers.find((a) => a.question === 'Why this role?')?.answer).toBe('Great mission')
+    // An empty-string answer is normalized back to null (still unanswered).
+    expect(body.requiredAnswers.find((a) => a.question === 'Years of experience?')?.answer).toBeNull()
+    // An unknown question is not appended to the set.
+    expect(body.requiredAnswers.some((a) => a.question === 'Not a real question')).toBe(false)
+  })
+
+  it('rejects saving answers for an application owned by another profile', async () => {
+    const token = await registerAndGetToken(app)
+    const now = new Date().toISOString()
+    await db.collection('applications').insertOne({
+      jobId: 'remoteok:1',
+      profileId: 'some-other-profile-id',
+      company: 'Acme',
+      title: 'Backend Engineer',
+      status: 'draft',
+      materialsVersion: null,
+      requiredAnswers: [{ question: 'Why this role?', answer: null }],
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    const res = await app.request('/applications/remoteok:1/answers', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers: [{ question: 'Why this role?', answer: 'x' }] }),
+    })
+    expect(res.status).toBe(403)
+  })
 })

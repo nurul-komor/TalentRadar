@@ -32,6 +32,12 @@ const SCORE_MAX = {
   locationFit: 10,
 } as const
 
+// Automated apply drives a real headless browser and is only wired up for local
+// development right now — gate it behind a localhost check so deployed builds
+// show a "coming soon" placeholder instead of a non-functional tab.
+const IS_LOCALHOST =
+  typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)
+
 const SCORE_LABELS = {
   workAuthFit: 'Work authorization',
   remoteFit: 'Remote fit',
@@ -60,7 +66,7 @@ export function JobDetailPage() {
   const [actionBusy, setActionBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [materialsPreview, setMaterialsPreview] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'manual' | 'automated'>('manual')
+  const [activeTab, setActiveTab] = useState<'manual' | 'automated' | 'onsite'>('manual')
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
   const [skillBusy, setSkillBusy] = useState<string | null>(null)
   const [relatedJobs, setRelatedJobs] = useState<Job[]>([])
@@ -162,9 +168,29 @@ export function JobDetailPage() {
         }
         const body = await res.json()
         setAppState({ phase: 'loaded', application: body.application, latestRun: body.latestRun })
-        if (!materialsPreview) await generateMaterials()
+        if (!materialsPreview) await loadOrGenerateMaterials()
       })
       .catch(() => setAppState({ phase: 'error', message: 'Failed to load application status.' }))
+  }
+
+  // Reuse the cover letter already saved under the logged-in user's profile
+  // (the `materials` collection is keyed by profileId) instead of regenerating
+  // — and spending AI budget — every time the drawer opens. Only fall back to a
+  // fresh generation when nothing has been saved for this job yet.
+  async function loadOrGenerateMaterials() {
+    if (!jobId) return
+    setActionBusy(true)
+    try {
+      const res = await apiFetch(`/materials/${encodeURIComponent(jobId)}`)
+      if (res.ok) {
+        const saved = await res.json()
+        setMaterialsPreview(saved.coverLetter ?? null)
+        return
+      }
+    } finally {
+      setActionBusy(false)
+    }
+    await generateMaterials()
   }
 
   async function startApplication() {
@@ -580,10 +606,35 @@ export function JobDetailPage() {
                   >
                     Automated apply
                   </button>
+                  <button
+                    type="button"
+                    className={`btn ${activeTab === 'onsite' ? 'btn-indigo' : 'btn-ghost'}`}
+                    onClick={() => setActiveTab('onsite')}
+                  >
+                    Apply on site
+                  </button>
                 </div>
 
                 {activeTab === 'manual' && (
                   <>
+                    {actionBusy && !materialsPreview && (
+                      <div className="doc-preview" aria-hidden="true">
+                        <div className="dp-h">
+                          <span>Cover letter (draft)</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          <div className="sk" style={{ width: '38%' }} />
+                          <div className="sk" style={{ width: '100%' }} />
+                          <div className="sk" style={{ width: '94%' }} />
+                          <div className="sk" style={{ width: '97%' }} />
+                          <div className="sk" style={{ width: '62%' }} />
+                          <div className="sk" style={{ width: '100%', marginTop: 8 }} />
+                          <div className="sk" style={{ width: '90%' }} />
+                          <div className="sk" style={{ width: '45%' }} />
+                        </div>
+                      </div>
+                    )}
+
                     {materialsPreview && (
                       <div className="doc-preview">
                         <div className="dp-h">
@@ -625,7 +676,18 @@ export function JobDetailPage() {
                   </>
                 )}
 
-                {activeTab === 'automated' && (
+                {activeTab === 'automated' && !IS_LOCALHOST ? (
+                  <div className="doc-preview coming-soon">
+                    <span className="cs-badge">Coming soon</span>
+                    <h4>Automated apply is on its way</h4>
+                    <p style={{ margin: 0 }}>
+                      We're putting the finishing touches on one-click automated applications. For now,
+                      use <b>Prepare manually</b> to grab your tailored cover letter and CV.
+                    </p>
+                  </div>
+                ) : ""}
+
+                {activeTab === 'automated' && IS_LOCALHOST ? (
                   <>
                     <div className="doc-preview">
                       <div className="dp-h">
@@ -633,18 +695,34 @@ export function JobDetailPage() {
                         <span>{appState.application.status}</span>
                       </div>
                       {appState.latestRun ? (
-                        <p>
-                          Latest automation run #{appState.latestRun.runNumber}: {appState.latestRun.status}
-                          {appState.latestRun.blockReason ? ` — ${appState.latestRun.blockReason}` : ''}
-                          {appState.latestRun.manualApplyUrl ? (
-                            <>
-                              {' '}
-                              <a href={appState.latestRun.manualApplyUrl} target="_blank" rel="noreferrer">
-                                Apply manually →
-                              </a>
-                            </>
-                          ) : null}
-                        </p>
+                        <div className="run-status">
+                          <div className="run-line">
+                            <span>Automation run #{appState.latestRun.runNumber}</span>
+                            <Pill tone={appState.latestRun.status === 'blocked' ? 'govt' : 'mono'}>
+                              {appState.latestRun.status.replace(/_/g, ' ')}
+                            </Pill>
+                          </div>
+                          {appState.latestRun.blockReason && (
+                            <div className="run-reason">
+                              <div className="dp-h">
+                                <span>Reason</span>
+                              </div>
+                              <p style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
+                                {appState.latestRun.blockReason}
+                              </p>
+                            </div>
+                          )}
+                          {appState.latestRun.manualApplyUrl && (
+                            <a
+                              href={appState.latestRun.manualApplyUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btn-ghost"
+                            >
+                              Apply manually →
+                            </a>
+                          )}
+                        </div>
                       ) : (
                         <p>No automation run yet.</p>
                       )}
@@ -683,6 +761,23 @@ export function JobDetailPage() {
                         Submit application
                       </button>
                     )}
+                  </>
+                ) : ""}
+
+                {activeTab === 'onsite' && (
+                  <>
+                    <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>
+                      Apply directly on the original job posting. This opens the employer's site in a new tab so you
+                      can complete the application there yourself.
+                    </p>
+                    <a
+                      href={job.normalizedUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-indigo"
+                    >
+                      Apply on site →
+                    </a>
                   </>
                 )}
               </>

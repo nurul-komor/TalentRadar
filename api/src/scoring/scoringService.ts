@@ -54,7 +54,7 @@ export async function runScoring(
             rawDescription: job.rawDescription,
           })
           requirements = extraction.requirements
-          await recordUsage(db, extraction.usage)
+          await recordUsage(db, extraction.usage, extraction.model)
           await jobs.updateOne(jobKey, {
             $set: { contentHash: currentHash, extractedRequirements: requirements, extractedAt: now },
           })

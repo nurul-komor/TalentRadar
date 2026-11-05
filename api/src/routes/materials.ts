@@ -49,18 +49,18 @@ export function createMaterialsRoutes(db: Db, jwtSecret: string, generator: Mate
 
   materialsRoutes.get('/:jobId', async (c) => {
     const jobId = c.req.param('jobId')
+    // Scope by profileId so each user retrieves the cover letter saved under
+    // their own profile, rather than the globally-latest version for this job
+    // (which would 403 a user whenever someone else generated a newer version).
     const latest = await db
       .collection<Materials>('materials')
-      .find({ jobId })
+      .find({ jobId, profileId: c.get('profileId') })
       .sort({ version: -1 })
       .limit(1)
       .toArray()
     const materials = latest[0] ?? null
     if (!materials) {
       return c.json({ error: 'materials not found' }, 404)
-    }
-    if (materials.profileId !== c.get('profileId')) {
-      return c.json({ error: 'forbidden' }, 403)
     }
     return c.json(materials)
   })

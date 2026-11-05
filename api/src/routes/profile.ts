@@ -19,6 +19,16 @@ export function createProfileRoutes(
   const profileRoutes = new Hono<{ Variables: AuthVariables }>()
   profileRoutes.use('*', createRequireAuth(jwtSecret))
 
+  // A legacy or tampered token can carry a `sub` that isn't a 24-hex ObjectId.
+  // Reject it here so `new ObjectId(profileId)` below never throws a BSONError
+  // (which would surface as a 500) — an unusable subject is an auth failure.
+  profileRoutes.use('*', async (c, next) => {
+    if (!ObjectId.isValid(c.get('profileId'))) {
+      return c.json({ error: 'invalid or expired token' }, 401)
+    }
+    await next()
+  })
+
   profileRoutes.get('/', async (c) => {
     const profile = await db
       .collection('profiles')
@@ -103,7 +113,7 @@ export function createProfileRoutes(
       try {
         const existing = (await profiles.findOne({ _id: profileId })) as Profile | null
         const extraction = await resumeExtractor(cvText)
-        await recordUsage(db, extraction.usage, 'haiku')
+        await recordUsage(db, extraction.usage, extraction.model)
         if (isResumeEmpty(existing?.resume ?? emptyResume())) {
           resumeUpdate = extraction.resume
         } else {

@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { ForbiddenError, NotFoundError } from './lib/errors.js'
 
 // Vercel mints a new random preview URL on every deploy, so hardcoding each one in
 // DASHBOARD_URL means CORS breaks on every preview. Any origin matching this project's
@@ -26,5 +27,17 @@ export function createApp() {
     })
   )
   app.get('/health', (c) => c.json({ status: 'ok' }))
+
+  // Catch-all so an error that escapes a handler is logged with its stack and
+  // returned as JSON, instead of Hono's opaque bare-text "Internal Server Error"
+  // that hides the cause. Domain errors keep their intended status as a safety
+  // net for any handler that forgets to map them locally.
+  app.onError((err, c) => {
+    if (err instanceof NotFoundError) return c.json({ error: err.message }, 404)
+    if (err instanceof ForbiddenError) return c.json({ error: err.message }, 403)
+    console.error(`Unhandled error on ${c.req.method} ${c.req.path}:`, err)
+    return c.json({ error: 'internal server error' }, 500)
+  })
+
   return app
 }

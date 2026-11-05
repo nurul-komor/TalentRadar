@@ -38,7 +38,7 @@ export async function generateMaterials(
   }
 
   const generation = await generator({ job, profile, requirements: job.extractedRequirements })
-  await recordUsage(db, generation.usage, 'opus')
+  await recordUsage(db, generation.usage, generation.model)
 
   const jobId = `${job.sourceId}:${job.sourceJobId}`
   const materialsCollection = db.collection<Materials>('materials')

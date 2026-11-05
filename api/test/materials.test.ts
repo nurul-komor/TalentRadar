@@ -21,6 +21,7 @@ const fakeGenerator: MaterialsGenerator = async () => ({
     coverLetter: 'Cover letter text',
     outreachMessage: 'Outreach text',
   },
+  model: 'claude-opus-4-8',
   usage: { inputTokens: 1000, outputTokens: 500 },
 })
 
@@ -195,7 +196,7 @@ describe('materials routes', () => {
     expect(res.status).toBe(404)
   })
 
-  it('403s when getting materials that belong to a different profile', async () => {
+  it('404s when the only materials for a job belong to a different profile', async () => {
     const token = await registerAndGetToken(app)
     await app.request('/materials/remoteok:1/generate', {
       method: 'POST',
@@ -203,9 +204,11 @@ describe('materials routes', () => {
     })
     await db.collection('materials').updateOne({ jobId: 'remoteok:1' }, { $set: { profileId: 'someone-else' } })
 
+    // The lookup is scoped to the caller's profile, so another profile's
+    // materials are simply invisible (404) rather than disclosed via a 403.
     const res = await app.request('/materials/remoteok:1', {
       headers: { Authorization: `Bearer ${token}` },
     })
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(404)
   })
 })

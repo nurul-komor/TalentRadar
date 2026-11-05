@@ -799,6 +799,13 @@ footer{padding-block:56px 64px;}
 .drawer .p-body{padding:24px;overflow:auto;flex:1;display:flex;flex-direction:column;gap:16px;}
 .doc-preview{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px 24px;font-size:13.5px;line-height:1.65;color:var(--fg-2);box-shadow:var(--shadow-card);}
 .doc-preview .dp-h{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11px;color:var(--faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:14px;}
+.run-status{display:flex;flex-direction:column;gap:14px;}
+.run-line{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px;color:var(--fg-2);}
+.run-reason{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;}
+.run-reason p{font-family:var(--font-mono);font-size:12px;line-height:1.55;color:var(--fg-2);}
+.coming-soon{display:flex;flex-direction:column;align-items:flex-start;gap:10px;text-align:left;}
+.coming-soon h4{margin:0;font-size:16px;color:var(--fg);}
+.cs-badge{display:inline-block;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--indigo,#6366f1);background:color-mix(in srgb,var(--indigo,#6366f1) 12%,transparent);border:1px solid color-mix(in srgb,var(--indigo,#6366f1) 30%,transparent);border-radius:999px;padding:4px 10px;}
 .missing{display:flex;flex-direction:column;gap:8px;margin-top:4px;}
 .mrow{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;}
 .mrow b{display:block;font-size:14px;}
@@ -992,8 +999,9 @@ footer{padding-block:56px 64px;}
 .col-h{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:600;padding:0 4px 12px;}
 .col-h .n{font-family:var(--font-mono);color:var(--muted-text);font-weight:500;}
 .col-h i{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:8px;background:var(--st,var(--line-strong));}
-.acard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:10px;transition:transform .15s, box-shadow .15s;}
+.acard{display:block;width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;transition:transform .15s, box-shadow .15s, border-color .15s;}
 .acard:hover{transform:translateY(-2px);box-shadow:var(--shadow-card);}
+.acard.on{border-color:var(--indigo);box-shadow:0 0 0 3px var(--indigo-soft);}
 .acard .r{display:flex;gap:10px;align-items:center;}
 .acard .r .logo-chip{width:30px;height:30px;font-size:11px;border-radius:8px;}
 .acard b{font-size:14px;display:block;}
@@ -1004,8 +1012,29 @@ footer{padding-block:56px 64px;}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .auto.wait{background:rgba(245,165,36,.18);color:#F5C469;}}
 .auto.ok{background:var(--cyan-soft);color:var(--cyan-text);}
 .auto.fail{background:rgba(229,72,77,.14);color:#E5484D;}
-.timeline{margin-top:28px;display:grid;grid-template-columns:1fr 1.2fr;gap:32px;align-items:start;}
-@media (max-width:900px){.timeline{grid-template-columns:1fr;}}
+/* Master–detail: a compact application list on the left, the full detail pane on
+   the right, so the page stays filled regardless of how many applications exist
+   (no empty kanban columns). */
+.app-workspace{display:grid;grid-template-columns:minmax(280px,340px) minmax(0,1fr);gap:24px;margin-top:24px;align-items:start;}
+/* Give the job list and the detail pane each their own scrollbar: both stick to
+   the top of the viewport and scroll internally, instead of the whole page
+   scrolling as one. `scrollbar-gutter:stable` keeps widths steady as scrollbars
+   appear/disappear. */
+.app-list,
+.app-workspace > .timeline,
+.app-workspace > .app-detail-empty{
+  position:sticky;top:16px;max-height:calc(100vh - 32px);overflow-y:auto;
+  scrollbar-gutter:stable;padding-right:6px;
+}
+.app-list{display:flex;flex-direction:column;gap:12px;}
+.app-list-h{display:flex;justify-content:space-between;align-items:center;padding:0 2px 2px;font-size:13px;font-weight:600;position:sticky;top:0;background:var(--bg);z-index:1;}
+.app-list-h .n{font-family:var(--font-mono);color:var(--muted-text);font-weight:500;}
+.app-detail-empty{border:1px dashed var(--line-strong);border-radius:var(--card-radius-md);padding:48px 24px;text-align:center;color:var(--muted-text);font-size:14px;}
+/* Within the detail pane the detail card stacks above the Activity card. */
+.timeline{display:flex;flex-direction:column;gap:20px;}
+.timeline .tl-detail{order:1;}
+.timeline .tl-activity{order:2;}
+@media (max-width:900px){.app-workspace{grid-template-columns:1fr;}}
 .tl{list-style:none;margin:0;padding:0 0 0 22px;position:relative;}
 .tl::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:1px;background:var(--line);}
 .tl li{position:relative;padding:0 0 18px;font-size:14px;}

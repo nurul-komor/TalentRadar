@@ -22,6 +22,7 @@ const fakeExtractor: JobRequirementsExtractor = async () => ({
     workAuthRequirement: 'any',
     remoteType: 'fully_remote',
   },
+  model: 'claude-haiku-4-5',
   usage: { inputTokens: 1000, outputTokens: 100 },
 })
 

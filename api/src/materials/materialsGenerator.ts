@@ -1,5 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { GeneratedContentSchema, type GeneratedContent } from '@job-hunter/shared'
+import type { LlmProvider } from '../llm/types.js'
 import type { GenerationResult, MaterialsGenerator } from './types'
 
 const SYSTEM_PROMPT = `You write tailored job-application materials — a tailored CV, a cover letter, and a short outreach message — based on a candidate's master CV and a specific job posting.
@@ -27,15 +27,14 @@ const GENERATED_CONTENT_JSON_SCHEMA = {
   additionalProperties: false,
 } satisfies Record<string, unknown>
 
-const generatedContentOutputFormat = {
-  type: 'json_schema' as const,
-  schema: GENERATED_CONTENT_JSON_SCHEMA,
-  parse: (content: string): GeneratedContent => GeneratedContentSchema.parse(JSON.parse(content)),
-}
-
-export function createClaudeMaterialsGenerator(apiKey: string): MaterialsGenerator {
-  const client = new Anthropic({ apiKey })
-
+// Provider-agnostic: the configured provider (Anthropic / OpenAI) and model are injected.
+// `reasoning` asks for extended thinking when the selected model supports it (e.g. Claude
+// Opus); providers whose model has no reasoning mode (e.g. gpt-4o-mini) ignore it.
+export function createMaterialsGenerator(
+  provider: LlmProvider,
+  model: string,
+  reasoning: boolean
+): MaterialsGenerator {
   return async ({ job, profile, requirements }): Promise<GenerationResult> => {
     const requirementsSummary = requirements
       ? `Required skills: ${requirements.requiredSkills.join(', ') || 'none listed'}\n` +
@@ -45,36 +44,21 @@ export function createClaudeMaterialsGenerator(apiKey: string): MaterialsGenerat
         `Remote type: ${requirements.remoteType}`
       : 'No structured requirements were extracted for this job; rely on the posting text below.'
 
-    const response = await client.messages.parse({
-      model: 'claude-opus-4-8',
-      max_tokens: 12000,
-      thinking: { type: 'adaptive' },
+    const { output, usage } = await provider.complete<GeneratedContent>({
+      model,
+      maxOutputTokens: 12000,
+      reasoning,
       system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content:
-            `Candidate's master CV:\n${profile.cvText ?? '(no CV on file)'}\n\n` +
-            `Job: ${job.title} at ${job.company}\n\n` +
-            `Extracted requirements:\n${requirementsSummary}\n\n` +
-            `Full posting text:\n${job.rawDescription}`,
-        },
-      ],
-      output_config: {
-        format: generatedContentOutputFormat,
-      },
+      user:
+        `Candidate's master CV:\n${profile.cvText ?? '(no CV on file)'}\n\n` +
+        `Job: ${job.title} at ${job.company}\n\n` +
+        `Extracted requirements:\n${requirementsSummary}\n\n` +
+        `Full posting text:\n${job.rawDescription}`,
+      schemaName: 'generated_content',
+      jsonSchema: GENERATED_CONTENT_JSON_SCHEMA,
+      parse: (content: string): GeneratedContent => GeneratedContentSchema.parse(JSON.parse(content)),
     })
 
-    if (!response.parsed_output) {
-      throw new Error("Claude did not return parseable output for this job's materials")
-    }
-
-    return {
-      content: response.parsed_output,
-      usage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
-      },
-    }
+    return { content: output, model, usage }
   }
 }

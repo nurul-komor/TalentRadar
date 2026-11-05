@@ -3,7 +3,7 @@ import type { Application, Approval, AutomationRun, Job, Materials, Profile } fr
 import { recordRunResult, canSubmit } from '../applications/automationRunsService.js'
 import { writeAuditLog } from '../applications/auditLog.js'
 import { ForbiddenError, NotFoundError } from '../lib/errors.js'
-import { launchBrowser } from './browser.js'
+import { launchBrowser, newAutomationPage } from './browser.js'
 import { discoverForm } from './formDiscovery.js'
 import { detectBlocker } from './blockerDetection.js'
 import { fillForm } from './fillStrategy.js'
@@ -69,41 +69,61 @@ export async function runAutomation(
 
   const browser = await launchBrowser()
   try {
-    const page = await browser.newPage()
-    await page.goto(job.normalizedUrl, { waitUntil: 'domcontentloaded' })
+    const page = await newAutomationPage(browser)
 
-    const blocker = await detectBlocker(page)
-    if (blocker) {
+    try {
+      await page.goto(job.normalizedUrl, { waitUntil: 'domcontentloaded' })
+
+      const blocker = await detectBlocker(page)
+      if (blocker) {
+        return await recordRunResult(db, jobId, {
+          status: 'blocked',
+          filledFields: null,
+          blockReason: blocker,
+          manualApplyUrl: job.normalizedUrl,
+        })
+      }
+
+      const form = await discoverForm(page)
+      const { filledFields, requiredAnswers } = await fillForm(page, form, profile, materials)
+
+      const existingAnswers = new Map(
+        application.requiredAnswers.map((a) => [a.question, a.answer])
+      )
+      const mergedAnswers = requiredAnswers.map((a) => ({
+        question: a.question,
+        answer: existingAnswers.get(a.question) ?? a.answer,
+      }))
+
+      // Promote the application to 'ready' so it leaves the Draft column and the
+      // approve/submit flow can engage — the run itself is ready_for_approval.
+      await db.collection('applications').updateOne(
+        { jobId },
+        { $set: { requiredAnswers: mergedAnswers, status: 'ready', updatedAt: new Date().toISOString() } }
+      )
+
+      return await recordRunResult(db, jobId, {
+        status: 'filled',
+        filledFields,
+        blockReason: null,
+        manualApplyUrl: null,
+      })
+    } catch (reason) {
+      // Navigation and form-discovery failures — a timeout, a bot/Cloudflare
+      // wall, or a target that isn't an application form at all (e.g. a job
+      // board's listing page) — must not surface as an opaque 500. Record a
+      // blocked run carrying the reason and a manual-apply fallback, the same
+      // shape the UI already handles for a detected blocker, so the user gets
+      // an actionable "apply manually" link instead of a dead error.
+      console.error(`automation run failed for ${jobId}:`, reason)
+      const message = reason instanceof Error ? reason.message : 'automation failed'
       return await recordRunResult(db, jobId, {
         status: 'blocked',
         filledFields: null,
-        blockReason: blocker,
+        blockReason: message.slice(0, 500),
         manualApplyUrl: job.normalizedUrl,
       })
     }
-
-    const form = await discoverForm(page)
-    const { filledFields, requiredAnswers } = await fillForm(page, form, profile, materials)
-
-    const existingAnswers = new Map(
-      application.requiredAnswers.map((a) => [a.question, a.answer])
-    )
-    const mergedAnswers = requiredAnswers.map((a) => ({
-      question: a.question,
-      answer: existingAnswers.get(a.question) ?? a.answer,
-    }))
-
-    await db.collection('applications').updateOne(
-      { jobId },
-      { $set: { requiredAnswers: mergedAnswers, updatedAt: new Date().toISOString() } }
-    )
-
-    return await recordRunResult(db, jobId, {
-      status: 'filled',
-      filledFields,
-      blockReason: null,
-      manualApplyUrl: null,
-    })
   } finally {
     await browser.close()
   }
@@ -174,7 +194,7 @@ export async function submitApplication(
 
   const browser = await launchBrowser()
   try {
-    const page = await browser.newPage()
+    const page = await newAutomationPage(browser)
     await page.goto(job.normalizedUrl, { waitUntil: 'domcontentloaded' })
 
     const blocker = await detectBlocker(page)

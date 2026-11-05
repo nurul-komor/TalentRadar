@@ -20,6 +20,7 @@ const extractedResume: Resume = {
 
 const fakeResumeExtractor: ResumeExtractor = async () => ({
   resume: extractedResume,
+  model: 'claude-haiku-4-5',
   usage: { inputTokens: 10, outputTokens: 5 },
 })
 

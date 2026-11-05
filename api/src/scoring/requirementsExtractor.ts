@@ -1,5 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { JobRequirementsSchema, type JobRequirements } from '@job-hunter/shared'
+import type { LlmProvider } from '../llm/types.js'
 import type { ExtractionResult, JobRequirementsExtractor } from './types'
 
 const SYSTEM_PROMPT = `You extract structured hiring requirements from a remote job posting.
@@ -41,41 +41,23 @@ const JOB_REQUIREMENTS_JSON_SCHEMA = {
   additionalProperties: false,
 } satisfies Record<string, unknown>
 
-const jobRequirementsOutputFormat = {
-  type: 'json_schema' as const,
-  schema: JOB_REQUIREMENTS_JSON_SCHEMA,
-  parse: (content: string): JobRequirements => JobRequirementsSchema.parse(JSON.parse(content)),
-}
-
-export function createClaudeRequirementsExtractor(apiKey: string): JobRequirementsExtractor {
-  const client = new Anthropic({ apiKey })
-
+// Provider-agnostic: the configured provider (Anthropic / OpenAI) and model are injected,
+// so this capability only owns the prompt + schema, not the SDK.
+export function createRequirementsExtractor(
+  provider: LlmProvider,
+  model: string
+): JobRequirementsExtractor {
   return async ({ title, company, rawDescription }): Promise<ExtractionResult> => {
-    const response = await client.messages.parse({
-      model: 'claude-haiku-4-5',
-      max_tokens: 1024,
+    const { output, usage } = await provider.complete<JobRequirements>({
+      model,
+      maxOutputTokens: 1024,
       system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: `Job title: ${title}\nCompany: ${company}\n\nPosting text:\n${rawDescription}`,
-        },
-      ],
-      output_config: {
-        format: jobRequirementsOutputFormat,
-      },
+      user: `Job title: ${title}\nCompany: ${company}\n\nPosting text:\n${rawDescription}`,
+      schemaName: 'job_requirements',
+      jsonSchema: JOB_REQUIREMENTS_JSON_SCHEMA,
+      parse: (content: string): JobRequirements => JobRequirementsSchema.parse(JSON.parse(content)),
     })
 
-    if (!response.parsed_output) {
-      throw new Error('Claude did not return parseable output for this job posting')
-    }
-
-    return {
-      requirements: response.parsed_output,
-      usage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
-      },
-    }
+    return { requirements: output, model, usage }
   }
 }

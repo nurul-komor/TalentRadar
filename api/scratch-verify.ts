@@ -17,7 +17,7 @@ async function main() {
     { sourceId: 'remoteok', sourceJobId: 'v5', normalizedUrl: 'https://example.com/5', title: 'Data Scientist', company: 'DataWorks', rawDescription: 'd', location: 'Remote', salaryMin: null, salaryMax: null, postedAt: now, status: 'discovered', discoveredAt: now, updatedAt: now, verifiedAt: null, verificationEvidence: null, contentHash: null, extractedRequirements: null, extractedAt: null, score: null, scoreBreakdown: null, scoredAt: null },
   ])
 
-  const app = mountRoutes(createApp(), db, 'test-secret', 'test-cron-secret', '')
+  const app = mountRoutes(createApp(), db, 'test-secret', 'test-cron-secret', null)
   serve({ fetch: app.fetch, port: 8798 }, () => {
     console.log('verify API listening on http://localhost:8798')
   })

@@ -60,6 +60,7 @@ function fixedGenerator(): { generator: MaterialsGenerator; callCount: () => num
         coverLetter: 'Cover letter',
         outreachMessage: 'Outreach',
       },
+      model: 'claude-opus-4-8',
       usage: { inputTokens: 1000, outputTokens: 500 },
     }
   }

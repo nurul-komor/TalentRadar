@@ -26,16 +26,17 @@ import { cefaloSource } from './discovery/sources/cefalo.js'
 import { vivasoftSource } from './discovery/sources/vivasoft.js'
 import { dsInnovatorsSource } from './discovery/sources/dsInnovators.js'
 import { pageEvidenceVerifier } from './verification/pageEvidenceVerifier.js'
-import { createClaudeRequirementsExtractor } from './scoring/requirementsExtractor.js'
-import { createClaudeMaterialsGenerator } from './materials/materialsGenerator.js'
-import { createClaudeResumeExtractor } from './profile/resumeExtractor.js'
+import { createRequirementsExtractor } from './scoring/requirementsExtractor.js'
+import { createMaterialsGenerator } from './materials/materialsGenerator.js'
+import { createResumeExtractor } from './profile/resumeExtractor.js'
+import type { LlmConfig } from './llm/config.js'
 
 export function mountRoutes(
   app: Hono,
   db: Db,
   jwtSecret: string,
   cronSecret: string,
-  anthropicApiKey: string | undefined
+  llmConfig: LlmConfig | null
 ) {
   const sources = [
     remoteOkSource,
@@ -52,7 +53,9 @@ export function mountRoutes(
     vivasoftSource,
     dsInnovatorsSource,
   ]
-  const resumeExtractor = anthropicApiKey ? createClaudeResumeExtractor(anthropicApiKey) : null
+  const resumeExtractor = llmConfig
+    ? createResumeExtractor(llmConfig.provider, llmConfig.resume.model)
+    : null
 
   app.route('/auth', createAuthRoutes(db, jwtSecret))
   app.route('/profile', createProfileRoutes(db, jwtSecret, undefined, resumeExtractor))
@@ -65,14 +68,26 @@ export function mountRoutes(
   app.route('/applications', createApplicationsRoutes(db, jwtSecret))
   app.route('/automation', createAutomationRoutes(db, jwtSecret))
 
-  if (anthropicApiKey) {
+  if (llmConfig) {
     app.route(
       '/scoring',
-      createScoringRoutes(db, jwtSecret, createClaudeRequirementsExtractor(anthropicApiKey))
+      createScoringRoutes(
+        db,
+        jwtSecret,
+        createRequirementsExtractor(llmConfig.provider, llmConfig.requirements.model)
+      )
     )
     app.route(
       '/materials',
-      createMaterialsRoutes(db, jwtSecret, createClaudeMaterialsGenerator(anthropicApiKey))
+      createMaterialsRoutes(
+        db,
+        jwtSecret,
+        createMaterialsGenerator(
+          llmConfig.provider,
+          llmConfig.materials.model,
+          llmConfig.materials.reasoning
+        )
+      )
     )
   }
 

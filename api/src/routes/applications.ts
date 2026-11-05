@@ -58,6 +58,45 @@ export function createApplicationsRoutes(db: Db, jwtSecret: string) {
     return c.json({ application, latestRun: latestRun[0] ?? null })
   })
 
+  // Lets the owner fill in the required answers the automation couldn't infer
+  // (unlabeled fields, option groups) so the run can clear the canSubmit gate.
+  // Answers are merged by question onto the existing list; unknown questions are
+  // ignored rather than appended, keeping the set aligned with the discovered form.
+  applicationsRoutes.put('/:jobId/answers', async (c) => {
+    const jobId = c.req.param('jobId')
+    const body = await c.req.json().catch(() => null)
+    if (!body || !Array.isArray(body.answers)) {
+      return c.json({ error: 'answers must be an array of { question, answer }' }, 400)
+    }
+
+    const application = await db.collection<Application>('applications').findOne({ jobId })
+    if (!application) {
+      return c.json({ error: 'application not found' }, 404)
+    }
+    if (application.profileId !== c.get('profileId')) {
+      return c.json({ error: 'forbidden' }, 403)
+    }
+
+    const updates = new Map<string, string | null>()
+    for (const item of body.answers) {
+      if (!item || typeof item.question !== 'string') continue
+      const value = item.answer
+      if (value !== null && typeof value !== 'string') continue
+      updates.set(item.question, value === '' ? null : value)
+    }
+
+    const mergedAnswers = application.requiredAnswers.map((entry) =>
+      updates.has(entry.question) ? { ...entry, answer: updates.get(entry.question)! } : entry
+    )
+
+    await db.collection<Application>('applications').updateOne(
+      { jobId },
+      { $set: { requiredAnswers: mergedAnswers, updatedAt: new Date().toISOString() } }
+    )
+
+    return c.json({ ...application, requiredAnswers: mergedAnswers })
+  })
+
   applicationsRoutes.post('/:jobId/runs/:runNumber/approve', async (c) => {
     const jobId = c.req.param('jobId')
     const runNumber = Number(c.req.param('runNumber'))
