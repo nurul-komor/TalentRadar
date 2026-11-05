@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Menu, X } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
 import { Button } from './Button'
 
@@ -63,7 +62,11 @@ export function Header() {
               className="inline-flex items-center justify-center rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-500"
             >
               <span className="sr-only">Open main menu</span>
-              {mobileOpen ? <X size={24} /> : <Menu size={24} />}
+              {mobileOpen ? (
+                <ion-icon name="close-outline" style={{ fontSize: 24 }} />
+              ) : (
+                <ion-icon name="menu-outline" style={{ fontSize: 24 }} />
+              )}
             </button>
           </div>
         </div>

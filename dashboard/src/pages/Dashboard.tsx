@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Building2 } from 'lucide-react'
-import type { Application, ApplicationStatus, Job, Profile } from '@job-hunter/shared'
+import type { Application, ApplicationStatus, Job, Profile, UserJob } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { ScoreRing } from '../components/ScoreRing'
 import { Pill } from '../components/Pill'
@@ -16,6 +15,16 @@ interface JobsResponseBody {
 
 interface ApplicationsResponseBody {
   applications: Application[]
+}
+
+// A saved bookmark can point at either a discovered job or a job the user added
+// themselves; both are resolved into this shared shape for the saved-jobs list.
+interface SavedJobEntry {
+  _id: string
+  title: string
+  company: string
+  score: number | null
+  detailPath: string
 }
 
 const STATUS_COLUMNS: Array<{ status: ApplicationStatus; label: string }> = [
@@ -74,7 +83,7 @@ export function DashboardPage() {
   const [applications, setApplications] = useState<Application[] | null>(null)
   const [applicationsError, setApplicationsError] = useState<string | null>(null)
 
-  const [savedJobs, setSavedJobs] = useState<Job[]>([])
+  const [savedJobs, setSavedJobs] = useState<SavedJobEntry[]>([])
 
   useEffect(() => {
     apiFetch('/profile')
@@ -115,15 +124,35 @@ export function DashboardPage() {
       return
     }
     let cancelled = false
+    // A bookmark may be a discovered job or one the user added. Try the global
+    // feed first, then fall back to the user's own jobs so both resolve.
     Promise.all(
-      savedIds.map((id) =>
-        apiFetch(`/jobs/${id}`)
-          .then((res) => (res.ok ? (res.json() as Promise<Job>) : null))
-          .catch(() => null),
-      ),
+      savedIds.map(async (id): Promise<SavedJobEntry | null> => {
+        try {
+          const res = await apiFetch(`/jobs/${id}`)
+          if (res.ok) {
+            const job = (await res.json()) as Job
+            return {
+              _id: id,
+              title: job.title,
+              company: job.company,
+              score: job.score ?? null,
+              detailPath: `/jobs/${id}`,
+            }
+          }
+          const userRes = await apiFetch(`/user-jobs/${id}`)
+          if (userRes.ok) {
+            const job = (await userRes.json()) as UserJob
+            return { _id: id, title: job.title, company: job.company, score: null, detailPath: `/my-jobs/${id}` }
+          }
+          return null
+        } catch {
+          return null
+        }
+      }),
     ).then((jobs) => {
       if (cancelled) return
-      setSavedJobs(jobs.filter((job): job is Job => job !== null))
+      setSavedJobs(jobs.filter((job): job is SavedJobEntry => job !== null))
     })
     return () => {
       cancelled = true
@@ -223,7 +252,7 @@ export function DashboardPage() {
                         <div>
                           <div className="role">{job.title}</div>
                           <div className="co">
-                            <Building2 size={12} style={{ display: 'inline', marginRight: 4 }} />
+                            <ion-icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
                             {job.company}
                             {job.location ? ` · ${job.location}` : ''}
                           </div>

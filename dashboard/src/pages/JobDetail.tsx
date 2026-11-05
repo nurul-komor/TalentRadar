@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import DOMPurify from 'dompurify'
-import { Briefcase, Building2, Calendar, MapPin, Wallet } from 'lucide-react'
 import type { Job, Profile } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import { gsap } from '../lib/gsap'
 import { AppNav } from '../components/Nav'
 import { FormError } from '../components/FormError'
@@ -59,7 +59,10 @@ type ApplicationState =
 
 export function JobDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { isAdmin } = useAuth()
   const [job, setJob] = useState<Job | null>(null)
+  const [syncBusy, setSyncBusy] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -68,6 +71,12 @@ export function JobDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [materialsPreview, setMaterialsPreview] = useState<string | null>(null)
   const [cvPreview, setCvPreview] = useState<string | null>(null)
+  const [unmetRequirements, setUnmetRequirements] = useState<string[]>([])
+  // Persisted skill-gap snapshot from the latest generation. Unlike the live
+  // `missingSkills` below (recomputed from the current profile), this reflects
+  // what was missing when the résumé was generated — and survives those skills
+  // being auto-added to the profile, so the "review later" list stays intact.
+  const [generatedMissingSkills, setGeneratedMissingSkills] = useState<string[]>([])
   // Nothing is generated automatically — these flip true only when the user
   // clicks "Generate cover letter" / "Generate résumé", which is what reveals
   // (and, if needed, generates) each document.
@@ -80,6 +89,11 @@ export function JobDetailPage() {
   const [activeTab, setActiveTab] = useState<'manual' | 'automated' | 'onsite'>('manual')
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
   const [cvCopyState, setCvCopyState] = useState<'idle' | 'copied'>('idle')
+  // Persist state for the explicit "Save to my profile" action. Stays 'saved'
+  // until the user regenerates that document, since a regenerate makes the
+  // on-screen draft differ from what was saved.
+  const [coverSaveState, setCoverSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [cvSaveState, setCvSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [skillBusy, setSkillBusy] = useState<string | null>(null)
   const [relatedJobs, setRelatedJobs] = useState<Job[]>([])
   const scoreCardRef = useRef<HTMLDivElement | null>(null)
@@ -164,9 +178,47 @@ export function JobDetailPage() {
       .catch(() => setAppState({ phase: 'error', message: 'Failed to load application status.' }))
   }
 
+  // Load the most recent previously generated materials for this job so the
+  // drawer shows them immediately instead of a blank state. Also hydrates the
+  // "Saved to profile" indicators from the user's saved record.
+  async function loadExistingMaterials() {
+    if (!jobId) return
+    try {
+      const res = await apiFetch(`/materials/${encodeURIComponent(jobId)}`)
+      if (res.ok) {
+        const m = await res.json()
+        if (m.coverLetter) {
+          setMaterialsPreview(m.coverLetter)
+          setCoverRequested(true)
+        }
+        if (m.tailoredCv) {
+          setCvPreview(m.tailoredCv)
+          setCvRequested(true)
+          setUnmetRequirements(m.unmetRequirements ?? [])
+          setGeneratedMissingSkills(m.missingSkills ?? [])
+        }
+      }
+      // A 404 just means nothing generated yet — leave the empty state as-is.
+    } catch {
+      // Network hiccup: fall back to the empty state rather than erroring the drawer.
+    }
+
+    try {
+      const savedRes = await apiFetch(`/materials/${encodeURIComponent(jobId)}/saved`)
+      if (savedRes.ok) {
+        const saved = await savedRes.json()
+        if (saved.coverLetter) setCoverSaveState('saved')
+        if (saved.tailoredCv) setCvSaveState('saved')
+      }
+    } catch {
+      // Ignore — the save indicators simply stay in their default state.
+    }
+  }
+
   function openDrawer() {
     setDrawerOpen(true)
     if (!jobId) return
+    void loadExistingMaterials()
     setAppState({ phase: 'loading' })
     apiFetch(`/applications/${encodeURIComponent(jobId)}`)
       .then(async (res) => {
@@ -185,9 +237,37 @@ export function JobDetailPage() {
       .catch(() => setAppState({ phase: 'error', message: 'Failed to load application status.' }))
   }
 
+  // Operator-only: re-scrape this job from its source and refresh the stored
+  // description/location in place. Normal discovery treats known jobs as
+  // duplicates, so this is how a stale posting gets refreshed.
+  async function forceSync() {
+    if (!id || syncBusy) return
+    setSyncBusy(true)
+    setSyncMessage(null)
+    try {
+      const res = await apiFetch(`/jobs/${id}/resync`, { method: 'POST' })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) {
+        setSyncMessage(body?.error ?? 'Force sync failed.')
+        return
+      }
+      setJob(body)
+      setSyncMessage('Synced from source.')
+    } catch {
+      setSyncMessage('Force sync failed.')
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
   // Runs one generation and returns the materials object (or null on failure).
   // The backend produces all docs in one call; each caller reads only its own.
-  async function runGenerate(): Promise<{ coverLetter?: string; tailoredCv?: string } | null> {
+  async function runGenerate(): Promise<{
+    coverLetter?: string
+    tailoredCv?: string
+    unmetRequirements?: string[]
+    missingSkills?: string[]
+  } | null> {
     if (!jobId) return null
     const res = await apiFetch(`/materials/${encodeURIComponent(jobId)}/generate`, { method: 'POST' })
     if (!res.ok) {
@@ -208,6 +288,7 @@ export function JobDetailPage() {
   async function generateCoverLetter() {
     setCoverRequested(true)
     setMaterialsPreview(null) // clear so the skeleton shows
+    setCoverSaveState('idle') // a fresh draft is no longer the saved one
     setCoverBusy(true)
     setActionError(null)
     try {
@@ -221,11 +302,16 @@ export function JobDetailPage() {
   async function generateResume() {
     setCvRequested(true)
     setCvPreview(null) // clear so the skeleton shows
+    setCvSaveState('idle') // a fresh draft is no longer the saved one
     setCvBusy(true)
     setActionError(null)
     try {
       const m = await runGenerate()
-      if (m) setCvPreview(m.tailoredCv ?? null)
+      if (m) {
+        setCvPreview(m.tailoredCv ?? null)
+        setUnmetRequirements(m.unmetRequirements ?? [])
+        setGeneratedMissingSkills(m.missingSkills ?? [])
+      }
     } finally {
       setCvBusy(false)
     }
@@ -269,6 +355,8 @@ export function JobDetailPage() {
       }
       setMaterialsPreview(body.materials?.coverLetter ?? null)
       setCvPreview(body.materials?.tailoredCv ?? null)
+      setUnmetRequirements(body.materials?.unmetRequirements ?? [])
+      setGeneratedMissingSkills(body.materials?.missingSkills ?? [])
     } finally {
       setActionBusy(false)
     }
@@ -316,6 +404,34 @@ export function JobDetailPage() {
     })
   }
 
+  // Save the generated document under the logged-in user's profile, attached to
+  // this job post. Stores exactly the draft on screen; does NOT touch the base
+  // profile résumé. Saving again for the same job overwrites the prior copy.
+  async function saveMaterial(kind: 'cover' | 'cv') {
+    if (!jobId) return
+    const text = kind === 'cover' ? materialsPreview : cvPreview
+    if (!text) return
+    const setState = kind === 'cover' ? setCoverSaveState : setCvSaveState
+    setState('saving')
+    setActionError(null)
+    try {
+      const res = await apiFetch(`/materials/${encodeURIComponent(jobId)}/save`, {
+        method: 'POST',
+        body: JSON.stringify(kind === 'cover' ? { coverLetter: text } : { tailoredCv: text }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        setActionError(body?.error ?? 'Failed to save to your profile.')
+        setState('idle')
+        return
+      }
+      setState('saved')
+    } catch {
+      setActionError('Failed to save to your profile.')
+      setState('idle')
+    }
+  }
+
   // Downloads a generated document (tailored CV or cover letter) for THIS job as a
   // PDF, named with the logged-in user's name + email. Generates once if missing.
   async function downloadDoc(docType: 'tailoredCv' | 'coverLetter', kind: 'cv' | 'cover') {
@@ -323,7 +439,8 @@ export function JobDetailPage() {
     setActionBusy(true)
     setActionError(null)
     try {
-      const path = `/materials/${encodeURIComponent(jobId)}/export?doc=${docType}&format=pdf`
+      // Cache-bust so a regenerated document isn't masked by a stale cached download.
+      const path = `/materials/${encodeURIComponent(jobId)}/export?doc=${docType}&format=pdf&t=${Date.now()}`
       let res = await apiFetch(path)
       if (res.status === 404) {
         // No materials yet — generate them, then retry the export once.
@@ -435,6 +552,11 @@ export function JobDetailPage() {
   const missingSkills = (job.extractedRequirements?.requiredSkills ?? []).filter(
     (skill) => !flatProfileSkills.has(skill.toLowerCase()),
   )
+  // Once a résumé is generated the missing skills are snapshotted and auto-added
+  // to the profile, so the live diff above goes empty. Show the saved snapshot
+  // then (for later review); fall back to the live diff before first generation.
+  const missingSkillsAreSaved = generatedMissingSkills.length > 0
+  const reviewMissingSkills = missingSkillsAreSaved ? generatedMissingSkills : missingSkills
 
   return (
     <div>
@@ -450,22 +572,34 @@ export function JobDetailPage() {
           <div className="job-head">
             <LogoChip name={job.company} size={56} />
             <div>
-              <h1>{job.title}</h1>
+              <div className="title-row">
+                <h1>{job.title}</h1>
+                <a
+                  href={job.normalizedUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="title-link"
+                  title="View original posting"
+                  aria-label="View original posting"
+                >
+                  <ion-icon name="open-outline" style={{ fontSize: 18 }} />
+                </a>
+              </div>
               <div className="meta">
                 <span>
-                  <Building2 size={14} />
+                  <ion-icon name="business-outline" />
                   {job.company}
                 </span>
                 <span>
-                  <MapPin size={14} />
+                  <ion-icon name="location-outline" />
                   {job.location ?? 'Location unknown'}
                 </span>
                 <span>
-                  <Wallet size={14} />
+                  <ion-icon name="wallet-outline" />
                   {formatSalary(job)}
                 </span>
                 <span>
-                  <Calendar size={14} />
+                  <ion-icon name="calendar-outline" />
                   {formatDate(job.postedAt)}
                 </span>
               </div>
@@ -485,7 +619,7 @@ export function JobDetailPage() {
             <div className="verify-strip">
               <div className="vstep">
                 <span className="dot">
-                  <Briefcase size={12} />
+                  <ion-icon name="briefcase-outline" />
                 </span>
                 <div>
                   <b>Verification evidence</b>
@@ -525,10 +659,6 @@ export function JobDetailPage() {
               </>
             )}
           </div>
-
-          <a href={job.normalizedUrl} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ marginTop: 24 }}>
-            View original posting →
-          </a>
         </div>
 
         <aside className="evidence">
@@ -598,6 +728,14 @@ export function JobDetailPage() {
               <button type="button" className="btn btn-indigo" onClick={openDrawer}>
                 Apply
               </button>
+              {isAdmin && (
+                <>
+                  <button type="button" className="btn btn-ghost" onClick={forceSync} disabled={syncBusy}>
+                    {syncBusy ? 'Syncing…' : 'Force sync'}
+                  </button>
+                  {syncMessage && <p className="ev-sync-msg">{syncMessage}</p>}
+                </>
+              )}
             </div>
           </div>
         </aside>
@@ -633,7 +771,10 @@ export function JobDetailPage() {
         <div className="scrim" onClick={() => setDrawerOpen(false)} />
         <div className="panel">
           <div className="p-head">
-            <h3>Apply to {job.company}</h3>
+            <div>
+              <h3>Apply to {job.company}</h3>
+              <p className="p-sub">{job.title}</p>
+            </div>
             <button type="button" className="x" aria-label="Close" onClick={() => setDrawerOpen(false)}>
               ×
             </button>
@@ -657,46 +798,74 @@ export function JobDetailPage() {
 
             {appState.phase === 'loaded' && (
               <>
-                <div className="tab-row">
+                <div className="tab-row" role="tablist">
                   <button
                     type="button"
-                    className={`btn ${activeTab === 'manual' ? 'btn-indigo' : 'btn-ghost'}`}
+                    role="tab"
+                    aria-selected={activeTab === 'manual'}
+                    className={`tab${activeTab === 'manual' ? ' active' : ''}`}
                     onClick={() => setActiveTab('manual')}
                   >
-                    Prepare manually
+                    <ion-icon name="create-outline" /> Prepare
                   </button>
                   <button
                     type="button"
-                    className={`btn ${activeTab === 'automated' ? 'btn-indigo' : 'btn-ghost'}`}
+                    role="tab"
+                    aria-selected={activeTab === 'automated'}
+                    className={`tab${activeTab === 'automated' ? ' active' : ''}`}
                     onClick={() => setActiveTab('automated')}
                   >
-                    Automated apply
+                    <ion-icon name="hardware-chip-outline" /> Automated
                   </button>
                   <button
                     type="button"
-                    className={`btn ${activeTab === 'onsite' ? 'btn-indigo' : 'btn-ghost'}`}
+                    role="tab"
+                    aria-selected={activeTab === 'onsite'}
+                    className={`tab${activeTab === 'onsite' ? ' active' : ''}`}
                     onClick={() => setActiveTab('onsite')}
                   >
-                    Apply on site
+                    <ion-icon name="globe-outline" /> On site
                   </button>
                 </div>
 
                 {activeTab === 'manual' && (
                   <>
-                    {/* Nothing is generated until the user clicks. The buttons stay
+                    <p className="drawer-help">
+                      Generate AI-tailored application materials for this role, then copy them or download as PDFs.
+                    </p>
+                    {/* Nothing is generated until the user clicks. The cards stay
                         available so each document can be regenerated on demand. */}
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      <button type="button" className="btn btn-indigo" onClick={generateCoverLetter} disabled={coverBusy}>
-                        {coverBusy
-                          ? 'Generating…'
-                          : materialsPreview
-                            ? 'Regenerate cover letter'
-                            : 'Generate cover letter'}
+                    <div className="gen-grid">
+                      <button type="button" className="gen-card" onClick={generateCoverLetter} disabled={coverBusy}>
+                        <span className="gc-icon">
+                          <ion-icon name="sparkles-outline" />
+                        </span>
+                        <span className="gc-title">
+                          {coverBusy
+                            ? 'Generating…'
+                            : materialsPreview
+                              ? 'Regenerate cover letter'
+                              : 'Cover letter'}
+                        </span>
+                        <span className="gc-sub">Personalized to this job posting</span>
                       </button>
-                      <button type="button" className="btn btn-indigo" onClick={generateResume} disabled={cvBusy}>
-                        {cvBusy ? 'Generating…' : cvPreview ? 'Regenerate résumé (ATS)' : 'Generate résumé (ATS)'}
+                      <button type="button" className="gen-card" onClick={generateResume} disabled={cvBusy}>
+                        <span className="gc-icon">
+                          <ion-icon name="document-text-outline" />
+                        </span>
+                        <span className="gc-title">
+                          {cvBusy ? 'Generating…' : cvPreview ? 'Regenerate résumé' : 'Résumé (ATS)'}
+                        </span>
+                        <span className="gc-sub">Optimized to pass ATS screening</span>
                       </button>
                     </div>
+
+                    {!coverRequested && !cvRequested && !coverBusy && !cvBusy && (
+                      <div className="empty-hint">
+                        <ion-icon name="document-outline" />
+                        <span>Nothing generated yet — pick a document above to get started.</span>
+                      </div>
+                    )}
 
                     {coverBusy && (
                       <div className="doc-preview" aria-hidden="true">
@@ -721,19 +890,43 @@ export function JobDetailPage() {
                         <div className="dp-h">
                           <span>Cover letter (draft)</span>
                           <button type="button" className={`copy-btn${copyState === 'copied' ? ' ok' : ''}`} onClick={copyCoverLetter}>
+                            {copyState === 'copied' ? (
+                              <ion-icon name="checkmark-outline" style={{ fontSize: 14 }} />
+                            ) : (
+                              <ion-icon name="copy-outline" style={{ fontSize: 14 }} />
+                            )}
                             {copyState === 'copied' ? 'Copied' : 'Copy'}
                           </button>
                         </div>
                         <p style={{ whiteSpace: 'pre-wrap' }}>{materialsPreview}</p>
-                        <button
-                          type="button"
-                          className="btn btn-indigo"
-                          onClick={() => downloadDoc('coverLetter', 'cover')}
-                          disabled={actionBusy}
-                          style={{ marginTop: 14 }}
-                        >
-                          {actionBusy ? 'Preparing…' : 'Download cover letter (PDF)'}
-                        </button>
+                        <div className="doc-actions" style={{ marginTop: 14 }}>
+                          <button
+                            type="button"
+                            className="btn btn-indigo"
+                            onClick={() => downloadDoc('coverLetter', 'cover')}
+                            disabled={actionBusy}
+                          >
+                            <ion-icon name="download-outline" />
+                            {actionBusy ? 'Preparing…' : 'Download cover letter (PDF)'}
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-ghost${coverSaveState === 'saved' ? ' ok' : ''}`}
+                            onClick={() => saveMaterial('cover')}
+                            disabled={coverSaveState !== 'idle'}
+                          >
+                            {coverSaveState === 'saved' ? (
+                              <ion-icon name="checkmark-outline" />
+                            ) : (
+                              <ion-icon name="save-outline" />
+                            )}
+                            {coverSaveState === 'saving'
+                              ? 'Saving…'
+                              : coverSaveState === 'saved'
+                                ? 'Saved to profile'
+                                : 'Save to my profile'}
+                          </button>
+                        </div>
                       </div>
                     )}
 
@@ -761,29 +954,71 @@ export function JobDetailPage() {
                         <div className="dp-h">
                           <span>Tailored CV (ATS-optimized)</span>
                           <button type="button" className={`copy-btn${cvCopyState === 'copied' ? ' ok' : ''}`} onClick={copyCv}>
+                            {cvCopyState === 'copied' ? (
+                              <ion-icon name="checkmark-outline" style={{ fontSize: 14 }} />
+                            ) : (
+                              <ion-icon name="copy-outline" style={{ fontSize: 14 }} />
+                            )}
                             {cvCopyState === 'copied' ? 'Copied' : 'Copy'}
                           </button>
                         </div>
                         <p style={{ whiteSpace: 'pre-wrap', maxHeight: 360, overflowY: 'auto' }}>{cvPreview}</p>
-                        <button
-                          type="button"
-                          className="btn btn-indigo"
-                          onClick={() => downloadDoc('tailoredCv', 'cv')}
-                          disabled={actionBusy}
-                          style={{ marginTop: 14 }}
-                        >
-                          {actionBusy ? 'Preparing…' : 'Download tailored CV (PDF)'}
-                        </button>
+                        <div className="doc-actions" style={{ marginTop: 14 }}>
+                          <button
+                            type="button"
+                            className="btn btn-indigo"
+                            onClick={() => downloadDoc('tailoredCv', 'cv')}
+                            disabled={actionBusy}
+                          >
+                            <ion-icon name="download-outline" />
+                            {actionBusy ? 'Preparing…' : 'Download tailored CV (PDF)'}
+                          </button>
+                          <button
+                            type="button"
+                            className={`btn btn-ghost${cvSaveState === 'saved' ? ' ok' : ''}`}
+                            onClick={() => saveMaterial('cv')}
+                            disabled={cvSaveState !== 'idle'}
+                          >
+                            {cvSaveState === 'saved' ? (
+                              <ion-icon name="checkmark-outline" />
+                            ) : (
+                              <ion-icon name="save-outline" />
+                            )}
+                            {cvSaveState === 'saving'
+                              ? 'Saving…'
+                              : cvSaveState === 'saved'
+                                ? 'Saved to profile'
+                                : 'Save to my profile'}
+                          </button>
+                        </div>
+                        {unmetRequirements.length > 0 && (
+                          <div style={{ marginTop: 14 }}>
+                            <div className="dp-h">
+                              <span>Unmet requirements</span>
+                            </div>
+                            <ul style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13.5 }}>
+                              {unmetRequirements.map((requirement, index) => (
+                                <li key={index}>{requirement}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {missingSkills.length > 0 && (
+                    {reviewMissingSkills.length > 0 && (
                       <div>
                         <div className="dp-h">
                           <span>Missing skills for this role</span>
                         </div>
+                        {missingSkillsAreSaved && (
+                          <p style={{ margin: '4px 0 8px', fontSize: 13, opacity: 0.75 }}>
+                            Saved with this application so you can brush up before interviews. Your tailored
+                            résumé already lists these under Skills; your profile is left unchanged.
+                          </p>
+                        )}
                         <div className="missing">
-                          {missingSkills.map((skill) => (
+                          {reviewMissingSkills.map((skill) => (
                             <div className="mrow" key={skill}>
                               <b>{skill}</b>
                               <button
@@ -792,7 +1027,7 @@ export function JobDetailPage() {
                                 disabled={skillBusy === skill}
                                 onClick={() => addSkill(skill)}
                               >
-                                {skillBusy === skill ? 'Adding…' : 'Add'}
+                                {skillBusy === skill ? 'Adding…' : 'Add to profile'}
                               </button>
                             </div>
                           ))}
@@ -903,7 +1138,8 @@ export function JobDetailPage() {
                       rel="noreferrer"
                       className="btn btn-indigo"
                     >
-                      Apply on site →
+                      <ion-icon name="open-outline" />
+                      Apply on site
                     </a>
                   </>
                 )}

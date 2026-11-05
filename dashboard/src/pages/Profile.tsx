@@ -7,7 +7,6 @@ import {
   type ReactNode,
 } from 'react'
 import { Link } from 'react-router-dom'
-import { CheckCircle2, Circle, FileText, Plus, X } from 'lucide-react'
 import { emptyResume } from '@job-hunter/shared'
 import type {
   Eligibility,
@@ -91,7 +90,7 @@ function TagList({ items, placeholder, onAdd, onRemove }: TagListProps) {
         <span className="pill" key={`${item}-${index}`}>
           {item}
           <button type="button" aria-label={`Remove ${item}`} onClick={() => onRemove(index)}>
-            <X size={12} />
+            <ion-icon name="close-outline" style={{ fontSize: 12 }} />
           </button>
         </span>
       ))}
@@ -107,7 +106,7 @@ function TagList({ items, placeholder, onAdd, onRemove }: TagListProps) {
         />
       ) : (
         <button type="button" className="pill add" onClick={() => setAdding(true)}>
-          <Plus size={12} /> Add
+          <ion-icon name="add-outline" style={{ fontSize: 12 }} /> Add
         </button>
       )}
     </div>
@@ -173,7 +172,7 @@ function EntryCard({ label, onRemove, children }: EntryCardProps) {
       <div className="entry-head">
         <span>{label}</span>
         <button type="button" className="entry-remove" aria-label={`Remove ${label}`} onClick={onRemove}>
-          <X size={14} />
+          <ion-icon name="close-outline" style={{ fontSize: 14 }} />
         </button>
       </div>
       <div className="fgrid">{children}</div>
@@ -643,7 +642,11 @@ export function ProfilePage() {
                 <ul className="checklist">
                   {checklistItems.map((item) => (
                     <li key={item.key} className={item.done ? 'done' : 'todo'}>
-                      {item.done ? <CheckCircle2 /> : <Circle />}
+                      {item.done ? (
+                        <ion-icon name="checkmark-circle-outline" />
+                      ) : (
+                        <ion-icon name="ellipse-outline" />
+                      )}
                       {item.label}
                       {!item.done &&
                         item.action &&
@@ -673,7 +676,7 @@ export function ProfilePage() {
                   </p>
                 )}
                 <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <FileText size={14} style={{ color: 'var(--muted-text)' }} />
+                  <ion-icon name="document-text-outline" style={{ fontSize: 14, color: 'var(--muted-text)' }} />
                   <Link to="/cv" style={{ fontSize: 13, fontWeight: 600, color: 'var(--indigo)' }}>
                     {hasCv ? 'Manage CV →' : 'Upload CV →'}
                   </Link>

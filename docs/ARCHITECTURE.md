@@ -60,7 +60,8 @@ just in the UI.
 ## Request flow: job → application
 
 1. **Discovery** (cron) — source adapters pull candidate postings into
-   `jobs` as unverified.
+   `jobs` as unverified. Text fields are repaired for upstream mojibake
+   before storage — see [Text encoding](./ENCODING.md).
 2. **Verification** (queue) — source-API check, then page-evidence check.
    Only evidenced-open jobs are scored.
 3. **Scoring** (queue, Claude haiku for extraction + deterministic

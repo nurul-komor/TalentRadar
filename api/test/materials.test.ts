@@ -226,6 +226,86 @@ describe('materials routes', () => {
     expect(res.status).toBe(404)
   })
 
+  it('saves a cover letter under the profile and reads it back, without a base résumé', async () => {
+    const token = await registerAndGetToken(app)
+    const saveRes = await app.request('/materials/remoteok:1/save', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coverLetter: 'My saved cover letter' }),
+    })
+    expect(saveRes.status).toBe(200)
+    const saved = (await saveRes.json()) as { coverLetter: string; tailoredCv: string | null }
+    expect(saved.coverLetter).toBe('My saved cover letter')
+    expect(saved.tailoredCv).toBeNull()
+
+    const getRes = await app.request('/materials/remoteok:1/saved', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(getRes.status).toBe(200)
+    const body = (await getRes.json()) as { coverLetter: string }
+    expect(body.coverLetter).toBe('My saved cover letter')
+  })
+
+  it('merges a later résumé save without clearing the saved cover letter', async () => {
+    const token = await registerAndGetToken(app)
+    await app.request('/materials/remoteok:1/save', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coverLetter: 'Cover' }),
+    })
+    await app.request('/materials/remoteok:1/save', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tailoredCv: 'CV' }),
+    })
+
+    const getRes = await app.request('/materials/remoteok:1/saved', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const body = (await getRes.json()) as { coverLetter: string; tailoredCv: string }
+    expect(body.coverLetter).toBe('Cover')
+    expect(body.tailoredCv).toBe('CV')
+
+    // One record per (user, job) — the second save upserted, not inserted.
+    const count = await db.collection('savedMaterials').countDocuments({ jobId: 'remoteok:1' })
+    expect(count).toBe(1)
+  })
+
+  it('rejects a save with an empty payload', async () => {
+    const token = await registerAndGetToken(app)
+    const res = await app.request('/materials/remoteok:1/save', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('404s reading saved materials when the user saved none', async () => {
+    const token = await registerAndGetToken(app)
+    const res = await app.request('/materials/remoteok:1/saved', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('scopes saved materials to the caller, hiding another profile\'s save', async () => {
+    const token = await registerAndGetToken(app)
+    await app.request('/materials/remoteok:1/save', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coverLetter: 'mine' }),
+    })
+    await db
+      .collection('savedMaterials')
+      .updateOne({ jobId: 'remoteok:1' }, { $set: { profileId: 'someone-else' } })
+
+    const res = await app.request('/materials/remoteok:1/saved', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(res.status).toBe(404)
+  })
+
   it('404s when the only materials for a job belong to a different profile', async () => {
     const token = await registerAndGetToken(app)
     await app.request('/materials/remoteok:1/generate', {

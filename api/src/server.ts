@@ -4,6 +4,7 @@ import { connectMongo } from './db.js'
 import { mountRoutes } from './mountRoutes.js'
 import { ensureJobIndexes } from './discovery/discoveryService.js'
 import { ensureMaterialsIndexes } from './materials/materialsService.js'
+import { ensureUserJobsIndexes } from './userJobs/userJobsService.js'
 import { ensureApplicationIndexes } from './applications/applicationsService.js'
 import { ensureAutomationRunIndexes } from './applications/automationRunsService.js'
 import { createLlmConfig } from './llm/config.js'
@@ -40,6 +41,7 @@ async function main() {
   const { db } = await connectMongo(mongodbUri, process.env.MONGODB_DB_NAME ?? 'job_hunter')
   await ensureJobIndexes(db)
   await ensureMaterialsIndexes(db)
+  await ensureUserJobsIndexes(db)
   await ensureApplicationIndexes(db)
   await ensureAutomationRunIndexes(db)
 

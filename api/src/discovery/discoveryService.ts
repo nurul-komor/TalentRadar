@@ -1,6 +1,7 @@
 import type { Db } from 'mongodb'
 import type { Job } from '@job-hunter/shared'
 import { normalizeUrl } from './normalizeUrl.js'
+import { repairMojibake } from './textEncoding.js'
 import type { JobSource, RawJobPosting } from './types.js'
 
 const DEDUPE_WINDOW_DAYS = 60
@@ -48,7 +49,22 @@ interface SourceRunTotals {
   errors: DiscoveryResult['errors']
 }
 
-async function persistPosting(db: Db, posting: RawJobPosting): Promise<'discovered' | 'duplicate'> {
+// Some upstream feeds serve UTF-8 text that was mangled to Latin-1 before it
+// reached us; repair the user-facing text fields so every source lands clean
+// text in the DB. Done before dedupe so the company/title heuristic compares
+// repaired text against repaired rows.
+function repairPostingText(posting: RawJobPosting): RawJobPosting {
+  return {
+    ...posting,
+    title: repairMojibake(posting.title),
+    company: repairMojibake(posting.company),
+    rawDescription: repairMojibake(posting.rawDescription),
+    location: posting.location === null ? null : repairMojibake(posting.location),
+  }
+}
+
+async function persistPosting(db: Db, rawPosting: RawJobPosting): Promise<'discovered' | 'duplicate'> {
+  const posting = repairPostingText(rawPosting)
   const normalizedPostingUrl = normalizeUrl(posting.url)
   const duplicate = await isDuplicate(db, posting, normalizedPostingUrl)
   if (duplicate) return 'duplicate'

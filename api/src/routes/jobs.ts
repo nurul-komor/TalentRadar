@@ -2,9 +2,15 @@ import { Hono } from 'hono'
 import { ObjectId, type Db, type Filter } from 'mongodb'
 import type { Job, JobSourceId, JobStatus } from '@job-hunter/shared'
 import { JobSourceIdSchema, JobStatusSchema, UNSCORED_JOB_SOURCE_IDS } from '@job-hunter/shared'
+import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
+import type { JobSource } from '../discovery/types.js'
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
+
+// Force-sync is restricted to this operator account, both in the dashboard UI
+// and here as a server-side guard so the endpoint can't be called by others.
+const FORCE_SYNC_EMAIL = 'nurulkomor123@gmail.com'
 
 export const GOVT_JOB_SOURCE_IDS = UNSCORED_JOB_SOURCE_IDS
 
@@ -82,8 +88,8 @@ function buildJobsFilter(query: {
   return filter
 }
 
-export function createJobsRoutes(db: Db) {
-  const jobsRoutes = new Hono()
+export function createJobsRoutes(db: Db, jwtSecret: string, sources: JobSource[]) {
+  const jobsRoutes = new Hono<{ Variables: AuthVariables }>()
 
   jobsRoutes.get('/', async (c) => {
     const limit = parseLimit(c.req.query('limit'))
@@ -121,6 +127,67 @@ export function createJobsRoutes(db: Db) {
       return c.json({ error: 'job not found' }, 404)
     }
     return c.json(job)
+  })
+
+  // Force-sync re-scrapes a single job from its source and overwrites the stored
+  // description/location. Normal discovery skips already-known jobs as
+  // duplicates, so this is the only way to refresh a stale posting in place.
+  // Restricted to the operator account (checked here, not just in the UI).
+  jobsRoutes.post('/:id/resync', createRequireAuth(jwtSecret), async (c) => {
+    const profileId = c.get('profileId')
+    let profile: { email?: string } | null = null
+    try {
+      profile = await db.collection('profiles').findOne<{ email?: string }>({ _id: new ObjectId(profileId) })
+    } catch {
+      profile = null
+    }
+    if (!profile || profile.email !== FORCE_SYNC_EMAIL) {
+      return c.json({ error: 'forbidden' }, 403)
+    }
+
+    const id = c.req.param('id')
+    if (!ObjectId.isValid(id)) {
+      return c.json({ error: 'job not found' }, 404)
+    }
+
+    const jobs = db.collection('jobs')
+    const objectId = new ObjectId(id)
+    const job = await jobs.findOne<Job>({ _id: objectId })
+    if (!job) {
+      return c.json({ error: 'job not found' }, 404)
+    }
+
+    const source = sources.find((candidate) => candidate.id === job.sourceId)
+    if (!source) {
+      return c.json({ error: `no source registered for '${job.sourceId}'` }, 400)
+    }
+
+    let postings
+    try {
+      postings = await source.fetchJobs()
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason)
+      return c.json({ error: `source fetch failed: ${message}` }, 502)
+    }
+
+    const match = postings.find((posting) => posting.sourceJobId === job.sourceJobId)
+    if (!match) {
+      return c.json({ error: 'job is no longer listed on its source' }, 404)
+    }
+
+    await jobs.updateOne(
+      { _id: objectId },
+      {
+        $set: {
+          rawDescription: match.rawDescription,
+          location: match.location,
+          updatedAt: new Date().toISOString(),
+        },
+      }
+    )
+
+    const updated = await jobs.findOne<Job>({ _id: objectId })
+    return c.json(updated)
   })
 
   return jobsRoutes

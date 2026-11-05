@@ -248,8 +248,11 @@ export function ApplicationsPage() {
     setActionBusy('download')
     setActionError(null)
     try {
+      // Cache-bust with the loaded materials version so a regenerated résumé is
+      // never masked by a stale cached download for the same URL.
+      const versionParam = materials?.version != null ? `&v=${materials.version}` : ''
       const res = await apiFetch(
-        `/materials/${encodeURIComponent(jobId)}/export?doc=tailoredCv&format=${format}`,
+        `/materials/${encodeURIComponent(jobId)}/export?doc=tailoredCv&format=${format}${versionParam}`,
       )
       if (!res.ok) {
         setActionError('Failed to download tailored CV.')

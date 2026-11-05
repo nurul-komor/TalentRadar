@@ -14,8 +14,10 @@ import { DashboardPage } from './pages/Dashboard'
 import { SyncPage } from './pages/Sync'
 import { ProfilePage } from './pages/Profile'
 import { CvPage } from './pages/Cv'
+import { AddJobPage } from './pages/AddJob'
 import { JobsPage } from './pages/Jobs'
 import { JobDetailPage } from './pages/JobDetail'
+import { MyJobDetailPage } from './pages/MyJobDetail'
 import { ApplicationsPage } from './pages/Applications'
 import { AdminPage } from './pages/Admin'
 
@@ -34,8 +36,10 @@ export default function App() {
             <Route path="/jobs" element={<JobsPage />} />
             <Route path="/jobs/:id" element={<JobDetailPage />} />
             <Route element={<ProtectedRoute />}>
+              <Route path="/my-jobs/:id" element={<MyJobDetailPage />} />
               <Route element={<DashboardLayout />}>
                 <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/add-job" element={<AddJobPage />} />
                 <Route path="/sync" element={<SyncPage />} />
                 <Route path="/applications" element={<ApplicationsPage />} />
                 <Route path="/profile" element={<ProfilePage />} />

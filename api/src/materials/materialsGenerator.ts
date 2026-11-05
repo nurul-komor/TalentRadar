@@ -1,6 +1,7 @@
 import { GeneratedContentSchema, type GeneratedContent } from '@job-hunter/shared'
 import type { LlmProvider } from '../llm/types.js'
 import { MATERIALS_SYSTEM_PROMPT, buildMaterialsUserPrompt } from '../llm/prompts.js'
+import { computeMissingSkills } from './materialsService.js'
 import type { GenerationResult, MaterialsGenerator } from './types'
 
 // Deviation from the plan (same precedent as M3b's requirementsExtractor.ts): `zodOutputFormat()`
@@ -39,6 +40,8 @@ export function createMaterialsGenerator(
         `Remote type: ${requirements.remoteType}`
       : 'No structured requirements were extracted for this job; rely on the posting text below.'
 
+    const missingSkills = computeMissingSkills(profile, requirements?.requiredSkills ?? [])
+
     const { output, usage } = await provider.complete<GeneratedContent>({
       model,
       maxOutputTokens: 12000,
@@ -50,6 +53,7 @@ export function createMaterialsGenerator(
         company: job.company,
         requirementsSummary,
         rawDescription: job.rawDescription,
+        missingSkills,
       }),
       schemaName: 'generated_content',
       jsonSchema: GENERATED_CONTENT_JSON_SCHEMA,

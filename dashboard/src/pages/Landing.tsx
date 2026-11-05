@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Briefcase, Building2, MapPin, Search } from 'lucide-react'
 import type { PublicJobsSummary, JobSourceId } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -129,7 +128,7 @@ export function LandingPage() {
               }}
             >
               <div className="search-field">
-                <Search size={17} />
+                <ion-icon name="search-outline" style={{ fontSize: 17 }} />
                 <input
                   type="text"
                   placeholder="Role or keyword"
@@ -139,7 +138,7 @@ export function LandingPage() {
                 />
               </div>
               <div className="search-field">
-                <MapPin size={17} />
+                <ion-icon name="location-outline" style={{ fontSize: 17 }} />
                 <input
                   type="text"
                   placeholder="Anywhere / timezone"
@@ -250,7 +249,7 @@ export function LandingPage() {
                   <div>
                     <div className="role">{job.title}</div>
                     <div className="co">
-                      <Building2 size={12} style={{ display: 'inline', marginRight: 4 }} />
+                      <ion-icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
                       {job.company}
                       {job.location ? ` · ${job.location}` : ''}
                     </div>
@@ -280,7 +279,7 @@ export function LandingPage() {
           <div ref={stepsRevealRef} className="steps">
             <div className="step reveal-step">
               <div className="step-icon">
-                <Search size={18} />
+                <ion-icon name="search-outline" style={{ fontSize: 18 }} />
               </div>
               <div className="idx">01 / DISCOVER</div>
               <h3>Discover</h3>
@@ -288,7 +287,7 @@ export function LandingPage() {
             </div>
             <div className="step reveal-step">
               <div className="step-icon">
-                <Briefcase size={18} />
+                <ion-icon name="briefcase-outline" style={{ fontSize: 18 }} />
               </div>
               <div className="idx">02 / VERIFY</div>
               <h3>Verify</h3>

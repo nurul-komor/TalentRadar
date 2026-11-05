@@ -79,7 +79,7 @@ describe('jobs routes', () => {
     db = conn.db
     app = new Hono()
     app.route('/auth', createAuthRoutes(db, JWT_SECRET))
-    app.route('/jobs', createJobsRoutes(db))
+    app.route('/jobs', createJobsRoutes(db, JWT_SECRET, []))
   })
 
   afterEach(async () => {

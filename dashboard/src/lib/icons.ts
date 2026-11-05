@@ -1,0 +1,86 @@
+// Global Ionicons setup. Registers the <ion-icon> custom element and bundles
+// every icon the app uses via addIcons so names resolve from an in-memory map
+// (no runtime asset fetches — works offline and through the Vite dev server).
+//
+// Usage anywhere in the app: <ion-icon name="briefcase-outline" />
+// Size via CSS font-size/width (see the `ion-icon` rules in index.css) or an
+// inline style={{ fontSize: 14 }}. Color follows `currentColor`.
+import { defineCustomElements } from 'ionicons/loader'
+import { addIcons } from 'ionicons'
+import {
+  addOutline,
+  briefcaseOutline,
+  businessOutline,
+  calendarOutline,
+  checkmarkCircleOutline,
+  checkmarkOutline,
+  chevronDownOutline,
+  chevronUpOutline,
+  clipboardOutline,
+  closeOutline,
+  copyOutline,
+  createOutline,
+  documentOutline,
+  documentTextOutline,
+  downloadOutline,
+  ellipseOutline,
+  globeOutline,
+  gridOutline,
+  hardwareChipOutline,
+  linkOutline,
+  locationOutline,
+  lockClosedOutline,
+  mailOutline,
+  menuOutline,
+  moonOutline,
+  openOutline,
+  optionsOutline,
+  personOutline,
+  refreshOutline,
+  saveOutline,
+  searchOutline,
+  sparklesOutline,
+  sunnyOutline,
+  trashOutline,
+  walletOutline,
+} from 'ionicons/icons'
+
+addIcons({
+  'add-outline': addOutline,
+  'briefcase-outline': briefcaseOutline,
+  'business-outline': businessOutline,
+  'calendar-outline': calendarOutline,
+  'checkmark-circle-outline': checkmarkCircleOutline,
+  'checkmark-outline': checkmarkOutline,
+  'chevron-down-outline': chevronDownOutline,
+  'chevron-up-outline': chevronUpOutline,
+  'clipboard-outline': clipboardOutline,
+  'close-outline': closeOutline,
+  'copy-outline': copyOutline,
+  'create-outline': createOutline,
+  'document-outline': documentOutline,
+  'document-text-outline': documentTextOutline,
+  'download-outline': downloadOutline,
+  'ellipse-outline': ellipseOutline,
+  'globe-outline': globeOutline,
+  'grid-outline': gridOutline,
+  'hardware-chip-outline': hardwareChipOutline,
+  'link-outline': linkOutline,
+  'location-outline': locationOutline,
+  'lock-closed-outline': lockClosedOutline,
+  'mail-outline': mailOutline,
+  'menu-outline': menuOutline,
+  'moon-outline': moonOutline,
+  'open-outline': openOutline,
+  'options-outline': optionsOutline,
+  'person-outline': personOutline,
+  'refresh-outline': refreshOutline,
+  'save-outline': saveOutline,
+  'search-outline': searchOutline,
+  'sparkles-outline': sparklesOutline,
+  'sunny-outline': sunnyOutline,
+  'trash-outline': trashOutline,
+  'wallet-outline': walletOutline,
+})
+
+defineCustomElements(window)

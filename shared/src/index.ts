@@ -1,5 +1,6 @@
 export * from './schemas/auth.js'
 export * from './schemas/profile.js'
 export * from './schemas/job.js'
+export * from './schemas/userJob.js'
 export * from './schemas/materials.js'
 export * from './schemas/applications.js'

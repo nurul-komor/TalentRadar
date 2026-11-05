@@ -50,6 +50,34 @@ describe('createMaterialsGenerator', () => {
     expect(req.user).toContain('We need Kubernetes experts.')
   })
 
+  it('forces required skills missing from the CV into the prompt as a must-include list', async () => {
+    const { provider, complete } = fakeProvider(PARSED_CONTENT)
+    const generator = createMaterialsGenerator(provider, 'claude-opus-4-8', true)
+
+    await generator({
+      job: { title: 'Backend Engineer', company: 'Acme', rawDescription: 'PHP shop.' },
+      // Profile lists JavaScript but not PHP / CodeIgniter.
+      profile: {
+        ...PROFILE,
+        resume: { ...emptyResume(), skillGroups: [{ category: 'Core', skills: ['JavaScript'] }] },
+      },
+      requirements: {
+        requiredSkills: ['PHP', 'CodeIgniter', 'JavaScript'],
+        niceToHaveSkills: [],
+        minExperienceYears: null,
+        workAuthRequirement: 'unknown',
+        remoteType: 'unknown',
+      },
+    })
+
+    const user = complete.mock.calls[0][0].user as string
+    expect(user).toContain('MUST still list')
+    // The gap (PHP, CodeIgniter) is spelled out; the already-held skill is not re-listed as missing.
+    expect(user).toContain('- PHP')
+    expect(user).toContain('- CodeIgniter')
+    expect(user).not.toContain('- JavaScript')
+  })
+
   it('passes the reasoning flag through (off for non-reasoning models like gpt-4o-mini)', async () => {
     const { provider, complete } = fakeProvider(PARSED_CONTENT)
     const generator = createMaterialsGenerator(provider, 'gpt-4o-mini', false)

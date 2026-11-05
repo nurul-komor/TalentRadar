@@ -1,8 +1,9 @@
 import { Hono, type Context } from 'hono'
 import { ObjectId, type Db } from 'mongodb'
 import type { Materials, Profile } from '@job-hunter/shared'
+import { SaveMaterialsInputSchema } from '@job-hunter/shared'
 import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
-import { generateMaterials } from '../materials/materialsService.js'
+import { generateMaterials, saveMaterials, getSavedMaterials } from '../materials/materialsService.js'
 import { exportToPdf, exportToDocx } from '../materials/exporters.js'
 import { DOCX_MIME_TYPE } from '../profile/cvParser.js'
 import { NotFoundError } from '../lib/errors.js'
@@ -47,6 +48,30 @@ export function createMaterialsRoutes(db: Db, jwtSecret: string, generator: Mate
     }
   })
 
+  // Save the user's chosen cover letter / tailored CV for this job under their
+  // profile. Overwrites any prior saved copy for the same (user, job) pair and
+  // leaves the base profile résumé untouched.
+  materialsRoutes.post('/:jobId/save', async (c) => {
+    const jobId = c.req.param('jobId')
+    const payload = await c.req.json().catch(() => null)
+    const parsed = SaveMaterialsInputSchema.safeParse(payload)
+    if (!parsed.success) {
+      return c.json({ error: parsed.error.issues[0]?.message ?? 'invalid payload' }, 400)
+    }
+    const saved = await saveMaterials(db, jobId, c.get('profileId'), parsed.data)
+    return c.json(saved)
+  })
+
+  // Fetch the saved cover letter / tailored CV for this job, scoped to the caller.
+  materialsRoutes.get('/:jobId/saved', async (c) => {
+    const jobId = c.req.param('jobId')
+    const saved = await getSavedMaterials(db, jobId, c.get('profileId'))
+    if (!saved) {
+      return c.json({ error: 'no saved materials' }, 404)
+    }
+    return c.json(saved)
+  })
+
   materialsRoutes.get('/:jobId', async (c) => {
     const jobId = c.req.param('jobId')
     // Scope by profileId so each user retrieves the cover letter saved under
@@ -79,6 +104,9 @@ export function createMaterialsRoutes(db: Db, jwtSecret: string, generator: Mate
 
     c.header('Content-Type', contentType)
     c.header('Content-Disposition', `attachment; filename="${filename}"`)
+    // Exports are regenerated per request from the latest materials version; never
+    // let the browser serve a stale previously-downloaded blob for the same URL.
+    c.header('Cache-Control', 'no-store')
     // Hono's `c.body()` types accept ArrayBuffer/Uint8Array<ArrayBuffer>, not Node's
     // Buffer<ArrayBufferLike> directly — slice to a definite ArrayBuffer view.
     return c.body(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer)

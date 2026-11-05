@@ -68,6 +68,28 @@ describe('runDiscovery', () => {
     expect(stored?.normalizedUrl).toBe('https://remoteok.com/remote-jobs/1')
   })
 
+  it('repairs mojibake text fields before storing', async () => {
+    // Reproduce the exact mangling RemoteOK's feed delivers: UTF-8 bytes decoded
+    // as Latin-1, so every UTF-8 byte becomes a U+00xx codepoint.
+    const mangle = (text: string): string =>
+      [...Buffer.from(text, 'utf8')].map((b) => String.fromCharCode(b)).join('')
+
+    const mangled: RawJobPosting = {
+      ...SAMPLE_JOB,
+      sourceJobId: 'moji',
+      url: 'https://remoteok.com/remote-jobs/moji',
+      title: mangle('Engineer \u2014 Remote'),
+      rawDescription: mangle('Pay \u00a330,000\u201330,500'),
+      location: mangle('\u062f\u0628\u064a'),
+    }
+    await runDiscovery(db, [fakeSource('remoteok', [mangled])])
+
+    const stored = await db.collection('jobs').findOne({ sourceJobId: 'moji' })
+    expect(stored?.title).toBe('Engineer \u2014 Remote')
+    expect(stored?.rawDescription).toBe('Pay \u00a330,000\u201330,500')
+    expect(stored?.location).toBe('\u062f\u0628\u064a')
+  })
+
   it('skips a job already seen by sourceId+sourceJobId', async () => {
     await runDiscovery(db, [fakeSource('remoteok', [SAMPLE_JOB])])
     const result = await runDiscovery(db, [fakeSource('remoteok', [SAMPLE_JOB])])

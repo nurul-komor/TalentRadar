@@ -10,6 +10,8 @@ import { createPublicRoutes } from './routes/public.js'
 import { createAdminRoutes } from './routes/admin.js'
 import { createCronRoutes } from './routes/cron.js'
 import { createMaterialsRoutes } from './routes/materials.js'
+import { createUserJobsRoutes } from './routes/userJobs.js'
+import { createJobPageExtractor } from './userJobs/userJobsService.js'
 import { createApplicationsRoutes } from './routes/applications.js'
 import { createAutomationRoutes } from './routes/automation.js'
 import { remoteOkSource } from './discovery/sources/remoteok.js'
@@ -61,12 +63,23 @@ export function mountRoutes(
   app.route('/profile', createProfileRoutes(db, jwtSecret, undefined, resumeExtractor))
   app.route('/discovery', createDiscoveryRoutes(db, jwtSecret, sources))
   app.route('/verification', createVerificationRoutes(db, jwtSecret, pageEvidenceVerifier))
-  app.route('/jobs', createJobsRoutes(db))
+  app.route('/jobs', createJobsRoutes(db, jwtSecret, sources))
   app.route('/public', createPublicRoutes(db))
   app.route('/admin', createAdminRoutes(db, jwtSecret))
   app.route('/cron', createCronRoutes(db, cronSecret, sources))
   app.route('/applications', createApplicationsRoutes(db, jwtSecret))
   app.route('/automation', createAutomationRoutes(db, jwtSecret))
+  // User-added jobs work with or without an LLM: the URL preview uses the
+  // configured provider when present and falls back to heuristic extraction
+  // otherwise, so this route mounts unconditionally.
+  app.route(
+    '/user-jobs',
+    createUserJobsRoutes(
+      db,
+      jwtSecret,
+      llmConfig ? createJobPageExtractor(llmConfig.provider, llmConfig.requirements.model) : null
+    )
+  )
 
   if (llmConfig) {
     app.route(

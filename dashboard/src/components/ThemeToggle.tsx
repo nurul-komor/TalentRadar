@@ -1,4 +1,3 @@
-import { Moon, Sun } from 'lucide-react'
 import { useTheme } from '../theme/ThemeContext'
 
 export function ThemeToggle() {
@@ -11,7 +10,7 @@ export function ThemeToggle() {
       aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
       onClick={toggleTheme}
     >
-      {theme === 'dark' ? <Sun /> : <Moon />}
+      {theme === 'dark' ? <ion-icon name="sunny-outline" /> : <ion-icon name="moon-outline" />}
     </button>
   )
 }

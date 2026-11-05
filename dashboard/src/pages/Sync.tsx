@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { RefreshCw } from 'lucide-react'
 import type { Job } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -118,7 +117,7 @@ export function SyncPage() {
             <p>Pull the latest jobs from all configured sources and see what changed.</p>
             <div className="quick">
               <button type="button" className="btn btn-indigo" onClick={handleRunSync} disabled={running}>
-                <RefreshCw size={15} style={{ display: 'inline', marginRight: 6 }} />
+                <ion-icon name="refresh-outline" style={{ fontSize: 15, display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }} />
                 {running ? 'Syncing…' : 'Sync now'}
               </button>
             </div>

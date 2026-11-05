@@ -1,6 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Mail, Lock } from 'lucide-react'
 import type { PublicJobsSummary } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -91,7 +90,7 @@ export function LoginPage() {
             <div className="field">
               <label htmlFor="email">Email</label>
               <div className="in">
-                <Mail size={16} />
+                <ion-icon name="mail-outline" />
                 <input
                   id="email"
                   type="email"
@@ -108,7 +107,7 @@ export function LoginPage() {
             <div className="field">
               <label htmlFor="password">Password</label>
               <div className="in">
-                <Lock size={16} />
+                <ion-icon name="lock-closed-outline" />
                 <input
                   id="password"
                   type="password"

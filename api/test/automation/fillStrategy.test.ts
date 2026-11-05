@@ -46,6 +46,7 @@ function materials(): Materials {
     profileId: 'profile-1',
     version: 1,
     unmetRequirements: [],
+    missingSkills: [],
     tailoredCv: 'Tailored CV text.',
     coverLetter: 'This is my cover letter.',
     outreachMessage: 'Outreach text.',

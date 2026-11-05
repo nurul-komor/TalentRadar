@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { MongoMemoryServer } from 'mongodb-memory-server'
-import type { Db, MongoClient } from 'mongodb'
+import { ObjectId, type Db, type MongoClient } from 'mongodb'
 import { connectMongo } from '../../src/db'
 import { ensureMaterialsIndexes, generateMaterials } from '../../src/materials/materialsService'
 import type { MaterialsGenerator } from '../../src/materials/types'
@@ -148,6 +148,52 @@ describe('generateMaterials', () => {
         generator
       )
     ).rejects.toThrow()
+  })
+
+  it('snapshots missing skills without mutating the profile résumé', async () => {
+    // Job requires three skills; the profile already holds one of them.
+    await db.collection('jobs').insertOne({
+      sourceId: 'remoteok',
+      sourceJobId: '1',
+      normalizedUrl: 'https://remoteok.com/remote-jobs/1',
+      title: 'Backend Engineer',
+      company: 'Acme',
+      rawDescription: 'We need a backend engineer.',
+      status: 'verified',
+      extractedRequirements: { requiredSkills: ['Kubernetes', 'Go', 'Docker'] },
+    })
+
+    const profileId = new ObjectId()
+    const profile: Profile = {
+      ...baseProfile(),
+      resume: { ...emptyResume(), skillGroups: [{ category: 'Core', skills: ['Go'] }] },
+    }
+    // Store with an ObjectId _id (as the app does). Listed field-by-field so the
+    // string `Profile._id` type doesn't collide with the Mongo ObjectId.
+    await db.collection('profiles').insertOne({
+      _id: profileId,
+      email: profile.email,
+      eligibility: profile.eligibility,
+      preferences: profile.preferences,
+      cvText: profile.cvText,
+      resume: profile.resume,
+    })
+
+    const { generator } = fixedGenerator()
+    const result = await generateMaterials(
+      db,
+      { sourceId: 'remoteok', sourceJobId: '1' },
+      profile,
+      profileId.toHexString(),
+      generator
+    )
+
+    // The gap snapshot excludes the already-held skill and is stored on the record.
+    expect(result.materials?.missingSkills).toEqual(['Kubernetes', 'Docker'])
+
+    // The master profile résumé is left exactly as it was — generation never writes to it.
+    const updated = (await db.collection('profiles').findOne({ _id: profileId })) as unknown as Profile
+    expect(updated.resume.skillGroups).toEqual([{ category: 'Core', skills: ['Go'] }])
   })
 
   it('defers generation when the daily budget is exceeded', async () => {

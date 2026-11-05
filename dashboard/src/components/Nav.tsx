@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
-import { Menu, X } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
 import { ThemeToggle } from './ThemeToggle'
 
@@ -28,7 +27,11 @@ function NavMenuToggle({ open, onClick }: { open: boolean; onClick: () => void }
       aria-label={open ? 'Close menu' : 'Open menu'}
       onClick={onClick}
     >
-      {open ? <X size={20} /> : <Menu size={20} />}
+      {open ? (
+        <ion-icon name="close-outline" style={{ fontSize: 20 }} />
+      ) : (
+        <ion-icon name="menu-outline" style={{ fontSize: 20 }} />
+      )}
     </button>
   )
 }

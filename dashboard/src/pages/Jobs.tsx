@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Building2, CircleCheck, MapPin, Search, SlidersHorizontal, Wallet, X } from 'lucide-react'
-import type { Job, JobSourceId } from '@job-hunter/shared'
+import type { Job, JobSourceId, UserJob } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import { PublicNav } from '../components/Nav'
 import { Footer } from '../components/Footer'
 import { Button } from '../components/Button'
@@ -124,12 +124,13 @@ function statusBadgeLabel(job: Job): string {
   return job.status === 'discovered' ? relativeTimeFromNow(job.discoveredAt) : job.status
 }
 
-function formatSalary(job: Job): string {
-  if (job.salaryMin == null && job.salaryMax == null) return '—'
-  if (job.salaryMin != null && job.salaryMax != null) {
-    return `$${job.salaryMin.toLocaleString()} – $${job.salaryMax.toLocaleString()}`
+function formatSalary(salary: { salaryMin: number | null; salaryMax: number | null }): string {
+  const { salaryMin, salaryMax } = salary
+  if (salaryMin == null && salaryMax == null) return '—'
+  if (salaryMin != null && salaryMax != null) {
+    return `$${salaryMin.toLocaleString()} – $${salaryMax.toLocaleString()}`
   }
-  return `$${(job.salaryMin ?? job.salaryMax)?.toLocaleString()}`
+  return `$${(salaryMin ?? salaryMax)?.toLocaleString()}`
 }
 
 const DESCRIPTION_PREVIEW_LENGTH = 220
@@ -163,12 +164,21 @@ function requirementsPreview(rawDescription: string): string | null {
 }
 
 export function JobsPage() {
+  const { isAuthenticated } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const [jobs, setJobs] = useState<Array<Job & { _id: string }>>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [trackedCompanies, setTrackedCompanies] = useState<TrackedCompany[]>([])
+  const [myJobs, setMyJobs] = useState<UserJob[]>([])
+
+  const { isSaved, toggleSaved, savedIds } = useSavedJobs()
+  // "Saved jobs" mode (reached via /jobs?saved=1 from the sidebar) shows only
+  // the jobs the user bookmarked. Saved ids live in localStorage, so this view
+  // fetches them by id rather than going through the server-side filters.
+  const savedMode = searchParams.get('saved') === '1'
+  const savedKey = savedIds.join(',')
 
   const category = (searchParams.get('category') as CategoryFilter) || 'all'
   const sourceSelection = parseSourceSelection(searchParams)
@@ -232,6 +242,20 @@ export function JobsPage() {
       .catch(() => setTrackedCompanies([]))
   }, [])
 
+  // Jobs the signed-in user added themselves (from /add-job) live in a separate,
+  // profile-scoped collection, so they're fetched here and shown above the public
+  // feed. Logged-out visitors never see them.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setMyJobs([])
+      return
+    }
+    apiFetch('/user-jobs')
+      .then((res) => (res.ok ? res.json() : { jobs: [] }))
+      .then((body: { jobs: UserJob[] }) => setMyJobs(body.jobs))
+      .catch(() => setMyJobs([]))
+  }, [isAuthenticated])
+
   useEffect(() => {
     if (debouncedKeyword === urlKeyword) return
     updateFilters({ q: debouncedKeyword || null })
@@ -255,6 +279,39 @@ export function JobsPage() {
   useEffect(() => {
     setLoading(true)
     setError(null)
+
+    // Saved mode: fetch each bookmarked job by id and show them all (no
+    // server-side paging/filtering). Jobs that were since removed from their
+    // source simply 404 and are dropped from the list.
+    if (savedMode) {
+      if (savedIds.length === 0) {
+        setJobs([])
+        setTotal(0)
+        setLoading(false)
+        return
+      }
+      let cancelled = false
+      Promise.all(
+        savedIds.map((id) =>
+          apiFetch(`/jobs/${id}`)
+            .then((res) => (res.ok ? (res.json() as Promise<Job & { _id: string }>) : null))
+            .catch(() => null)
+        )
+      )
+        .then((results) => {
+          if (cancelled) return
+          const found = results.filter((job): job is Job & { _id: string } => job !== null)
+          setJobs(found)
+          setTotal(found.length)
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+      return () => {
+        cancelled = true
+      }
+    }
+
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) })
     if (category !== 'all') params.set('category', category)
     if (sourceSelection.kind === 'source') params.set('sourceId', sourceSelection.id)
@@ -277,7 +334,7 @@ export function JobsPage() {
         setTotal(data.total)
       })
       .finally(() => setLoading(false))
-  }, [category, sourceSelectionKey, datePosted, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset])
+  }, [savedMode, savedKey, category, sourceSelectionKey, datePosted, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset])
 
   const rangeStart = total === 0 ? 0 : offset + 1
   const rangeEnd = Math.min(offset + PAGE_SIZE, total)
@@ -285,7 +342,7 @@ export function JobsPage() {
   const filterControls = (
     <div className="filter-rail">
       <div className="relative mt-4">
-        <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <ion-icon name="search-outline" style={{ fontSize: 16 }} class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
           placeholder="Title or company"
@@ -344,7 +401,7 @@ export function JobsPage() {
                         {trackedCompany.name}
                       </label>
                       {trackedCompany.verified && (
-                        <CircleCheck size={14} className="shrink-0 text-green-600" aria-label="Verified" />
+                        <ion-icon name="checkmark-circle-outline" style={{ fontSize: 14 }} class="shrink-0 text-green-600" aria-label="Verified" />
                       )}
                     </li>
                   ))}
@@ -393,10 +450,20 @@ export function JobsPage() {
     </div>
   )
 
-  const jobsCountLabel = loading ? 'Searching…' : `${total.toLocaleString()} jobs found`
-  const { isSaved, toggleSaved } = useSavedJobs()
+  const jobsCountLabel = loading
+    ? 'Searching…'
+    : savedMode
+      ? `${total.toLocaleString()} saved ${total === 1 ? 'job' : 'jobs'}`
+      : `${total.toLocaleString()} jobs found`
 
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  // Jobs the user added themselves show above the feed. Saved mode shows the
+  // discovery jobs they bookmarked in the main list, so narrow this companion
+  // section to just the bookmarked added jobs to match.
+  const visibleMyJobs = savedMode
+    ? myJobs.filter((job) => job._id && savedIds.includes(job._id))
+    : myJobs
 
   function handleToggleSaved(jobId: string) {
     const willBeSaved = !isSaved(jobId)
@@ -460,7 +527,7 @@ export function JobsPage() {
                 <b>{jobsCountLabel}</b>
               </span>
               <button type="button" onClick={clearFilters} disabled={!hasActiveFilters} className="clear-all">
-                <X size={14} style={{ display: 'inline', marginRight: 4 }} />
+                <ion-icon name="close-outline" style={{ fontSize: 14, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
                 Clear filters
               </button>
             </div>
@@ -474,7 +541,7 @@ export function JobsPage() {
               </span>
               <div className="flex items-center gap-3">
                 <DrawerTrigger className="btn btn-ghost">
-                  <SlidersHorizontal size={14} />
+                  <ion-icon name="options-outline" style={{ fontSize: 14 }} />
                   Filters
                   {activeFilterCount > 0 && <span className="pill mono">{activeFilterCount}</span>}
                 </DrawerTrigger>
@@ -499,6 +566,81 @@ export function JobsPage() {
           </Drawer>
 
           <div className="results">
+            {savedMode && (
+              <div className="saved-banner">
+                <span>
+                  <ion-icon name="briefcase-outline" style={{ fontSize: 15 }} />
+                  Showing your saved jobs
+                </span>
+                <Link to="/jobs" className="btn btn-ghost btn-sm">
+                  View all jobs
+                </Link>
+              </div>
+            )}
+            {isAuthenticated && visibleMyJobs.length > 0 && (
+              <section className="my-jobs">
+                <div className="my-jobs-head">
+                  <h2>
+                    {savedMode ? 'Your saved added jobs' : 'Your added jobs'}{' '}
+                    <span className="pill mono">{visibleMyJobs.length}</span>
+                  </h2>
+                  <Link to="/add-job" className="btn btn-ghost">
+                    <ion-icon name="add-outline" style={{ fontSize: 14 }} />
+                    Add a job
+                  </Link>
+                </div>
+                {visibleMyJobs.map((job) => (
+                  <article key={job._id} className="jrow">
+                    <div className="main">
+                      <div className="title">
+                        <Link to={`/my-jobs/${job._id}`}>{job.title}</Link>
+                      </div>
+                      <div className="sub">
+                        <ion-icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
+                        {job.company}
+                        {job.location ? ` · ${job.location}` : ''}
+                      </div>
+                      <div className="tags">
+                        <Pill tone={job.visibility === 'public' ? 'verified' : 'mono'}>
+                          {job.visibility === 'public' ? 'Public' : 'Private'}
+                        </Pill>
+                        <Pill tone="mono">{formatSalary(job)}</Pill>
+                        <Pill tone="mono">Added by you</Pill>
+                      </div>
+                      {job.description && (
+                        <p style={{ marginTop: 10, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
+                          {descriptionPreview(job.description)}
+                        </p>
+                      )}
+                      <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <Link to={`/my-jobs/${job._id}`} className="btn btn-ghost">
+                          View details
+                        </Link>
+                        {job.url && (
+                          <a href={job.url} target="_blank" rel="noreferrer" className="btn btn-indigo">
+                            Apply
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                    <div className="side">
+                      <button
+                        type="button"
+                        className={`save-btn${job._id && isSaved(job._id) ? ' saved' : ''}`}
+                        aria-pressed={!!job._id && isSaved(job._id)}
+                        aria-label={job._id && isSaved(job._id) ? 'Remove from saved' : 'Save job'}
+                        onClick={() => job._id && handleToggleSaved(job._id)}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+                          <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </section>
+            )}
+
             {error && (
               <div className="mb-4">
                 <FormError message={error} />
@@ -515,21 +657,30 @@ export function JobsPage() {
               </div>
             ) : jobs.length === 0 ? (
               <p className="saved-empty">
-                <b>No jobs found.</b>
-                Try widening your filters.
+                {savedMode ? (
+                  <>
+                    <b>No saved jobs yet.</b>
+                    Tap the bookmark on any job to save it here.
+                  </>
+                ) : (
+                  <>
+                    <b>No jobs found.</b>
+                    Try widening your filters.
+                  </>
+                )}
               </p>
             ) : (
               jobs.map((job) => {
                 const requirements = requirementsPreview(job.rawDescription)
                 return (
-                  <article key={job._id} className="jrow" style={{ gridTemplateColumns: 'auto minmax(0,1fr) auto' }}>
+                  <article key={job._id} className="jrow">
                     <ScoreRing score={job.score ?? 0} />
                     <div className="main">
                       <div className="title">
                         <Link to={`/jobs/${job._id}`}>{job.title}</Link>
                       </div>
                       <div className="sub">
-                        <Building2 size={12} style={{ display: 'inline', marginRight: 4 }} />
+                        <ion-icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
                         {job.company}
                         {job.location ? ` · ${job.location}` : ''}
                       </div>
@@ -575,25 +726,27 @@ export function JobsPage() {
               })
             )}
 
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2" style={{ color: 'var(--muted-text)', fontSize: 13 }}>
-              <span>{total === 0 ? 'No results' : `Showing ${rangeStart}–${rangeEnd} of ${total}`}</span>
-              <div className="pager">
-                <button
-                  type="button"
-                  disabled={offset === 0}
-                  onClick={() => updateFilters({ offset: String(Math.max(0, offset - PAGE_SIZE)) }, { resetOffset: false })}
-                >
-                  Prev
-                </button>
-                <button
-                  type="button"
-                  disabled={offset + PAGE_SIZE >= total}
-                  onClick={() => updateFilters({ offset: String(offset + PAGE_SIZE) }, { resetOffset: false })}
-                >
-                  Next
-                </button>
+            {!savedMode && (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-2" style={{ color: 'var(--muted-text)', fontSize: 13 }}>
+                <span>{total === 0 ? 'No results' : `Showing ${rangeStart}–${rangeEnd} of ${total}`}</span>
+                <div className="pager">
+                  <button
+                    type="button"
+                    disabled={offset === 0}
+                    onClick={() => updateFilters({ offset: String(Math.max(0, offset - PAGE_SIZE)) }, { resetOffset: false })}
+                  >
+                    Prev
+                  </button>
+                  <button
+                    type="button"
+                    disabled={offset + PAGE_SIZE >= total}
+                    onClick={() => updateFilters({ offset: String(offset + PAGE_SIZE) }, { resetOffset: false })}
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </section>

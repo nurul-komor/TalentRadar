@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { Briefcase, ClipboardList, FileText, LayoutDashboard, RefreshCw, Search, User } from 'lucide-react'
 import type { Application, Profile } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -24,10 +23,11 @@ function sidebarLinkClass({ isActive }: { isActive: boolean }): string {
 }
 
 const SIDEBAR_LINKS = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/applications', label: 'Applications', icon: ClipboardList },
-  { to: '/profile', label: 'Profile', icon: User },
-  { to: '/cv', label: 'CV', icon: FileText },
+  { to: '/dashboard', label: 'Dashboard', icon: 'grid-outline' },
+  { to: '/add-job', label: 'Add job', icon: 'add-outline' },
+  { to: '/applications', label: 'Applications', icon: 'clipboard-outline' },
+  { to: '/profile', label: 'Profile', icon: 'person-outline' },
+  { to: '/cv', label: 'CV', icon: 'document-text-outline' },
 ]
 
 function initialsFromEmail(email: string | null): string {
@@ -87,7 +87,7 @@ export function DashboardSidebar() {
       </NavLink>
 
       <form className="app-sidebar-search" onSubmit={submitSearch}>
-        <Search size={15} />
+        <ion-icon name="search-outline" style={{ fontSize: 15 }} />
         <input
           ref={searchRef}
           type="text"
@@ -99,9 +99,9 @@ export function DashboardSidebar() {
       </form>
 
       <div className="app-sidebar-nav">
-        {SIDEBAR_LINKS.map(({ to, label, icon: Icon }) => (
+        {SIDEBAR_LINKS.map(({ to, label, icon }) => (
           <NavLink key={to} to={to} className={sidebarLinkClass}>
-            <Icon size={18} />
+            <ion-icon name={icon} style={{ fontSize: 18 }} />
             {label}
             {to === '/applications' && readyCount > 0 && <span className="badge">{readyCount}</span>}
           </NavLink>
@@ -109,18 +109,14 @@ export function DashboardSidebar() {
 
         <div className="app-sidebar-section-label">Shortcuts</div>
         <NavLink to="/jobs?saved=1" className="app-sidebar-link">
-          <Briefcase size={18} />
+          <ion-icon name="briefcase-outline" style={{ fontSize: 18 }} />
           Saved jobs
           {savedIds.length > 0 && <span className="badge">{savedIds.length}</span>}
-        </NavLink>
-        <NavLink to="/jobs?category=government" className="app-sidebar-link">
-          <ClipboardList size={18} />
-          Government jobs
         </NavLink>
 
         {canSync(email) && (
           <NavLink to="/sync" className={sidebarLinkClass}>
-            <RefreshCw size={18} />
+            <ion-icon name="refresh-outline" style={{ fontSize: 18 }} />
             Job sync
           </NavLink>
         )}
@@ -153,9 +149,9 @@ export function DashboardSidebar() {
 export function DashboardSidebarTopBar() {
   return (
     <nav className="app-mobile-tabs" aria-label="Main">
-      {SIDEBAR_LINKS.map(({ to, label, icon: Icon }) => (
+      {SIDEBAR_LINKS.map(({ to, label, icon }) => (
         <NavLink key={to} to={to} className={sidebarLinkClass}>
-          <Icon size={18} />
+          <ion-icon name={icon} style={{ fontSize: 18 }} />
           {label}
         </NavLink>
       ))}
