@@ -1083,24 +1083,44 @@ a.kpi:hover{transform:translateY(-3px);border-color:var(--line-strong);box-shado
 }
 .app-main{flex:1;min-width:0;margin-left:304px;padding:0 max(20px, env(safe-area-inset-right,0px)) 48px;}
 .app-mobile-tabs{display:none;}
+.app-mobile-header{display:none;}
 @media (max-width:900px){
   .app-sidebar{display:none;}
-  .app-main{margin-left:0;padding-bottom:96px;}
+  .app-main{margin-left:0;padding-top:calc(60px + env(safe-area-inset-top,0px));padding-bottom:96px;}
+
+  /* Mobile top header: brand + account. Account moved here so the bottom tab bar
+     fits all six primary destinations without clipping. */
+  .app-mobile-header{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    position:fixed;top:0;left:0;right:0;z-index:50;
+    padding:10px max(16px, env(safe-area-inset-right,0px)) 10px max(16px, env(safe-area-inset-left,0px));
+    padding-top:calc(10px + env(safe-area-inset-top,0px));
+    background:color-mix(in srgb, var(--bg) 88%, transparent);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .app-mobile-header-account{position:relative;flex:none;}
+  .app-mobile-header-avatar{
+    display:flex;align-items:center;justify-content:center;
+    background:transparent;border:0;cursor:pointer;padding:2px;border-radius:999px;
+  }
+  .app-mobile-header-avatar .avatar{
+    width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    background:var(--indigo);color:#fff;font-size:12px;font-weight:700;
+  }
+  .app-mobile-header-avatar.current{box-shadow:0 0 0 2px var(--indigo-soft);}
+  /* Header popover opens downward (the shared rule opens upward for the sidebar foot). */
+  .app-mobile-header .account-menu{top:calc(100% + 10px);bottom:auto;right:0;left:auto;}
+
   .app-mobile-tabs{
     display:flex;position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));
     z-index:50;background:var(--surface);border:1px solid var(--line);border-radius:999px;
     padding:6px;box-shadow:var(--shadow-hover);gap:2px;
   }
-  .app-mobile-tabs a,
-  .app-mobile-tabs-btn{
+  .app-mobile-tabs a{
     flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px;
     border-radius:999px;font-size:10.5px;font-weight:600;color:var(--muted-text);
   }
-  .app-mobile-tabs a.current,
-  .app-mobile-tabs-btn.current{background:var(--fg);color:var(--bg);}
-  .app-mobile-tabs-btn{background:transparent;border:0;cursor:pointer;font-family:inherit;}
-
-  .app-mobile-account{flex:1;display:flex;position:relative;}
+  .app-mobile-tabs a.current{background:var(--fg);color:var(--bg);}
 }
 
 /* applications */

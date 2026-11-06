@@ -5,7 +5,7 @@ import { ensureJobIndexes } from '../src/discovery/discoveryService.js'
 import { ensureMaterialsIndexes } from '../src/materials/materialsService.js'
 import { ensureApplicationIndexes } from '../src/applications/applicationsService.js'
 import { ensureAutomationRunIndexes } from '../src/applications/automationRunsService.js'
-import { createLlmConfig } from '../src/llm/config.js'
+import { createAiRuntime } from '../src/ai/aiRuntime.js'
 
 // Fluid Compute reuses warm instances across invocations, so the Mongo
 // connection and assembled app are cached at module scope instead of being
@@ -20,21 +20,24 @@ async function buildApp() {
   if (!jwtSecret) throw new Error('JWT_SECRET is required')
   if (!cronSecret) throw new Error('CRON_SECRET is required')
 
-  // LLM_PROVIDER (default "anthropic") picks the provider + models; null when its key is absent.
-  const llmConfig = createLlmConfig(process.env)
-  if (!llmConfig) {
-    const provider = (process.env.LLM_PROVIDER ?? 'anthropic').toLowerCase()
-    console.warn(
-      `LLM API key for provider "${provider}" is not set — /scoring and /materials routes will be disabled`
-    )
-  }
-
   const { db } = await connectMongo(mongodbUri, process.env.MONGODB_DB_NAME ?? 'job_hunter')
   await ensureJobIndexes(db)
   await ensureMaterialsIndexes(db)
   await ensureApplicationIndexes(db)
   await ensureAutomationRunIndexes(db)
-  return mountRoutes(createApp(), db, jwtSecret, cronSecret, llmConfig)
+
+  // The AI runtime builds the active LLM provider + embedder from DB settings merged over env
+  // and is hot-reloadable from the admin settings page; AI routes (and /admin/settings/ai) read
+  // the current instances off it per request. mountRoutes expects this holder — passing a bare
+  // LlmConfig here is what made /admin/settings/ai 500 (aiRuntime.view() was undefined).
+  const ai = await createAiRuntime(db)
+  if (!ai.llm) {
+    const provider = (process.env.LLM_PROVIDER ?? 'anthropic').toLowerCase()
+    console.warn(
+      `No LLM API key for provider "${provider}" — /scoring and /materials disabled until set in admin settings`
+    )
+  }
+  return mountRoutes(createApp(), db, jwtSecret, cronSecret, ai)
 }
 
 // A bare `export default function handler(request)` is treated by Vercel as the

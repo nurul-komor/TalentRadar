@@ -279,8 +279,21 @@ export function DashboardSidebarTopBar() {
           {label}
         </NavLink>
       ))}
-
-      <AccountMenu variant="tabs" />
     </nav>
+  )
+}
+
+// Mobile-only top header: brand on the left, account avatar on the right. The
+// account popover lives here (not in the bottom tab bar) so all six primary
+// destinations fit the fixed bottom nav without clipping on narrow phones.
+export function DashboardMobileHeader() {
+  return (
+    <header className="app-mobile-header">
+      <NavLink to="/" className="brand app-mobile-header-brand">
+        <BrandMark />
+        Hunter
+      </NavLink>
+      <AccountMenu variant="header" />
+    </header>
   )
 }
