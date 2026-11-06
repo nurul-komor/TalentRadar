@@ -575,10 +575,11 @@ export function JobsPage() {
 
   // Added jobs render as ordinary rows in the list — on the "My jobs" tab, at
   // the top of the first page of "All jobs", and in saved mode — but never under
-  // Government / Other jobs, which are discovery-only categories.
+  // Government / Other jobs, which are discovery-only categories. In "Best match"
+  // mode the list is a pure relevance ranking, so we don't pin added jobs on top.
   const myJobRows = savedMode
     ? visibleMyJobs
-    : category === 'mine' || (category === 'all' && offset === 0)
+    : !sortByMatch && (category === 'mine' || (category === 'all' && offset === 0))
       ? visibleMyJobs
       : []
 

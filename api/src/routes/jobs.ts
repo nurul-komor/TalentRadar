@@ -7,14 +7,11 @@ import { verifyAuthToken } from '../lib/jwt.js'
 import type { JobSource } from '../discovery/types.js'
 import type { Embedder } from '../embeddings/embeddingProvider.js'
 import { embedProfile } from '../suggestions/embeddingService.js'
-import { cosineSimilarity, cosineToUnitScore } from '../suggestions/vectorSearch.js'
+import { searchRankedJobsPage } from '../suggestions/vectorSearch.js'
+import { isAdmin } from '../lib/admins.js'
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
-
-// Force-sync is restricted to this operator account, both in the dashboard UI
-// and here as a server-side guard so the endpoint can't be called by others.
-const FORCE_SYNC_EMAIL = 'nurulkomor123@gmail.com'
 
 export const GOVT_JOB_SOURCE_IDS = UNSCORED_JOB_SOURCE_IDS
 
@@ -177,31 +174,17 @@ export function createJobsRoutes(
 
     const jobs = db.collection<Job>('jobs')
 
-    // "Best match": re-rank the filtered feed by semantic similarity to the signed-in user's
-    // resume. Applied only when an embedder is configured and the caller has a resume to embed;
-    // otherwise we silently fall back to the default newest-first ordering below.
+    // "Best match": re-rank the feed by semantic similarity to the signed-in user's resume.
+    // Applied only when an embedder is configured and the caller has a resume to embed; otherwise
+    // we silently fall back to the default newest-first ordering below. The vector ranking runs in
+    // Atlas (searchRankedJobsPage); the full `filter` is re-applied to the ranked pool so every
+    // filter still works.
     if (sortByMatch && embedder) {
       const profileId = await optionalProfileId(c.req.header('Authorization'), jwtSecret)
       const queryVector = profileId ? await embedProfile(db, profileId, embedder).catch(() => null) : null
       if (queryVector) {
-        // Rank every filtered job that has an embedding; cosine in-app so arbitrary filters
-        // (keyword/salary/date) still apply, which $vectorSearch can't express.
-        const candidates = await jobs
-          .find({ ...filter, embedding: { $type: 'array' } })
-          .project<Job>({ embedding: 1, title: 1, company: 1, location: 1, salaryMin: 1, salaryMax: 1, rawDescription: 1, sourceId: 1, status: 1, score: 1, normalizedUrl: 1, discoveredAt: 1, postedAt: 1 })
-          .toArray()
-
-        const ranked = candidates
-          .map((job) => {
-            const { embedding, ...rest } = job
-            // (1+cos)/2 scale to match the /suggestions semantic score the user sees elsewhere.
-            const unit = cosineToUnitScore(cosineSimilarity(queryVector, embedding as number[]))
-            const matchScore = Math.round(unit * 1000) / 10
-            return { ...rest, matchScore }
-          })
-          .sort((a, b) => b.matchScore - a.matchScore)
-
-        return c.json({ jobs: ranked.slice(offset, offset + limit), total: ranked.length })
+        const page = await searchRankedJobsPage(db, queryVector, { postFilter: filter, limit, offset })
+        return c.json(page)
       }
     }
 
@@ -238,7 +221,7 @@ export function createJobsRoutes(
     } catch {
       profile = null
     }
-    if (!profile || profile.email !== FORCE_SYNC_EMAIL) {
+    if (!isAdmin(profile?.email)) {
       return c.json({ error: 'forbidden' }, 403)
     }
 

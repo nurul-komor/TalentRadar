@@ -1,4 +1,4 @@
-import type { Db } from 'mongodb'
+import type { Db, Filter } from 'mongodb'
 import type { Job, JobSourceId, JobStatus } from '@job-hunter/shared'
 import { UNSCORED_JOB_SOURCE_IDS } from '@job-hunter/shared'
 
@@ -129,4 +129,82 @@ export async function searchSimilarJobs(
     }))
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, limit)
+}
+
+export interface RankedJobsPage {
+  jobs: Array<Job & { matchScore: number }>
+  total: number
+}
+
+// How many of the top semantic matches the "Best match" sort ranks before applying the
+// remaining (non-vector) filters. Plenty for a human browsing by relevance; matches ranked
+// beyond this aren't paginated into, which is an acceptable bound for a best-match view.
+const MATCH_CANDIDATE_POOL = 500
+
+// Powers the /jobs "Best match" sort: ranks jobs by similarity to queryVector server-side via
+// Atlas $vectorSearch, then applies `postFilter` (the filters $vectorSearch can't express —
+// keyword/salary/date/language/location) to the ranked pool and paginates. Keeps the heavy
+// vector work in Atlas instead of streaming every embedding into Node. Falls back to in-app
+// cosine over the filtered set when $vectorSearch is unavailable (non-Atlas dev/test).
+export async function searchRankedJobsPage(
+  db: Db,
+  queryVector: number[],
+  opts: { postFilter: Filter<Job>; limit: number; offset: number }
+): Promise<RankedJobsPage> {
+  const { postFilter, limit, offset } = opts
+  const jobs = db.collection<Job>('jobs')
+  const roundScore = (job: Job & { matchScore: number }) => ({
+    ...job,
+    matchScore: Math.round(job.matchScore * 10) / 10,
+  })
+
+  if (!vectorSearchUnavailable) {
+    try {
+      const [result] = await jobs
+        .aggregate([
+          {
+            $vectorSearch: {
+              index: VECTOR_INDEX_NAME,
+              path: 'embedding',
+              queryVector,
+              numCandidates: MATCH_CANDIDATE_POOL * 2,
+              limit: MATCH_CANDIDATE_POOL,
+              filter: {
+                status: { $in: SUGGESTIBLE_JOB_STATUSES },
+                sourceId: { $nin: UNSCORED_JOB_SOURCE_IDS as JobSourceId[] },
+              },
+            },
+          },
+          { $addFields: { matchScore: { $multiply: [{ $meta: 'vectorSearchScore' }, 100] } } },
+          { $match: postFilter },
+          { $project: { embedding: 0 } },
+          {
+            $facet: {
+              page: [{ $skip: offset }, { $limit: limit }],
+              count: [{ $count: 'n' }],
+            },
+          },
+        ])
+        .toArray()
+
+      const page = ((result?.page ?? []) as Array<Job & { matchScore: number }>).map(roundScore)
+      const total = (result?.count?.[0]?.n as number | undefined) ?? 0
+      return { jobs: page, total }
+    } catch (reason) {
+      vectorSearchUnavailable = true
+      const message = reason instanceof Error ? reason.message : String(reason)
+      console.warn(`$vectorSearch unavailable (${message}); using in-memory cosine fallback.`)
+    }
+  }
+
+  // Fallback — rank the filtered, embedded jobs in Node.
+  const candidates = await jobs.find({ ...postFilter, embedding: { $type: 'array' } }).toArray()
+  const ranked = candidates
+    .map((job) => {
+      const { embedding, ...rest } = job
+      const matchScore = cosineToUnitScore(cosineSimilarity(queryVector, embedding as number[])) * 100
+      return roundScore({ ...(rest as Job), matchScore })
+    })
+    .sort((a, b) => b.matchScore - a.matchScore)
+  return { jobs: ranked.slice(offset, offset + limit), total: ranked.length }
 }

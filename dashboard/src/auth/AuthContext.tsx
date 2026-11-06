@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { apiFetch, getToken, setToken, clearToken } from '../api/client'
-
-const ADMIN_EMAIL = 'nurulkomor123@gmail.com'
+import { isAdmin } from '../lib/syncAccess'
 
 // "Skip for now" is a soft bypass: it lets the user into the app without
 // finishing onboarding. We persist it per-browser so the gate doesn't nag on
@@ -91,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       isAuthenticated: token !== null,
-      isAdmin: email === ADMIN_EMAIL,
+      isAdmin: isAdmin(email),
       email,
       onboardingCompleted,
       onboardingSkipped,

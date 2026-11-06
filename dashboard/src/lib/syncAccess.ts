@@ -1,6 +1,11 @@
-// Email allowed to access the job sync page / trigger discovery syncs from the UI.
-export const SYNC_EMAIL = 'nurulkomr123@gmail.com'
+// Operator/admin accounts. Admin-only UI (the Job Sync page, discovery triggers,
+// admin views) gates on membership in this list. Add an email here to grant a
+// user admin access. Must stay in sync with the API's ADMIN_EMAILS.
+export const ADMIN_EMAILS = ['nurulkomor123@gmail.com']
 
-export function canSync(email: string | null): boolean {
-  return email === SYNC_EMAIL
+export function isAdmin(email: string | null | undefined): boolean {
+  return email != null && ADMIN_EMAILS.includes(email)
 }
+
+// Sync access is admin-gated; kept as a named alias for the sync UI call sites.
+export const canSync = isAdmin
