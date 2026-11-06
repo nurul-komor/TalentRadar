@@ -1,27 +1,28 @@
-import {
-  useEffect,
-  useState,
-  type CSSProperties,
-  type FormEvent,
-  type KeyboardEvent,
-  type ReactNode,
-} from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { emptyResume } from '@job-hunter/shared'
-import type {
-  Eligibility,
-  Profile,
-  Resume,
-  ResumeEducation,
-  ResumeExperience,
-  ResumeProject,
-  ResumeSkillGroup,
-} from '@job-hunter/shared'
+import type { Eligibility, Profile, Resume } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
-import { Button } from '../components/Button'
+import { useAuth } from '../auth/AuthContext'
 import { FormError } from '../components/FormError'
 import { ScoreRing } from '../components/ScoreRing'
-import { Pill } from '../components/Pill'
+import {
+  EducationEntryFields,
+  ExperienceEntryFields,
+  ProjectEntryFields,
+  RepeatableSection,
+  SkillGroupEntryFields,
+  TagList,
+  appendEntry,
+  removeEntryAt,
+  sanitizeResumeForSave,
+  updateEntryAt,
+} from '../components/resumeFields'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 
 type WorkAuthorization = Eligibility['workAuthorization']
 
@@ -32,369 +33,43 @@ const WORK_AUTH_OPTIONS: Array<{ value: WorkAuthorization; label: string }> = [
   { value: 'visa_required', label: 'Visa required' },
 ]
 
-const selectInputStyle: CSSProperties = {
-  flex: 1,
-  minWidth: 0,
-  border: 'none',
-  outline: 'none',
-  background: 'transparent',
-  fontFamily: 'var(--font-body)',
-  fontSize: 15,
-  color: 'var(--fg)',
-  padding: '13px 0',
+// Mirrors the required-field set the onboarding wizard enforces. Used both for
+// the completeness checklist and to flip onboardingCompletedAt once satisfied.
+function requiredChecks(resume: Resume, cvText: string | null) {
+  return [
+    { key: 'fullName', label: 'Full name', done: !!resume.fullName?.trim() },
+    { key: 'phone', label: 'Phone number', done: !!resume.phone?.trim() },
+    { key: 'country', label: 'Country', done: !!resume.location.country?.trim() },
+    { key: 'city', label: 'City', done: !!resume.location.city?.trim() },
+    { key: 'linkedin', label: 'LinkedIn profile', done: !!resume.linkedin?.trim() },
+    { key: 'github', label: 'Portfolio / GitHub', done: !!resume.github?.trim() },
+    { key: 'cv', label: 'CV uploaded', done: cvText != null },
+    { key: 'experience', label: 'Work experience', done: resume.experience.length > 0 },
+    { key: 'education', label: 'Education', done: resume.education.length > 0 },
+    {
+      key: 'skills',
+      label: 'Skills',
+      done: resume.skillGroups.some((g) => g.skills.length > 0),
+    },
+  ]
 }
 
-const tagDraftInputStyle: CSSProperties = {
-  border: '1px dashed var(--line-strong)',
-  borderRadius: 999,
-  padding: '6px 12px',
-  fontSize: 13,
-  background: 'transparent',
-  color: 'var(--fg)',
-  outline: 'none',
-  minWidth: 120,
-  fontFamily: 'var(--font-body)',
-}
+const selectClass =
+  'flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]'
 
-interface TagListProps {
-  items: string[]
-  placeholder: string
-  onAdd: (value: string) => void
-  onRemove: (index: number) => void
-}
-
-function TagList({ items, placeholder, onAdd, onRemove }: TagListProps) {
-  const [adding, setAdding] = useState(false)
-  const [draft, setDraft] = useState('')
-
-  function commit() {
-    const value = draft.trim()
-    if (value && !items.includes(value)) onAdd(value)
-    setDraft('')
-    setAdding(false)
-  }
-
-  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      commit()
-    } else if (e.key === 'Escape') {
-      setDraft('')
-      setAdding(false)
-    }
-  }
-
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="taglist">
-      {items.map((item, index) => (
-        <span className="pill" key={`${item}-${index}`}>
-          {item}
-          <button type="button" aria-label={`Remove ${item}`} onClick={() => onRemove(index)}>
-            <ion-icon name="close-outline" style={{ fontSize: 12 }} />
-          </button>
-        </span>
-      ))}
-      {adding ? (
-        <input
-          autoFocus
-          style={tagDraftInputStyle}
-          value={draft}
-          placeholder={placeholder}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onBlur={commit}
-        />
-      ) : (
-        <button type="button" className="pill add" onClick={() => setAdding(true)}>
-          <ion-icon name="add-outline" style={{ fontSize: 12 }} /> Add
-        </button>
-      )}
-    </div>
+    <section className="rounded-2xl border border-border bg-card p-6">
+      <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+      <div className="mt-4">{children}</div>
+    </section>
   )
-}
-
-// Generic immutable helpers for the repeatable resume lists (experience,
-// projects, skillGroups, education) — keeps add/update/remove wiring for
-// each entity down to a one-liner instead of duplicating splice logic.
-function appendEntry<T>(list: T[], entry: T): T[] {
-  return [...list, entry]
-}
-
-function updateEntryAt<T>(list: T[], index: number, patch: Partial<T>): T[] {
-  return list.map((item, i) => (i === index ? { ...item, ...patch } : item))
-}
-
-function removeEntryAt<T>(list: T[], index: number): T[] {
-  return list.filter((_, i) => i !== index)
-}
-
-function nullIfBlank(value: string | null): string | null {
-  const trimmed = value?.trim() ?? ''
-  return trimmed === '' ? null : trimmed
-}
-
-function sanitizeBullets(bullets: string[]): string[] {
-  return bullets.map((bullet) => bullet.trim()).filter((bullet) => bullet !== '')
-}
-
-// Builds the PUT payload from in-progress UI state: trims free-text fields,
-// drops blank bullet lines, and converts empty strings to null so the
-// shape matches ResumeSchema (e.g. an empty endDate means "Present").
-function sanitizeResumeForSave(resume: Resume): Resume {
-  return {
-    ...resume,
-    fullName: nullIfBlank(resume.fullName),
-    headline: nullIfBlank(resume.headline),
-    phone: nullIfBlank(resume.phone),
-    summary: nullIfBlank(resume.summary),
-    experience: resume.experience.map((entry) => ({
-      ...entry,
-      endDate: nullIfBlank(entry.endDate),
-      bullets: sanitizeBullets(entry.bullets),
-    })),
-    projects: resume.projects.map((entry) => ({
-      ...entry,
-      url: nullIfBlank(entry.url),
-      bullets: sanitizeBullets(entry.bullets),
-    })),
-  }
-}
-
-interface EntryCardProps {
-  label: string
-  onRemove: () => void
-  children: ReactNode
-}
-
-function EntryCard({ label, onRemove, children }: EntryCardProps) {
-  return (
-    <div className="entry-card">
-      <div className="entry-head">
-        <span>{label}</span>
-        <button type="button" className="entry-remove" aria-label={`Remove ${label}`} onClick={onRemove}>
-          <ion-icon name="close-outline" style={{ fontSize: 14 }} />
-        </button>
-      </div>
-      <div className="fgrid">{children}</div>
-    </div>
-  )
-}
-
-interface BulletsFieldProps {
-  bullets: string[]
-  onChange: (bullets: string[]) => void
-}
-
-function BulletsField({ bullets, onChange }: BulletsFieldProps) {
-  return (
-    <div className="field full">
-      <label>Bullets (one per line)</label>
-      <textarea
-        value={bullets.join('\n')}
-        placeholder={'Shipped feature X that improved Y by 20%\nLed migration of Z to ...'}
-        onChange={(e) => onChange(e.target.value.split('\n'))}
-      />
-    </div>
-  )
-}
-
-interface ExperienceEntryFieldsProps {
-  entry: ResumeExperience
-  index: number
-  onChange: (index: number, patch: Partial<ResumeExperience>) => void
-  onRemove: (index: number) => void
-}
-
-function ExperienceEntryFields({ entry, index, onChange, onRemove }: ExperienceEntryFieldsProps) {
-  return (
-    <EntryCard label={`Experience ${index + 1}`} onRemove={() => onRemove(index)}>
-      <div className="field">
-        <label htmlFor={`exp-company-${index}`}>Company</label>
-        <div className="in">
-          <input
-            id={`exp-company-${index}`}
-            value={entry.company}
-            placeholder="Acme Corp"
-            onChange={(e) => onChange(index, { company: e.target.value })}
-          />
-        </div>
-      </div>
-      <div className="field">
-        <label htmlFor={`exp-role-${index}`}>Role</label>
-        <div className="in">
-          <input
-            id={`exp-role-${index}`}
-            value={entry.role}
-            placeholder="Senior Software Engineer"
-            onChange={(e) => onChange(index, { role: e.target.value })}
-          />
-        </div>
-      </div>
-      <div className="field">
-        <label htmlFor={`exp-start-${index}`}>Start date</label>
-        <div className="in">
-          <input
-            id={`exp-start-${index}`}
-            value={entry.startDate}
-            placeholder="Jan 2022"
-            onChange={(e) => onChange(index, { startDate: e.target.value })}
-          />
-        </div>
-      </div>
-      <div className="field">
-        <label htmlFor={`exp-end-${index}`}>End date</label>
-        <div className="in">
-          <input
-            id={`exp-end-${index}`}
-            value={entry.endDate ?? ''}
-            placeholder="Present"
-            onChange={(e) => onChange(index, { endDate: e.target.value })}
-          />
-        </div>
-      </div>
-      <BulletsField bullets={entry.bullets} onChange={(bullets) => onChange(index, { bullets })} />
-    </EntryCard>
-  )
-}
-
-interface ProjectEntryFieldsProps {
-  entry: ResumeProject
-  index: number
-  onChange: (index: number, patch: Partial<ResumeProject>) => void
-  onRemove: (index: number) => void
-}
-
-function ProjectEntryFields({ entry, index, onChange, onRemove }: ProjectEntryFieldsProps) {
-  return (
-    <EntryCard label={`Project ${index + 1}`} onRemove={() => onRemove(index)}>
-      <div className="field">
-        <label htmlFor={`proj-name-${index}`}>Name</label>
-        <div className="in">
-          <input
-            id={`proj-name-${index}`}
-            value={entry.name}
-            placeholder="Job Hunter"
-            onChange={(e) => onChange(index, { name: e.target.value })}
-          />
-        </div>
-      </div>
-      <div className="field">
-        <label htmlFor={`proj-role-${index}`}>Role</label>
-        <div className="in">
-          <input
-            id={`proj-role-${index}`}
-            value={entry.role}
-            placeholder="Creator"
-            onChange={(e) => onChange(index, { role: e.target.value })}
-          />
-        </div>
-      </div>
-      <div className="field full">
-        <label htmlFor={`proj-url-${index}`}>URL</label>
-        <div className="in">
-          <input
-            id={`proj-url-${index}`}
-            value={entry.url ?? ''}
-            placeholder="github.com/you/project"
-            onChange={(e) => onChange(index, { url: e.target.value })}
-          />
-        </div>
-      </div>
-      <div className="field full">
-        <label>Technologies</label>
-        <TagList
-          items={entry.technologies}
-          placeholder="Add a technology"
-          onAdd={(value) => onChange(index, { technologies: appendEntry(entry.technologies, value) })}
-          onRemove={(i) => onChange(index, { technologies: removeEntryAt(entry.technologies, i) })}
-        />
-      </div>
-      <BulletsField bullets={entry.bullets} onChange={(bullets) => onChange(index, { bullets })} />
-    </EntryCard>
-  )
-}
-
-interface SkillGroupEntryFieldsProps {
-  entry: ResumeSkillGroup
-  index: number
-  onChange: (index: number, patch: Partial<ResumeSkillGroup>) => void
-  onRemove: (index: number) => void
-}
-
-function SkillGroupEntryFields({ entry, index, onChange, onRemove }: SkillGroupEntryFieldsProps) {
-  return (
-    <EntryCard label={`Skill group ${index + 1}`} onRemove={() => onRemove(index)}>
-      <div className="field full">
-        <label htmlFor={`skillgroup-category-${index}`}>Category</label>
-        <div className="in">
-          <input
-            id={`skillgroup-category-${index}`}
-            value={entry.category}
-            placeholder="Languages"
-            onChange={(e) => onChange(index, { category: e.target.value })}
-          />
-        </div>
-      </div>
-      <div className="field full">
-        <label>Skills</label>
-        <TagList
-          items={entry.skills}
-          placeholder="Add a skill"
-          onAdd={(value) => onChange(index, { skills: appendEntry(entry.skills, value) })}
-          onRemove={(i) => onChange(index, { skills: removeEntryAt(entry.skills, i) })}
-        />
-      </div>
-    </EntryCard>
-  )
-}
-
-interface EducationEntryFieldsProps {
-  entry: ResumeEducation
-  index: number
-  onChange: (index: number, patch: Partial<ResumeEducation>) => void
-  onRemove: (index: number) => void
-}
-
-function EducationEntryFields({ entry, index, onChange, onRemove }: EducationEntryFieldsProps) {
-  return (
-    <EntryCard label={`Education ${index + 1}`} onRemove={() => onRemove(index)}>
-      <div className="field">
-        <label htmlFor={`edu-institution-${index}`}>Institution</label>
-        <div className="in">
-          <input
-            id={`edu-institution-${index}`}
-            value={entry.institution}
-            placeholder="State University"
-            onChange={(e) => onChange(index, { institution: e.target.value })}
-          />
-        </div>
-      </div>
-      <div className="field">
-        <label htmlFor={`edu-credential-${index}`}>Credential</label>
-        <div className="in">
-          <input
-            id={`edu-credential-${index}`}
-            value={entry.credential}
-            placeholder="B.Sc. Computer Science"
-            onChange={(e) => onChange(index, { credential: e.target.value })}
-          />
-        </div>
-      </div>
-    </EntryCard>
-  )
-}
-
-interface ChecklistItem {
-  key: string
-  label: string
-  done: boolean
-  // Anchors (e.g. "#field-countries") jump to the field on this page;
-  // routes (e.g. "/cv") navigate elsewhere — CV has no inline input here.
-  action?: { href: string; label: string }
 }
 
 export function ProfilePage() {
+  const { refreshProfile } = useAuth()
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [resume, setResume] = useState<Resume>(emptyResume)
   const [workAuthorization, setWorkAuthorization] = useState<WorkAuthorization>('unknown')
   const [countries, setCountries] = useState<string[]>([])
   const [targetRoles, setTargetRoles] = useState<string[]>([])
@@ -415,6 +90,7 @@ export function ProfilePage() {
       }
       const data: Profile = await res.json()
       setProfile(data)
+      setResume({ ...emptyResume(), ...data.resume })
       setWorkAuthorization(data.eligibility.workAuthorization)
       setCountries(data.eligibility.countries)
       setTargetRoles(data.preferences.targetRoles)
@@ -424,33 +100,42 @@ export function ProfilePage() {
     })
   }, [])
 
+  function patchResume(patch: Partial<Resume>) {
+    setResume((prev) => ({ ...prev, ...patch }))
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
     setSaved(false)
     setSaving(true)
     try {
-      const res = await apiFetch('/profile', {
-        method: 'PUT',
-        body: JSON.stringify({
-          eligibility: {
-            workAuthorization,
-            countries,
-          },
-          preferences: {
-            targetRoles,
-            locations,
-            remoteOnly,
-            minSalaryUsd: minSalaryUsd ? Number(minSalaryUsd) : null,
-          },
-        }),
-      })
+      const clean = sanitizeResumeForSave(resume)
+      const checks = requiredChecks(clean, profile?.cvText ?? null)
+      const allComplete = checks.every((c) => c.done)
+      const body: Record<string, unknown> = {
+        resume: clean,
+        eligibility: { workAuthorization, countries },
+        preferences: {
+          targetRoles,
+          locations,
+          remoteOnly,
+          minSalaryUsd: minSalaryUsd ? Number(minSalaryUsd) : null,
+        },
+      }
+      // Finishing the required set here counts as completing onboarding, so a
+      // user who skipped the wizard isn't bounced back when they try to apply.
+      if (allComplete && !profile?.onboardingCompletedAt) {
+        body.onboardingCompletedAt = new Date().toISOString()
+      }
+      const res = await apiFetch('/profile', { method: 'PUT', body: JSON.stringify(body) })
       if (!res.ok) {
         setError('Failed to save profile.')
         return
       }
       setProfile(await res.json())
       setSaved(true)
+      await refreshProfile()
     } finally {
       setSaving(false)
     }
@@ -482,89 +167,226 @@ export function ProfilePage() {
   }
 
   const hasCv = profile?.cvText != null
-
-  const checklistItems: ChecklistItem[] = [
-    {
-      key: 'workAuth',
-      label: 'Work authorization set',
-      done: workAuthorization !== 'unknown',
-      action: { href: '#field-work-authorization', label: 'Set →' },
-    },
-    {
-      key: 'countries',
-      label: 'At least one eligible country',
-      done: countries.length > 0,
-      action: { href: '#field-countries', label: 'Add →' },
-    },
-    {
-      key: 'targetRoles',
-      label: 'At least one target role',
-      done: targetRoles.length > 0,
-      action: { href: '#field-target-roles', label: 'Add →' },
-    },
-    {
-      key: 'locations',
-      label: 'At least one preferred location',
-      done: locations.length > 0,
-      action: { href: '#field-locations', label: 'Add →' },
-    },
-    {
-      key: 'minSalary',
-      label: 'Minimum salary set',
-      done: minSalaryUsd.trim() !== '',
-      action: { href: '#field-min-salary', label: 'Set →' },
-    },
-    {
-      key: 'cv',
-      label: 'CV uploaded',
-      done: hasCv,
-      action: { href: '/cv', label: 'Upload →' },
-    },
-  ]
-  const completeness = Math.round(
-    (checklistItems.filter((item) => item.done).length / checklistItems.length) * 100,
-  )
+  const checks = requiredChecks(resume, profile?.cvText ?? null)
+  const completeness = Math.round((checks.filter((c) => c.done).length / checks.length) * 100)
 
   return (
-    <>
-      <header className="page-head">
-        <div className="wrap">
-          <div className="kicker">Account</div>
-          <h1>Profile</h1>
-          <p>{profile?.email ?? 'Loading…'}</p>
+    <div>
+      <header className="border-b border-border">
+        <div className="mx-auto max-w-5xl px-6 py-10">
+          <div className="text-xs font-semibold uppercase tracking-wider text-primary">Account</div>
+          <h1 className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">Profile</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{profile?.email ?? 'Loading…'}</p>
         </div>
       </header>
 
-      <div className="wrap" style={{ paddingBottom: 56 }}>
-        {error && <FormError message={error} />}
+      <div className="mx-auto max-w-5xl px-6 pb-16">
+        {error && (
+          <div className="mt-6">
+            <FormError message={error} />
+          </div>
+        )}
 
         {!profile ? (
-          <p style={{ marginTop: 24, color: 'var(--muted-text)' }}>Loading…</p>
+          <p className="mt-8 text-muted-foreground">Loading…</p>
         ) : (
-          <form onSubmit={handleSubmit} className="profile">
-            <div>
-              <section className="psec">
-                <h2>Eligibility</h2>
-                <div className="fgrid">
-                  <div className="field full" id="field-work-authorization">
-                    <label htmlFor="workAuthorization">Work authorization</label>
-                    <div className="in">
-                      <select
-                        id="workAuthorization"
-                        style={selectInputStyle}
-                        value={workAuthorization}
-                        onChange={(e) => setWorkAuthorization(e.target.value as WorkAuthorization)}
-                      >
-                        {WORK_AUTH_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+          <form onSubmit={handleSubmit} className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+            <div className="flex flex-col gap-6">
+              <Section title="Personal details">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pf-email">Email</Label>
+                    <Input id="pf-email" value={profile.email} readOnly disabled />
                   </div>
-                  <div className="field full" id="field-countries">
-                    <label>Eligible countries</label>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pf-fullName">Full name</Label>
+                    <Input
+                      id="pf-fullName"
+                      value={resume.fullName ?? ''}
+                      placeholder="Jane Doe"
+                      onChange={(e) => patchResume({ fullName: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pf-phone">Phone number</Label>
+                    <Input
+                      id="pf-phone"
+                      value={resume.phone ?? ''}
+                      placeholder="+1 555 123 4567"
+                      onChange={(e) => patchResume({ phone: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pf-headline">Headline</Label>
+                    <Input
+                      id="pf-headline"
+                      value={resume.headline ?? ''}
+                      placeholder="Senior Backend Engineer"
+                      onChange={(e) => patchResume({ headline: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pf-country">Country</Label>
+                    <Input
+                      id="pf-country"
+                      value={resume.location.country ?? ''}
+                      placeholder="Bangladesh"
+                      onChange={(e) => patchResume({ location: { ...resume.location, country: e.target.value } })}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pf-city">City</Label>
+                    <Input
+                      id="pf-city"
+                      value={resume.location.city ?? ''}
+                      placeholder="Dhaka"
+                      onChange={(e) => patchResume({ location: { ...resume.location, city: e.target.value } })}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5 sm:col-span-2">
+                    <Label htmlFor="pf-summary">Professional summary</Label>
+                    <Textarea
+                      id="pf-summary"
+                      value={resume.summary ?? ''}
+                      placeholder="A short paragraph about your experience and strengths."
+                      onChange={(e) => patchResume({ summary: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </Section>
+
+              <Section title="Professional links">
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pf-linkedin">LinkedIn profile</Label>
+                    <Input
+                      id="pf-linkedin"
+                      value={resume.linkedin ?? ''}
+                      placeholder="https://linkedin.com/in/you"
+                      onChange={(e) => patchResume({ linkedin: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pf-github">Portfolio / GitHub profile</Label>
+                    <Input
+                      id="pf-github"
+                      value={resume.github ?? ''}
+                      placeholder="https://github.com/you"
+                      onChange={(e) => patchResume({ github: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </Section>
+
+              <Section title="Work experience">
+                <RepeatableSection
+                  addLabel="Add experience"
+                  onAdd={() =>
+                    patchResume({
+                      experience: appendEntry(resume.experience, {
+                        company: '',
+                        role: '',
+                        startDate: '',
+                        endDate: null,
+                        bullets: [],
+                      }),
+                    })
+                  }
+                >
+                  {resume.experience.map((entry, index) => (
+                    <ExperienceEntryFields
+                      key={index}
+                      entry={entry}
+                      index={index}
+                      onChange={(i, patch) => patchResume({ experience: updateEntryAt(resume.experience, i, patch) })}
+                      onRemove={(i) => patchResume({ experience: removeEntryAt(resume.experience, i) })}
+                    />
+                  ))}
+                </RepeatableSection>
+              </Section>
+
+              <Section title="Education">
+                <RepeatableSection
+                  addLabel="Add education"
+                  onAdd={() =>
+                    patchResume({ education: appendEntry(resume.education, { institution: '', credential: '' }) })
+                  }
+                >
+                  {resume.education.map((entry, index) => (
+                    <EducationEntryFields
+                      key={index}
+                      entry={entry}
+                      index={index}
+                      onChange={(i, patch) => patchResume({ education: updateEntryAt(resume.education, i, patch) })}
+                      onRemove={(i) => patchResume({ education: removeEntryAt(resume.education, i) })}
+                    />
+                  ))}
+                </RepeatableSection>
+              </Section>
+
+              <Section title="Skills">
+                <RepeatableSection
+                  addLabel="Add skill group"
+                  onAdd={() => patchResume({ skillGroups: appendEntry(resume.skillGroups, { category: '', skills: [] }) })}
+                >
+                  {resume.skillGroups.map((entry, index) => (
+                    <SkillGroupEntryFields
+                      key={index}
+                      entry={entry}
+                      index={index}
+                      onChange={(i, patch) => patchResume({ skillGroups: updateEntryAt(resume.skillGroups, i, patch) })}
+                      onRemove={(i) => patchResume({ skillGroups: removeEntryAt(resume.skillGroups, i) })}
+                    />
+                  ))}
+                </RepeatableSection>
+              </Section>
+
+              <Section title="Projects">
+                <RepeatableSection
+                  addLabel="Add project"
+                  onAdd={() =>
+                    patchResume({
+                      projects: appendEntry(resume.projects, {
+                        name: '',
+                        url: null,
+                        role: '',
+                        technologies: [],
+                        bullets: [],
+                      }),
+                    })
+                  }
+                >
+                  {resume.projects.map((entry, index) => (
+                    <ProjectEntryFields
+                      key={index}
+                      entry={entry}
+                      index={index}
+                      onChange={(i, patch) => patchResume({ projects: updateEntryAt(resume.projects, i, patch) })}
+                      onRemove={(i) => patchResume({ projects: removeEntryAt(resume.projects, i) })}
+                    />
+                  ))}
+                </RepeatableSection>
+              </Section>
+
+              <Section title="Eligibility">
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pf-workAuth">Work authorization</Label>
+                    <select
+                      id="pf-workAuth"
+                      className={selectClass}
+                      value={workAuthorization}
+                      onChange={(e) => setWorkAuthorization(e.target.value as WorkAuthorization)}
+                    >
+                      {WORK_AUTH_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Eligible countries</Label>
                     <TagList
                       items={countries}
                       placeholder="Add a country"
@@ -573,13 +395,12 @@ export function ProfilePage() {
                     />
                   </div>
                 </div>
-              </section>
+              </Section>
 
-              <section className="psec">
-                <h2>Job preferences</h2>
-                <div className="fgrid">
-                  <div className="field full" id="field-target-roles">
-                    <label>Target roles</label>
+              <Section title="Job preferences">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-1.5 sm:col-span-2">
+                    <Label>Target roles</Label>
                     <TagList
                       items={targetRoles}
                       placeholder="Add a role"
@@ -587,8 +408,8 @@ export function ProfilePage() {
                       onRemove={(index) => setTargetRoles((prev) => prev.filter((_, i) => i !== index))}
                     />
                   </div>
-                  <div className="field full" id="field-locations">
-                    <label>Preferred locations</label>
+                  <div className="flex flex-col gap-1.5 sm:col-span-2">
+                    <Label>Preferred locations</Label>
                     <TagList
                       items={locations}
                       placeholder="Add a location"
@@ -596,108 +417,102 @@ export function ProfilePage() {
                       onRemove={(index) => setLocations((prev) => prev.filter((_, i) => i !== index))}
                     />
                   </div>
-                  <div className="field" id="field-min-salary">
-                    <label htmlFor="minSalaryUsd">Minimum salary (USD)</label>
-                    <div className="in">
-                      <input
-                        id="minSalaryUsd"
-                        type="number"
-                        min={0}
-                        value={minSalaryUsd}
-                        placeholder="e.g. 80000"
-                        onChange={(e) => setMinSalaryUsd(e.target.value)}
-                      />
-                    </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="pf-minSalary">Minimum salary (USD)</Label>
+                    <Input
+                      id="pf-minSalary"
+                      type="number"
+                      min={0}
+                      value={minSalaryUsd}
+                      placeholder="e.g. 80000"
+                      onChange={(e) => setMinSalaryUsd(e.target.value)}
+                    />
                   </div>
-                  <div className="field">
-                    <label htmlFor="remoteOnly">Remote only</label>
-                    <div className="in" style={{ gap: 10 }}>
-                      <input
-                        id="remoteOnly"
-                        type="checkbox"
-                        style={{ width: 16, height: 16, flex: 'none' }}
-                        checked={remoteOnly}
-                        onChange={(e) => setRemoteOnly(e.target.checked)}
-                      />
-                      <span style={{ fontSize: 14, color: 'var(--fg-2)' }}>Only show remote roles</span>
-                    </div>
-                  </div>
+                  <label className="flex items-center gap-2.5 sm:mt-7">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={remoteOnly}
+                      onChange={(e) => setRemoteOnly(e.target.checked)}
+                    />
+                    <span className="text-sm text-foreground">Only show remote roles</span>
+                  </label>
                 </div>
-              </section>
+              </Section>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <Button type="submit" variant="indigo" size="lg" disabled={saving}>
+              <div className="flex items-center gap-4">
+                <Button type="submit" size="lg" disabled={saving}>
                   {saving ? 'Saving…' : 'Save changes'}
                 </Button>
-                {saved && <span style={{ fontSize: 14, color: 'var(--cyan-text)', fontWeight: 600 }}>Saved.</span>}
+                {saved && <span className="text-sm font-semibold text-primary">Saved.</span>}
               </div>
             </div>
 
-            <aside className="pside">
-              <div className="psec complete">
-                <div className="big-ring">
+            <aside className="flex flex-col gap-6">
+              <div className="rounded-2xl border border-border bg-card p-6 text-center">
+                <div className="mx-auto w-fit">
                   <ScoreRing score={completeness} size={88} strokeWidth={6} />
                 </div>
-                <h2 style={{ justifyContent: 'center', marginTop: 16 }}>Profile completeness</h2>
-                <ul className="checklist">
-                  {checklistItems.map((item) => (
-                    <li key={item.key} className={item.done ? 'done' : 'todo'}>
-                      {item.done ? (
-                        <ion-icon name="checkmark-circle-outline" />
-                      ) : (
-                        <ion-icon name="ellipse-outline" />
+                <h2 className="mt-4 text-base font-semibold text-foreground">Profile completeness</h2>
+                <ul className="mt-4 space-y-2 text-left">
+                  {checks.map((item) => (
+                    <li
+                      key={item.key}
+                      className={cn(
+                        'flex items-center gap-2 text-sm',
+                        item.done ? 'text-foreground' : 'text-muted-foreground'
                       )}
+                    >
+                      <ion-icon
+                        name={item.done ? 'checkmark-circle' : 'ellipse-outline'}
+                        style={{ color: item.done ? 'var(--primary)' : 'var(--muted-foreground)' }}
+                      />
                       {item.label}
-                      {!item.done &&
-                        item.action &&
-                        (item.action.href.startsWith('#') ? (
-                          <a href={item.action.href}>{item.action.label}</a>
-                        ) : (
-                          <Link to={item.action.href}>{item.action.label}</Link>
-                        ))}
                     </li>
                   ))}
                 </ul>
               </div>
 
-              <section className="psec">
-                <h2>
-                  CV status
-                  {hasCv ? <Pill tone="verified">On file</Pill> : <Pill>Not uploaded</Pill>}
-                </h2>
+              <div className="rounded-2xl border border-border bg-card p-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-foreground">CV status</h2>
+                  <span
+                    className={cn(
+                      'rounded-full px-2.5 py-0.5 text-xs font-medium',
+                      hasCv ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+                    )}
+                  >
+                    {hasCv ? 'On file' : 'Not uploaded'}
+                  </span>
+                </div>
                 {hasCv && profile.cvText ? (
-                  <p className="cv-preview">
-                    {profile.cvText.slice(0, 200)}
-                    {profile.cvText.length > 200 ? '…' : ''}
-                  </p>
+                  <p className="mt-3 line-clamp-4 text-sm text-muted-foreground">{profile.cvText.slice(0, 200)}</p>
                 ) : (
-                  <p style={{ marginTop: 14, fontSize: 13.5, color: 'var(--muted-text)' }}>
+                  <p className="mt-3 text-sm text-muted-foreground">
                     Upload a CV so scoring can match you against open roles.
                   </p>
                 )}
-                <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <ion-icon name="document-text-outline" style={{ fontSize: 14, color: 'var(--muted-text)' }} />
-                  <Link to="/cv" style={{ fontSize: 13, fontWeight: 600, color: 'var(--indigo)' }}>
-                    {hasCv ? 'Manage CV →' : 'Upload CV →'}
-                  </Link>
-                </div>
-                {cvExportError && (
-                  <p style={{ marginTop: 10, fontSize: 12.5, color: '#E5484D' }}>{cvExportError}</p>
-                )}
+                <Link
+                  to="/cv"
+                  className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
+                >
+                  <ion-icon name="document-text-outline" /> {hasCv ? 'Manage CV' : 'Upload CV'}
+                </Link>
+                {cvExportError && <p className="mt-2 text-xs text-destructive">{cvExportError}</p>}
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   disabled={generatingCv}
                   onClick={handleGenerateCv}
-                  style={{ marginTop: 14, width: '100%' }}
+                  className="mt-4 w-full"
                 >
                   {generatingCv ? 'Generating…' : 'Generate CV (PDF)'}
                 </Button>
-              </section>
+              </div>
             </aside>
           </form>
         )}
       </div>
-    </>
+    </div>
   )
 }

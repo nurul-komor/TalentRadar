@@ -197,3 +197,38 @@ export async function getUserJob(db: Db, profileId: string, id: string): Promise
   const doc = await db.collection('userJobs').findOne({ _id: new ObjectId(id), profileId })
   return doc ? (doc as unknown as UserJob) : null
 }
+
+// Re-fetch a link-synced job from its stored URL and refresh the extracted
+// fields in place. Only jobs that carry a `url` can be resynced (manually-typed
+// jobs have nothing to pull from). The owner's visibility, url, and createdAt
+// are preserved; everything the extractor returns is overwritten.
+export async function resyncUserJob(
+  db: Db,
+  profileId: string,
+  id: string,
+  extractor: JobPageExtractor | null
+): Promise<UserJob | null> {
+  const existing = await getUserJob(db, profileId, id)
+  if (!existing) return null
+  if (!existing.url) {
+    throw new PreviewError('This job has no source URL to resync from.')
+  }
+
+  const preview = await previewJobFromUrl(existing.url, extractor)
+  const result = await db.collection('userJobs').findOneAndUpdate(
+    { _id: new ObjectId(id), profileId },
+    {
+      $set: {
+        title: preview.title,
+        company: preview.company,
+        description: preview.description,
+        location: preview.location,
+        salaryMin: preview.salaryMin,
+        salaryMax: preview.salaryMax,
+        updatedAt: new Date().toISOString(),
+      },
+    },
+    { returnDocument: 'after' }
+  )
+  return result ? (result as unknown as UserJob) : null
+}

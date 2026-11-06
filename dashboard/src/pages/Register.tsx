@@ -77,7 +77,7 @@ export function RegisterPage() {
       }
       const { token } = await res.json()
       login(token)
-      navigate('/jobs')
+      navigate('/onboarding')
     } catch {
       setError('Could not reach the server. Please try again.')
     } finally {

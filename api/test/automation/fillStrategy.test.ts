@@ -37,6 +37,7 @@ function profile(): Profile {
     preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
     cvText: 'Experienced engineer.',
     resume: emptyResume(),
+    onboardingCompletedAt: null,
   }
 }
 

@@ -25,10 +25,10 @@ function sidebarLinkClass({ isActive }: { isActive: boolean }): string {
 
 const SIDEBAR_LINKS = [
   { to: '/dashboard', label: 'Dashboard', icon: 'grid-outline' },
-  { to: '/add-job', label: 'Add job', icon: 'add-outline' },
-  { to: '/applications', label: 'Application Tracking', icon: 'clipboard-outline' },
+  { to: '/add-job', label: 'Add Job', icon: 'add-outline' },
+  { to: '/applications', label: 'Applications', icon: 'clipboard-outline' },
   { to: '/profile', label: 'Profile', icon: 'person-outline' },
-  { to: '/cv', label: 'CV', icon: 'document-text-outline' },
+  { to: '/cv', label: 'Resume', icon: 'document-text-outline' },
 ]
 
 function initialsFromEmail(email: string | null): string {
@@ -39,8 +39,124 @@ function initialsFromEmail(email: string | null): string {
   return local.slice(0, 2).toUpperCase()
 }
 
-export function DashboardSidebar() {
+// Shared account popover. Opens from the sidebar foot (desktop) or the "Account"
+// tab (tablet/phone) and surfaces the account's important links + log out. Saved
+// Jobs and Job Sync live here too because they are not in the mobile tab bar.
+function AccountMenu({ variant, title, subtitle }: { variant: 'sidebar' | 'tabs'; title?: string; subtitle?: string }) {
   const { email, logout } = useAuth()
+  const { savedIds } = useSavedJobs()
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const anchorRef = useRef<HTMLDivElement>(null)
+
+  // Close on outside click or Escape.
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(event: PointerEvent) {
+      if (!anchorRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  const links = [
+    { to: '/profile', label: 'Profile', icon: 'person-outline', badge: 0 },
+    { to: '/cv', label: 'Resume', icon: 'document-text-outline', badge: 0 },
+    { to: '/jobs?saved=1', label: 'Saved Jobs', icon: 'briefcase-outline', badge: savedIds.length },
+    ...(canSync(email) ? [{ to: '/sync', label: 'Job Sync', icon: 'refresh-outline', badge: 0 }] : []),
+  ]
+
+  function go(to: string) {
+    setOpen(false)
+    navigate(to)
+  }
+
+  const menu = open && (
+    <div className="account-menu" role="menu">
+      <div className="account-menu-head">
+        <span className="avatar" aria-hidden="true">
+          {initialsFromEmail(email)}
+        </span>
+        <span className="who">{email ?? 'Account'}</span>
+      </div>
+      {links.map(({ to, label, icon, badge }) => (
+        <button key={to} type="button" role="menuitem" className="account-menu-item" onClick={() => go(to)}>
+          <ion-icon name={icon} style={{ fontSize: 18 }} />
+          {label}
+          {badge > 0 && <span className="badge">{badge}</span>}
+        </button>
+      ))}
+      <div className="account-menu-row">
+        <span>Theme</span>
+        <ThemeToggle />
+      </div>
+      <button
+        type="button"
+        role="menuitem"
+        className="account-menu-item danger"
+        onClick={() => {
+          setOpen(false)
+          logout()
+        }}
+      >
+        <ion-icon name="log-out-outline" style={{ fontSize: 18 }} />
+        Log out
+      </button>
+    </div>
+  )
+
+  if (variant === 'tabs') {
+    return (
+      <div className="app-mobile-account account-anchor" ref={anchorRef}>
+        <button
+          type="button"
+          className={`app-mobile-tabs-btn${open ? ' current' : ''}`}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label="Account"
+          onClick={() => setOpen((v) => !v)}
+        >
+          <ion-icon name="person-circle-outline" style={{ fontSize: 18 }} />
+          Account
+        </button>
+        {menu}
+      </div>
+    )
+  }
+
+  return (
+    <div className="app-sidebar-foot account-anchor" ref={anchorRef}>
+      <button
+        type="button"
+        className="app-sidebar-foot-trigger"
+        title={email ?? 'Account'}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="avatar" aria-hidden="true">
+          {initialsFromEmail(email)}
+        </span>
+        <span className="who">
+          <b>{title ?? email ?? 'Account'}</b>
+          <span>{subtitle}</span>
+        </span>
+        <ion-icon name={open ? 'chevron-down-outline' : 'chevron-up-outline'} class="chev" />
+      </button>
+      {menu}
+    </div>
+  )
+}
+
+export function DashboardSidebar() {
+  const { email } = useAuth()
   const { savedIds } = useSavedJobs()
   const navigate = useNavigate()
   const searchRef = useRef<HTMLInputElement>(null)
@@ -112,14 +228,14 @@ export function DashboardSidebar() {
         <div className="app-sidebar-section-label">Shortcuts</div>
         <NavLink to="/jobs?saved=1" className="app-sidebar-link">
           <ion-icon name="briefcase-outline" style={{ fontSize: 18 }} />
-          Saved jobs
+          Saved Jobs
           {savedIds.length > 0 && <span className="badge">{savedIds.length}</span>}
         </NavLink>
 
         {canSync(email) && (
           <NavLink to="/sync" className={sidebarLinkClass}>
             <ion-icon name="refresh-outline" style={{ fontSize: 18 }} />
-            Job sync
+            Job Sync
           </NavLink>
         )}
       </div>
@@ -134,16 +250,11 @@ export function DashboardSidebar() {
         </div>
       )}
 
-      <div className="app-sidebar-foot">
-        <button type="button" className="avatar" title={email ?? 'Account'} aria-label="Log out" onClick={logout}>
-          {initialsFromEmail(email)}
-        </button>
-        <div className="who">
-          <b>{profile?.resume?.fullName ?? email ?? 'Account'}</b>
-          <span>Profile {profile ? profileCompletenessPercent(profile) : 0}% complete</span>
-        </div>
-        <ThemeToggle />
-      </div>
+      <AccountMenu
+        variant="sidebar"
+        title={profile?.resume?.fullName ?? email ?? 'Account'}
+        subtitle={`Profile ${profile ? profileCompletenessPercent(profile) : 0}% complete`}
+      />
     </nav>
   )
 }
@@ -157,6 +268,8 @@ export function DashboardSidebarTopBar() {
           {label}
         </NavLink>
       ))}
+
+      <AccountMenu variant="tabs" />
     </nav>
   )
 }

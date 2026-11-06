@@ -38,10 +38,22 @@ export const ResumeEducationSchema = z.object({
   credential: z.string(),
 })
 
+export const ResumeLocationSchema = z.object({
+  country: z.string().nullable().default(null),
+  city: z.string().nullable().default(null),
+})
+
+export function emptyLocation(): ResumeLocation {
+  return { country: null, city: null }
+}
+
 export const ResumeSchema = z.object({
   fullName: z.string().nullable().default(null),
   headline: z.string().nullable().default(null),
   phone: z.string().nullable().default(null),
+  location: ResumeLocationSchema.default(emptyLocation),
+  linkedin: z.string().nullable().default(null),
+  github: z.string().nullable().default(null),
   links: z.array(z.string()).default([]),
   summary: z.string().nullable().default(null),
   experience: z.array(ResumeExperienceSchema).default([]),
@@ -55,6 +67,9 @@ export function emptyResume(): Resume {
     fullName: null,
     headline: null,
     phone: null,
+    location: emptyLocation(),
+    linkedin: null,
+    github: null,
     links: [],
     summary: null,
     experience: [],
@@ -69,6 +84,10 @@ export function isResumeEmpty(resume: Resume): boolean {
     resume.fullName === null &&
     resume.headline === null &&
     resume.phone === null &&
+    resume.location.country === null &&
+    resume.location.city === null &&
+    resume.linkedin === null &&
+    resume.github === null &&
     resume.links.length === 0 &&
     resume.summary === null &&
     resume.experience.length === 0 &&
@@ -84,7 +103,14 @@ export const ProfileSchema = z.object({
   eligibility: EligibilitySchema,
   preferences: ProfilePreferencesSchema,
   cvText: z.string().nullable().default(null),
+  // The original uploaded CV binary, stored in Cloudinary. cvText is still the
+  // parsed text used for scoring; these point at the source file for download.
+  // Optional (not defaulted) because profiles created before this existed, and
+  // profiles uploaded while Cloudinary is unconfigured, simply won't have them.
+  cvFileUrl: z.string().nullable().optional(),
+  cvFilePublicId: z.string().nullable().optional(),
   resume: ResumeSchema.default(emptyResume),
+  onboardingCompletedAt: z.string().nullable().default(null),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 })
@@ -94,6 +120,7 @@ export const ProfileUpdateSchema = z
     eligibility: EligibilitySchema,
     preferences: ProfilePreferencesSchema,
     resume: ResumeSchema,
+    onboardingCompletedAt: z.string().nullable(),
   })
   .partial()
 
@@ -103,6 +130,7 @@ export type ResumeExperience = z.infer<typeof ResumeExperienceSchema>
 export type ResumeProject = z.infer<typeof ResumeProjectSchema>
 export type ResumeSkillGroup = z.infer<typeof ResumeSkillGroupSchema>
 export type ResumeEducation = z.infer<typeof ResumeEducationSchema>
+export type ResumeLocation = z.infer<typeof ResumeLocationSchema>
 export type Resume = z.infer<typeof ResumeSchema>
 export type Profile = z.infer<typeof ProfileSchema>
 export type ProfileUpdate = z.infer<typeof ProfileUpdateSchema>

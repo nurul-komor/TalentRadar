@@ -263,6 +263,7 @@ export function JobsPage() {
   const debouncedSalaryMax = useDebouncedValue(salaryMax, DEBOUNCE_MS)
 
   const activeFilterCount =
+    Number(savedMode) +
     Number(category !== 'all') +
     Number(sourceSelection.kind !== 'all') +
     Number(datePosted !== 'all') +

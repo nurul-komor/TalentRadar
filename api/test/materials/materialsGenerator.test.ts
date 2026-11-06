@@ -16,6 +16,7 @@ const PROFILE = {
   preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
   cvText: 'Experienced backend engineer.',
   resume: emptyResume(),
+  onboardingCompletedAt: null,
 }
 
 function fakeProvider(output: unknown) {

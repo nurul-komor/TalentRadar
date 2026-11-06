@@ -5,6 +5,7 @@ import { ProfileUpdateSchema, emptyResume, isResumeEmpty } from '@job-hunter/sha
 import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
 import { parseCvFile, DOCX_MIME_TYPE, type CvParser } from '../profile/cvParser.js'
 import { renderResumePdf } from '../profile/cvExporter.js'
+import type { CvUploader } from '../profile/cloudinaryStorage.js'
 import type { ResumeExtractor } from '../profile/types.js'
 import { isWithinBudget, recordUsage } from '../scoring/aiUsageService.js'
 
@@ -14,7 +15,8 @@ export function createProfileRoutes(
   db: Db,
   jwtSecret: string,
   cvParser: CvParser = parseCvFile,
-  resumeExtractor: ResumeExtractor | null = null
+  resumeExtractor: ResumeExtractor | null = null,
+  cvUploader: CvUploader | null = null
 ) {
   const profileRoutes = new Hono<{ Variables: AuthVariables }>()
   profileRoutes.use('*', createRequireAuth(jwtSecret))
@@ -101,6 +103,21 @@ export function createProfileRoutes(
       return c.json({ error: 'failed to parse file' }, 400)
     }
 
+    // Store the original CV binary in Cloudinary. Best-effort: skipped when no
+    // uploader is configured, and a failed upload never blocks the parse/save —
+    // scoring only needs cvText, so a missing source file is degraded, not fatal.
+    let uploadedFileUrl: string | null = null
+    let uploadedFilePublicId: string | null = null
+    if (cvUploader) {
+      try {
+        const uploaded = await cvUploader(buffer, file.type, file.name || 'cv')
+        uploadedFileUrl = uploaded.url
+        uploadedFilePublicId = uploaded.publicId
+      } catch (reason) {
+        console.error('failed to upload CV to Cloudinary', reason)
+      }
+    }
+
     const profileId = new ObjectId(c.get('profileId'))
     const profiles = db.collection('profiles')
 
@@ -126,6 +143,10 @@ export function createProfileRoutes(
 
     const update: Record<string, unknown> = { cvText, updatedAt: new Date().toISOString() }
     if (resumeUpdate) update.resume = resumeUpdate
+    if (uploadedFileUrl) {
+      update.cvFileUrl = uploadedFileUrl
+      update.cvFilePublicId = uploadedFilePublicId
+    }
 
     const result = await profiles.findOneAndUpdate(
       { _id: profileId },

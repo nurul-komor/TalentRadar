@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import type { PublicJobsSummary } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -32,6 +32,8 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const redirectTo = (location.state as { from?: string } | null)?.from ?? '/jobs'
   const [summary, setSummary] = useState<PublicJobsSummary | null>(null)
 
   useEffect(() => {
@@ -57,7 +59,7 @@ export function LoginPage() {
       }
       const { token } = await res.json()
       login(token)
-      navigate('/jobs')
+      navigate(redirectTo, { replace: true })
     } catch {
       setError('Could not reach the server. Please try again.')
     } finally {

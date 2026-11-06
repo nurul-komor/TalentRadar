@@ -32,6 +32,7 @@ import { pageEvidenceVerifier } from './verification/pageEvidenceVerifier.js'
 import { createRequirementsExtractor } from './scoring/requirementsExtractor.js'
 import { createMaterialsGenerator } from './materials/materialsGenerator.js'
 import { createResumeExtractor } from './profile/resumeExtractor.js'
+import { createCloudinaryUploader } from './profile/cloudinaryStorage.js'
 import type { LlmConfig } from './llm/config.js'
 
 export function mountRoutes(
@@ -59,9 +60,10 @@ export function mountRoutes(
   const resumeExtractor = llmConfig
     ? createResumeExtractor(llmConfig.provider, llmConfig.resume.model)
     : null
+  const cvUploader = createCloudinaryUploader(process.env)
 
   app.route('/auth', createAuthRoutes(db, jwtSecret))
-  app.route('/profile', createProfileRoutes(db, jwtSecret, undefined, resumeExtractor))
+  app.route('/profile', createProfileRoutes(db, jwtSecret, undefined, resumeExtractor, cvUploader))
   app.route('/discovery', createDiscoveryRoutes(db, jwtSecret, sources))
   app.route('/verification', createVerificationRoutes(db, jwtSecret, pageEvidenceVerifier))
   app.route('/jobs', createJobsRoutes(db, jwtSecret, sources))

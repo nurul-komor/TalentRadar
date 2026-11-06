@@ -1,9 +1,23 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { Profile } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { FormError } from './FormError'
 import { Pill } from './Pill'
 import { materialFileName } from '../lib/filename'
+
+// The generated materials are only as good as the profile behind them, so when
+// key resume inputs are thin we nudge (never block) the user to fill them in.
+function isProfileThin(profile: Profile | null): boolean {
+  if (!profile) return true
+  const resume = profile.resume
+  return (
+    profile.cvText == null ||
+    !resume?.fullName?.trim() ||
+    (resume?.experience.length ?? 0) === 0 ||
+    (resume?.skillGroups.some((group) => group.skills.length > 0) ?? false) === false
+  )
+}
 
 // Automated apply drives a real headless browser and is only wired up for local
 // development right now — gate it behind a localhost check so deployed builds
@@ -502,6 +516,30 @@ export function ApplyDrawer({
                   <p className="drawer-help">
                     Generate AI-tailored application materials for this role, then copy them or download as PDFs.
                   </p>
+
+                  {isProfileThin(profile) && (
+                    <div className="mb-3 flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                      <ion-icon
+                        name="bulb-outline"
+                        style={{ color: 'var(--primary)', fontSize: 18, flex: 'none', marginTop: 2 }}
+                      />
+                      <div className="text-sm">
+                        <p className="font-medium text-foreground">Complete your profile for better results</p>
+                        <p className="mt-0.5 text-muted-foreground">
+                          You can generate materials now, but a complete profile — CV, work experience, and
+                          skills — produces a noticeably stronger tailored résumé and cover letter.
+                        </p>
+                        <Link
+                          to="/onboarding"
+                          className="mt-1.5 inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                        >
+                          Complete profile
+                          <ion-icon name="arrow-forward-outline" style={{ fontSize: 13 }} />
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Nothing is generated until the user clicks. The cards stay
                       available so each document can be regenerated on demand. */}
                   <div className="gen-grid">

@@ -362,6 +362,9 @@ export function AddJobPage() {
                     <Pill tone={job.visibility === 'public' ? 'verified' : 'mono'}>
                       {job.visibility === 'public' ? 'Public' : 'Private'}
                     </Pill>
+                    <Link to={`/my-jobs/${job._id}`} className="btn btn-ghost btn-sm">
+                      <ion-icon name="eye-outline" /> View
+                    </Link>
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"

@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { Profile, UserJob, UserJobVisibility } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
-import { AppNav } from '../components/Nav'
+import { PublicNav } from '../components/Nav'
 import { FormError } from '../components/FormError'
 import { Pill } from '../components/Pill'
 import { LogoChip } from '../components/LogoChip'
 import { ApplyDrawer } from '../components/ApplyDrawer'
+import { Footer } from '../components/Footer'
 
 function formatSalary(job: Pick<UserJob, 'salaryMin' | 'salaryMax'>): string {
   if (job.salaryMin == null && job.salaryMax == null) return '—'
@@ -37,6 +38,8 @@ export function MyJobDetailPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [syncBusy, setSyncBusy] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   useEffect(() => {
@@ -68,6 +71,28 @@ export function MyJobDetailPage() {
     }
   }
 
+  // Re-fetch this job from its original URL and refresh the stored fields in
+  // place. Only available for link-synced jobs (those that carry a `url`).
+  async function forceSync() {
+    if (!job?._id || syncBusy) return
+    setSyncBusy(true)
+    setSyncMessage(null)
+    try {
+      const res = await apiFetch(`/user-jobs/${job._id}/resync`, { method: 'POST' })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) {
+        setSyncMessage(body?.error ?? 'Force sync failed.')
+        return
+      }
+      setJob(body)
+      setSyncMessage('Synced from source.')
+    } catch {
+      setSyncMessage('Force sync failed.')
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
   async function remove() {
     if (!job?._id) return
     setBusy(true)
@@ -85,7 +110,7 @@ export function MyJobDetailPage() {
   if (!job && !error) {
     return (
       <div>
-        <AppNav />
+        <PublicNav />
         <p className="wrap" style={{ marginTop: 24, color: 'var(--muted-text)' }}>
           Loading…
         </p>
@@ -96,7 +121,7 @@ export function MyJobDetailPage() {
   if (error || !job) {
     return (
       <div>
-        <AppNav />
+        <PublicNav />
         <div className="wrap" style={{ marginTop: 24 }}>
           <FormError message={error ?? 'Job not found.'} />
         </div>
@@ -108,7 +133,7 @@ export function MyJobDetailPage() {
 
   return (
     <div>
-      <AppNav />
+      <PublicNav />
       <div className="wrap crumbs">
         <Link to="/jobs">Jobs</Link>
         <span>/</span>
@@ -206,11 +231,18 @@ export function MyJobDetailPage() {
               <button type="button" className="btn btn-ghost" disabled={busy} onClick={toggleVisibility}>
                 Make {job.visibility === 'private' ? 'public' : 'private'}
               </button>
+              {job.url && (
+                <button type="button" className="btn btn-ghost" disabled={syncBusy} onClick={forceSync}>
+                  <ion-icon name="refresh-outline" />
+                  {syncBusy ? 'Syncing…' : 'Force sync'}
+                </button>
+              )}
               <button type="button" className="btn btn-ghost aj-danger" disabled={busy} onClick={remove}>
                 <ion-icon name="trash-outline" />
                 Delete
               </button>
             </div>
+            {syncMessage && <p className="ev-sync-msg">{syncMessage}</p>}
           </div>
         </aside>
       </div>
@@ -226,6 +258,8 @@ export function MyJobDetailPage() {
         profile={profile}
         onProfileChange={setProfile}
       />
+
+      <Footer />
     </div>
   )
 }

@@ -38,7 +38,7 @@ function NavMenuToggle({ open, onClick }: { open: boolean; onClick: () => void }
 
 const PUBLIC_LINKS = [
   { to: '/jobs', label: 'Jobs' },
-  { to: '/how-it-works', label: 'How it works' },
+  { to: '/how-it-works', label: 'How It Works' },
   { to: '/scoring', label: 'Scoring' },
   { to: '/sources', label: 'Sources' },
 ]
@@ -115,13 +115,13 @@ const APP_LINKS = [
   { to: '/jobs', label: 'Jobs' },
   { to: '/applications', label: 'Applications' },
   { to: '/profile', label: 'Profile' },
-  { to: '/cv', label: 'CV' },
+  { to: '/cv', label: 'Resume' },
 ]
 
 const ACCOUNT_MENU_LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/profile', label: 'Profile' },
-  { to: '/cv', label: 'CV' },
+  { to: '/cv', label: 'Resume' },
 ]
 
 function initialsFromEmail(email: string | null): string {

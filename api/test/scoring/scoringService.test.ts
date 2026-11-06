@@ -19,6 +19,7 @@ function baseProfile(): Profile {
     preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
     cvText: null,
     resume: emptyResume(),
+    onboardingCompletedAt: null,
   }
 }
 

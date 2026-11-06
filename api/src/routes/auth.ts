@@ -30,6 +30,7 @@ export function createAuthRoutes(db: Db, jwtSecret: string) {
       preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
       cvText: null,
       resume: emptyResume(),
+      onboardingCompletedAt: null,
       createdAt: now,
       updatedAt: now,
     })

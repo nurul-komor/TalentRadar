@@ -8,6 +8,7 @@ import {
   getUserJob,
   listUserJobs,
   previewJobFromUrl,
+  resyncUserJob,
   PreviewError,
   type JobPageExtractor,
 } from '../userJobs/userJobsService.js'
@@ -75,6 +76,22 @@ export function createUserJobsRoutes(db: Db, jwtSecret: string, extractor: JobPa
     )
     if (!result) return c.json({ error: 'job not found' }, 404)
     return c.json(result as unknown as UserJob)
+  })
+
+  // Re-scrape a link-synced job from its stored URL and refresh it in place.
+  // Mirrors /jobs/:id/resync for operator-added discovery jobs.
+  userJobsRoutes.post('/:id/resync', async (c) => {
+    const id = c.req.param('id')
+    if (!ObjectId.isValid(id)) return c.json({ error: 'job not found' }, 404)
+    try {
+      const job = await resyncUserJob(db, c.get('profileId'), id, extractor)
+      if (!job) return c.json({ error: 'job not found' }, 404)
+      return c.json(job)
+    } catch (reason) {
+      if (reason instanceof PreviewError) return c.json({ error: reason.message }, 422)
+      console.error('failed to resync user job', reason)
+      return c.json({ error: 'Failed to resync that job.' }, 500)
+    }
   })
 
   userJobsRoutes.delete('/:id', async (c) => {

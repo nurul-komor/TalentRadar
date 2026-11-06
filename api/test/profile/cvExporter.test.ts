@@ -10,6 +10,7 @@ function makeProfile(overrides: Partial<Profile> = {}): Profile {
     preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
     cvText: null,
     resume: emptyResume(),
+    onboardingCompletedAt: null,
     ...overrides,
   }
 }
@@ -27,6 +28,9 @@ describe('renderResumePdf', () => {
           fullName: 'Nurul Komor',
           headline: 'Full-Stack Developer | Web Applications & Workflow Automation',
           phone: '+8801860081978',
+          location: { country: 'Bangladesh', city: 'Dhaka' },
+          linkedin: 'linkedin.com/in/nurul-komor',
+          github: 'github.com/nurul-komor',
           links: ['github.com/nurul-komor'],
           summary: 'Full-stack software engineer experienced in building web applications.',
           experience: [

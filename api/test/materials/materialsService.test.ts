@@ -18,6 +18,7 @@ function baseProfile(): Profile {
     preferences: { targetRoles: [], remoteOnly: true, minSalaryUsd: null, locations: [] },
     cvText: 'Experienced backend engineer.',
     resume: emptyResume(),
+    onboardingCompletedAt: null,
   }
 }
 

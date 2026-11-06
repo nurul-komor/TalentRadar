@@ -72,12 +72,16 @@ function resolveCapability(env: Env, provider: ProviderName, capability: Capabil
 export function createLlmConfig(env: Env): LlmConfig | null {
   const providerName = resolveProviderName(env)
 
-  const apiKey =
+  const rawApiKey =
     providerName === 'openai'
       ? env.OPENAI_API_KEY
       : providerName === 'gemini'
         ? env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY
         : env.ANTHROPIC_API_KEY
+  // Guard against a secret pasted with a trailing newline or surrounding quotes —
+  // the provider SDK sends the key verbatim as a bearer token, so stray whitespace
+  // surfaces as a confusing 401 "Invalid bearer token" at call time.
+  const apiKey = rawApiKey?.trim().replace(/^["']|["']$/g, '')
   if (!apiKey) return null
 
   const provider =

@@ -8,6 +8,7 @@ import { createAuthRoutes } from '../src/routes/auth'
 import { createProfileRoutes } from '../src/routes/profile'
 import type { CvParser } from '../src/profile/cvParser'
 import type { ResumeExtractor } from '../src/profile/types'
+import type { CvUploader } from '../src/profile/cloudinaryStorage'
 
 const JWT_SECRET = 'test-secret'
 const fakeCvParser: CvParser = async () => 'Parsed CV text from the fake extractor.'
@@ -274,5 +275,89 @@ describe('profile routes with resume extraction', () => {
     expect(body.cvText).toBe('Parsed CV text from the fake extractor.')
     expect(body.resume).toEqual(emptyResume())
     expect(body.suggestedResume).toBeNull()
+  })
+})
+
+describe('profile CV upload with file storage', () => {
+  let mongod: MongoMemoryServer
+  let client: MongoClient
+  let db: Db
+  let app: Hono
+
+  beforeAll(async () => {
+    mongod = await MongoMemoryServer.create()
+  })
+
+  afterAll(async () => {
+    await mongod.stop()
+  })
+
+  async function setup(uploader: CvUploader | null) {
+    const conn = await connectMongo(mongod.getUri(), uniqueDbName())
+    client = conn.client
+    db = conn.db
+    app = new Hono()
+    app.route('/auth', createAuthRoutes(db, JWT_SECRET))
+    app.route('/profile', createProfileRoutes(db, JWT_SECRET, fakeCvParser, null, uploader))
+  }
+
+  afterEach(async () => {
+    await client.close()
+  })
+
+  async function uploadCv(token: string) {
+    const file = new File([Buffer.from('fake pdf bytes')], 'resume.pdf', { type: 'application/pdf' })
+    const formData = new FormData()
+    formData.append('file', file)
+    return app.request('/profile/cv', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    })
+  }
+
+  it('stores the uploaded file URL on the profile when an uploader is configured', async () => {
+    const uploads: Array<{ name: string; mimeType: string }> = []
+    const fakeUploader: CvUploader = async (_buffer, mimeType, filename) => {
+      uploads.push({ name: filename, mimeType })
+      return { url: 'https://res.cloudinary.com/demo/raw/upload/cv.pdf', publicId: 'job-hunter/cv/cv_abc' }
+    }
+    await setup(fakeUploader)
+    const token = await registerAndGetToken(app)
+
+    const res = await uploadCv(token)
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { cvFileUrl: string; cvFilePublicId: string }
+    expect(body.cvFileUrl).toBe('https://res.cloudinary.com/demo/raw/upload/cv.pdf')
+    expect(body.cvFilePublicId).toBe('job-hunter/cv/cv_abc')
+    expect(uploads).toEqual([{ name: 'resume.pdf', mimeType: 'application/pdf' }])
+  })
+
+  it('still succeeds and stores cvText when no uploader is configured', async () => {
+    await setup(null)
+    const token = await registerAndGetToken(app)
+
+    const res = await uploadCv(token)
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { cvText: string; cvFileUrl?: string | null }
+    expect(body.cvText).toBe('Parsed CV text from the fake extractor.')
+    expect(body.cvFileUrl ?? null).toBeNull()
+  })
+
+  it('does not fail the upload when the uploader throws', async () => {
+    const throwingUploader: CvUploader = async () => {
+      throw new Error('cloudinary is down')
+    }
+    await setup(throwingUploader)
+    const token = await registerAndGetToken(app)
+
+    const res = await uploadCv(token)
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { cvText: string; cvFileUrl?: string | null }
+    expect(body.cvText).toBe('Parsed CV text from the fake extractor.')
+    expect(body.cvFileUrl ?? null).toBeNull()
   })
 })

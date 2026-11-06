@@ -33,6 +33,52 @@ export const STATUS_META: StatusMeta[] = [
 
 const STATUS_BY_KEY = new Map(STATUS_META.map((meta) => [meta.status, meta]))
 
+// Collapses the 14 tracker statuses into four pipeline stages for compact
+// summaries (e.g. the dashboard Applications card). Every TrackedJobStatus maps
+// to exactly one group, so the group totals sum to the full tracked-job count.
+export type TrackedStatusGroup = 'applied' | 'interviewing' | 'offer' | 'rejected'
+
+export const STATUS_GROUPS: Array<{ group: TrackedStatusGroup; label: string }> = [
+  { group: 'applied', label: 'Applied' },
+  { group: 'interviewing', label: 'Interviewing' },
+  { group: 'offer', label: 'Offer' },
+  { group: 'rejected', label: 'Rejected' },
+]
+
+const STATUS_GROUP_BY_STATUS: Record<TrackedJobStatus, TrackedStatusGroup> = {
+  not_applied: 'applied',
+  applied: 'applied',
+  recruiter_contacted: 'applied',
+  follow_up_1: 'applied',
+  follow_up_2: 'applied',
+  response_received: 'applied',
+  interview_scheduled: 'interviewing',
+  interview_completed: 'interviewing',
+  assessment_received: 'interviewing',
+  assessment_submitted: 'interviewing',
+  offer_received: 'offer',
+  offer_accepted: 'offer',
+  offer_rejected: 'rejected',
+  rejected: 'rejected',
+}
+
+export function statusGroup(status: TrackedJobStatus): TrackedStatusGroup {
+  return STATUS_GROUP_BY_STATUS[status]
+}
+
+export function countTrackedJobsByGroup(
+  jobs: Array<{ status: TrackedJobStatus }>,
+): Record<TrackedStatusGroup, number> {
+  const counts: Record<TrackedStatusGroup, number> = {
+    applied: 0,
+    interviewing: 0,
+    offer: 0,
+    rejected: 0,
+  }
+  for (const job of jobs) counts[statusGroup(job.status)] += 1
+  return counts
+}
+
 export function statusLabel(status: TrackedJobStatus): string {
   return STATUS_BY_KEY.get(status)?.label ?? status
 }

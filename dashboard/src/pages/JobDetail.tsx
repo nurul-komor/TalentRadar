@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useNavigate, useLocation } from 'react-router-dom'
 import DOMPurify from 'dompurify'
 import type { Job, Profile } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { gsap } from '../lib/gsap'
-import { AppNav } from '../components/Nav'
+import { PublicNav } from '../components/Nav'
 import { FormError } from '../components/FormError'
 import { ScoreRing } from '../components/ScoreRing'
 import { Pill } from '../components/Pill'
 import { LogoChip } from '../components/LogoChip'
 import { ApplyDrawer } from '../components/ApplyDrawer'
+import { Footer } from '../components/Footer'
 
 function formatDate(value: string | null): string {
   if (!value) return '—'
@@ -43,7 +44,9 @@ const SCORE_LABELS = {
 
 export function JobDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const { isAdmin } = useAuth()
+  const { isAdmin, isAuthenticated } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [job, setJob] = useState<Job | null>(null)
   const [syncBusy, setSyncBusy] = useState(false)
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
@@ -129,7 +132,7 @@ export function JobDetailPage() {
   if (!job && !error) {
     return (
       <div>
-        <AppNav />
+        <PublicNav />
         <p className="wrap" style={{ marginTop: 24, color: 'var(--muted-text)' }}>
           Loading…
         </p>
@@ -140,7 +143,7 @@ export function JobDetailPage() {
   if (error || !job) {
     return (
       <div>
-        <AppNav />
+        <PublicNav />
         <div className="wrap" style={{ marginTop: 24 }}>
           <FormError message={error ?? 'Job not found.'} />
         </div>
@@ -157,7 +160,7 @@ export function JobDetailPage() {
 
   return (
     <div>
-      <AppNav />
+      <PublicNav />
       <div className="wrap crumbs">
         <Link to="/jobs">Jobs</Link>
         <span>/</span>
@@ -322,7 +325,19 @@ export function JobDetailPage() {
 
           <div className="ev-card">
             <div className="ev-actions">
-              <button type="button" className="btn btn-indigo" onClick={() => setDrawerOpen(true)}>
+              <button
+                type="button"
+                className="btn btn-indigo"
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    navigate('/login', { state: { from: location.pathname } })
+                    return
+                  }
+                  // Don't block on an incomplete profile — the drawer nudges the
+                  // user to complete it for better results instead.
+                  setDrawerOpen(true)
+                }}
+              >
                 Apply
               </button>
               {isAdmin && (
@@ -376,6 +391,8 @@ export function JobDetailPage() {
         profile={profile}
         onProfileChange={setProfile}
       />
+
+      <Footer />
     </div>
   )
 }
