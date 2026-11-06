@@ -10,5 +10,9 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src", "test"]
+  // Only source is compiled here. Vercel's @vercel/node builder reads this
+  // tsconfig when building the serverless function and would otherwise pull
+  // test files into the program — those fail to resolve @job-hunter/shared on a
+  // cold build and break the deploy. Tests are type-checked via tsconfig.test.json.
+  "include": ["src"]
 }
