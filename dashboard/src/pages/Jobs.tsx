@@ -687,69 +687,65 @@ export function JobsPage() {
                 </Link>
               </div>
             )}
-            {isAuthenticated && visibleMyJobs.length > 0 && (
-              <section className="my-jobs">
-                <div className="my-jobs-head">
-                  <h2>
-                    {savedMode ? 'Your saved added jobs' : 'Your added jobs'}{' '}
-                    <span className="pill mono">{visibleMyJobs.length}</span>
-                  </h2>
-                  <Link to="/add-job" className="btn btn-ghost">
-                    <ion-icon name="add-outline" style={{ fontSize: 14 }} />
-                    Add a job
-                  </Link>
-                </div>
-                {visibleMyJobs.map((job) => (
-                  <article key={job._id} className="jrow">
-                    <div className="main">
-                      <div className="title">
-                        <Link to={`/my-jobs/${job._id}`}>{job.title}</Link>
-                      </div>
-                      <div className="sub">
-                        <ion-icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
-                        {job.company}
-                        {job.location ? ` · ${job.location}` : ''}
-                      </div>
-                      <div className="tags">
-                        <Pill tone={job.visibility === 'public' ? 'verified' : 'mono'}>
-                          {job.visibility === 'public' ? 'Public' : 'Private'}
-                        </Pill>
-                        <Pill tone="mono">{formatSalary(job)}</Pill>
-                        <Pill tone="mono">Added by you</Pill>
-                      </div>
-                      {job.description && (
-                        <p style={{ marginTop: 10, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
-                          {descriptionPreview(job.description)}
-                        </p>
-                      )}
-                      <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <Link to={`/my-jobs/${job._id}`} className="btn btn-ghost">
-                          View details
-                        </Link>
-                        {job.url && (
-                          <a href={job.url} target="_blank" rel="noreferrer" className="btn btn-indigo">
-                            Apply
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                    <div className="side">
-                      <button
-                        type="button"
-                        className={`save-btn${job._id && isSaved(job._id) ? ' saved' : ''}`}
-                        aria-pressed={!!job._id && isSaved(job._id)}
-                        aria-label={job._id && isSaved(job._id) ? 'Remove from saved' : 'Save job'}
-                        onClick={() => job._id && handleToggleSaved(job._id)}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-                          <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
-                        </svg>
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </section>
+            {category === 'mine' && (
+              <div className="my-jobs-head">
+                <h2>Your added jobs</h2>
+                <Link to="/add-job" className="btn btn-ghost">
+                  <ion-icon name="add-outline" style={{ fontSize: 14 }} />
+                  Add a job
+                </Link>
+              </div>
             )}
+
+            {myJobRows.map((job) => (
+              <article key={`myjob-${job._id}`} className="jrow">
+                <div className="main">
+                  <div className="title">
+                    <Link to={`/my-jobs/${job._id}`}>{job.title}</Link>
+                  </div>
+                  <div className="sub">
+                    <ion-icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
+                    {job.company}
+                    {job.location ? ` · ${job.location}` : ''}
+                  </div>
+                  <div className="tags">
+                    <Pill tone={job.visibility === 'public' ? 'verified' : 'mono'}>
+                      {job.visibility === 'public' ? 'Public' : 'Private'}
+                    </Pill>
+                    <Pill tone="mono">{formatSalary(job)}</Pill>
+                    <Pill tone="mono">Added by you</Pill>
+                  </div>
+                  {job.description && (
+                    <p style={{ marginTop: 10, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
+                      {descriptionPreview(job.description)}
+                    </p>
+                  )}
+                  <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Link to={`/my-jobs/${job._id}`} className="btn btn-ghost">
+                      View details
+                    </Link>
+                    {job.url && (
+                      <a href={job.url} target="_blank" rel="noreferrer" className="btn btn-indigo">
+                        Apply
+                      </a>
+                    )}
+                  </div>
+                </div>
+                <div className="side">
+                  <button
+                    type="button"
+                    className={`save-btn${job._id && isSaved(job._id) ? ' saved' : ''}`}
+                    aria-pressed={!!job._id && isSaved(job._id)}
+                    aria-label={job._id && isSaved(job._id) ? 'Remove from saved' : 'Save job'}
+                    onClick={() => job._id && handleToggleSaved(job._id)}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+                      <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
+                    </svg>
+                  </button>
+                </div>
+              </article>
+            ))}
 
             {error && (
               <div className="mb-4">
@@ -765,13 +761,25 @@ export function JobsPage() {
                   <div className="sk" style={{ width: '30%' }} />
                 </div>
               </div>
-            ) : jobs.length === 0 ? (
+            ) : jobs.length === 0 && myJobRows.length === 0 ? (
               <p className="saved-empty">
                 {savedMode ? (
                   <>
                     <b>No saved jobs yet.</b>
                     Tap the bookmark on any job to save it here.
                   </>
+                ) : category === 'mine' ? (
+                  selectedLanguages.length > 0 ? (
+                    <>
+                      <b>No added jobs match these languages.</b>
+                      Clear the language filter or add a job.
+                    </>
+                  ) : (
+                    <>
+                      <b>You haven't added any jobs yet.</b>
+                      Use “Add a job” to track roles you found elsewhere.
+                    </>
+                  )
                 ) : (
                   <>
                     <b>No jobs found.</b>
@@ -836,7 +844,7 @@ export function JobsPage() {
               })
             )}
 
-            {!savedMode && (
+            {!savedMode && category !== 'mine' && (
               <div className="mt-4 flex flex-wrap items-center justify-between gap-2" style={{ color: 'var(--muted-text)', fontSize: 13 }}>
                 <span>{total === 0 ? 'No results' : `Showing ${rangeStart}–${rangeEnd} of ${total}`}</span>
                 <div className="pager">
