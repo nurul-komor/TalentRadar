@@ -8,7 +8,9 @@ import { ensureUserJobsIndexes } from './userJobs/userJobsService.js'
 import { ensureApplicationIndexes } from './applications/applicationsService.js'
 import { ensureAutomationRunIndexes } from './applications/automationRunsService.js'
 import { ensureJobTrackingIndexes } from './jobTracking/jobTrackingService.js'
-import { createLlmConfig } from './llm/config.js'
+import { createLlmConfig, createEmbeddingConfig } from './llm/config.js'
+import { createOpenAiEmbedder } from './embeddings/embeddingProvider.js'
+import { ensureVectorIndexes } from './suggestions/vectorSearch.js'
 
 async function main() {
   const mongodbUri = process.env.MONGODB_URI
@@ -39,6 +41,18 @@ async function main() {
     )
   }
 
+  // Embeddings power the /suggestions route and always use OpenAI (independent of
+  // LLM_PROVIDER); null when OPENAI_API_KEY is missing, which disables /suggestions.
+  const embeddingConfig = createEmbeddingConfig(process.env)
+  const embedder = embeddingConfig
+    ? createOpenAiEmbedder(embeddingConfig.apiKey, embeddingConfig.model, embeddingConfig.dimensions)
+    : null
+  if (embedder) {
+    console.log(`Embeddings: ${embeddingConfig!.model} (${embeddingConfig!.dimensions} dims)`)
+  } else {
+    console.warn('OPENAI_API_KEY is not set — /suggestions route will be disabled')
+  }
+
   const { db } = await connectMongo(mongodbUri, process.env.MONGODB_DB_NAME ?? 'job_hunter')
   await ensureJobIndexes(db)
   await ensureMaterialsIndexes(db)
@@ -46,8 +60,9 @@ async function main() {
   await ensureApplicationIndexes(db)
   await ensureAutomationRunIndexes(db)
   await ensureJobTrackingIndexes(db)
+  if (embedder) await ensureVectorIndexes(db, embedder.dimensions)
 
-  const app = mountRoutes(createApp(), db, jwtSecret, cronSecret, llmConfig)
+  const app = mountRoutes(createApp(), db, jwtSecret, cronSecret, llmConfig, embedder)
 
   const port = Number(process.env.PORT ?? 8787)
   serve({ fetch: app.fetch, port }, () => {

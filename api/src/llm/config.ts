@@ -66,6 +66,26 @@ function resolveCapability(env: Env, provider: ProviderName, capability: Capabil
   return override ? { ...base, model: override } : base
 }
 
+export interface EmbeddingConfig {
+  apiKey: string
+  model: string
+  dimensions: number
+}
+
+// Resolves the embeddings configuration, independent of LLM_PROVIDER: embeddings always
+// use OpenAI (Anthropic has no embeddings API), so this needs OPENAI_API_KEY regardless of
+// which provider powers the text capabilities. Returns null when the key is missing, which
+// disables the /suggestions route exactly as a missing LLM key disables /scoring.
+export function createEmbeddingConfig(env: Env): EmbeddingConfig | null {
+  const rawApiKey = env.OPENAI_API_KEY
+  const apiKey = rawApiKey?.trim().replace(/^["']|["']$/g, '')
+  if (!apiKey) return null
+
+  const model = env.EMBEDDINGS_MODEL?.trim() || 'text-embedding-3-small'
+  const dimensions = Number.parseInt(env.EMBEDDINGS_DIMENSIONS?.trim() || '1536', 10)
+  return { apiKey, model, dimensions }
+}
+
 // Builds the active LLM configuration from the environment, or returns null when the
 // selected provider has no API key configured — letting the caller disable the AI
 // routes exactly as it did before (see mountRoutes).

@@ -17,6 +17,9 @@ export const PRICING: Record<string, ModelPricing> = {
   // OpenAI
   'gpt-4o-mini': { inputPerMillionUsd: 0.15, outputPerMillionUsd: 0.6 },
   'gpt-4o': { inputPerMillionUsd: 2.5, outputPerMillionUsd: 10.0 },
+  // OpenAI embeddings (input-only; no output tokens).
+  'text-embedding-3-small': { inputPerMillionUsd: 0.02, outputPerMillionUsd: 0 },
+  'text-embedding-3-large': { inputPerMillionUsd: 0.13, outputPerMillionUsd: 0 },
   // Google Gemini
   'gemini-2.0-flash': { inputPerMillionUsd: 0.1, outputPerMillionUsd: 0.4 },
   'gemini-2.5-flash': { inputPerMillionUsd: 0.3, outputPerMillionUsd: 2.5 },

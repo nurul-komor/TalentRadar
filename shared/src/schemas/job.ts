@@ -71,6 +71,14 @@ export const JobSchema = z.object({
   scoreBreakdown: ScoreBreakdownSchema.nullable(),
   scoredAt: z.string().nullable(),
   govtDetails: GovtJobDetailsSchema.nullable(),
+  // Semantic embedding of the job (title + description + required skills), used by
+  // /suggestions for vector similarity. Optional so documents written before this
+  // feature — and jobs not yet embedded — still validate. embeddingHash is the sha256
+  // of the exact text that was embedded, so a changed description triggers a re-embed.
+  embedding: z.array(z.number()).nullable().optional(),
+  embeddingModel: z.string().nullable().optional(),
+  embeddingHash: z.string().nullable().optional(),
+  embeddedAt: z.string().nullable().optional(),
 })
 
 export const PublicFeaturedJobSchema = z.object({

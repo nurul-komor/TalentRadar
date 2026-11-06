@@ -8,15 +8,22 @@ import { renderResumePdf } from '../profile/cvExporter.js'
 import type { CvUploader } from '../profile/cloudinaryStorage.js'
 import type { ResumeExtractor } from '../profile/types.js'
 import { isWithinBudget, recordUsage } from '../scoring/aiUsageService.js'
+import type { Embedder } from '../embeddings/embeddingProvider.js'
+import { embedProfile } from '../suggestions/embeddingService.js'
 
 const MAX_CV_FILE_BYTES = 10 * 1024 * 1024
+
+// resumeEmbedding is a large float array used only for vector search — never return it in
+// profile responses. Applied alongside the passwordHash exclusion on every read.
+const PROFILE_PROJECTION = { passwordHash: 0, resumeEmbedding: 0 } as const
 
 export function createProfileRoutes(
   db: Db,
   jwtSecret: string,
   cvParser: CvParser = parseCvFile,
   resumeExtractor: ResumeExtractor | null = null,
-  cvUploader: CvUploader | null = null
+  cvUploader: CvUploader | null = null,
+  embedder: Embedder | null = null
 ) {
   const profileRoutes = new Hono<{ Variables: AuthVariables }>()
   profileRoutes.use('*', createRequireAuth(jwtSecret))
@@ -36,7 +43,7 @@ export function createProfileRoutes(
       .collection('profiles')
       .findOne(
         { _id: new ObjectId(c.get('profileId')) },
-        { projection: { passwordHash: 0 } }
+        { projection: PROFILE_PROJECTION }
       )
     if (!profile) {
       return c.json({ error: 'profile not found' }, 404)
@@ -55,7 +62,7 @@ export function createProfileRoutes(
     const result = await profiles.findOneAndUpdate(
       { _id: new ObjectId(c.get('profileId')) },
       { $set: { ...parsed.data, updatedAt: new Date().toISOString() } },
-      { returnDocument: 'after', projection: { passwordHash: 0 } }
+      { returnDocument: 'after', projection: PROFILE_PROJECTION }
     )
     if (!result) {
       return c.json({ error: 'profile not found' }, 404)
@@ -68,7 +75,7 @@ export function createProfileRoutes(
       .collection('profiles')
       .findOne(
         { _id: new ObjectId(c.get('profileId')) },
-        { projection: { passwordHash: 0 } }
+        { projection: PROFILE_PROJECTION }
       )) as Profile | null
     if (!profile) {
       return c.json({ error: 'profile not found' }, 404)
@@ -151,11 +158,23 @@ export function createProfileRoutes(
     const result = await profiles.findOneAndUpdate(
       { _id: profileId },
       { $set: update },
-      { returnDocument: 'after', projection: { passwordHash: 0 } }
+      { returnDocument: 'after', projection: PROFILE_PROJECTION }
     )
     if (!result) {
       return c.json({ error: 'profile not found' }, 404)
     }
+
+    // Refresh the resume embedding so /suggestions reflects the new CV immediately. Best-effort
+    // like the Cloudinary upload above: a failure (or exhausted AI budget) never blocks the save,
+    // and /suggestions recomputes lazily anyway.
+    if (embedder) {
+      try {
+        await embedProfile(db, c.get('profileId'), embedder)
+      } catch (reason) {
+        console.error('failed to embed profile after CV upload', reason)
+      }
+    }
+
     return c.json({ ...result, suggestedResume })
   })
 

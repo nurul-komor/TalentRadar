@@ -110,6 +110,14 @@ export const ProfileSchema = z.object({
   cvFileUrl: z.string().nullable().optional(),
   cvFilePublicId: z.string().nullable().optional(),
   resume: ResumeSchema.default(emptyResume),
+  // Semantic embedding of the resume (headline + summary + skills + cvText), used by
+  // /suggestions to rank jobs by similarity. Optional/nullable so pre-existing profiles
+  // validate; recomputed when resumeEmbeddingHash (sha256 of the embedded text) changes.
+  // Large array — projected out of normal profile responses (see routes/profile.ts).
+  resumeEmbedding: z.array(z.number()).nullable().optional(),
+  resumeEmbeddingModel: z.string().nullable().optional(),
+  resumeEmbeddingHash: z.string().nullable().optional(),
+  resumeEmbeddedAt: z.string().nullable().optional(),
   onboardingCompletedAt: z.string().nullable().default(null),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),

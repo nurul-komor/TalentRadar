@@ -33,14 +33,17 @@ import { createRequirementsExtractor } from './scoring/requirementsExtractor.js'
 import { createMaterialsGenerator } from './materials/materialsGenerator.js'
 import { createResumeExtractor } from './profile/resumeExtractor.js'
 import { createCloudinaryUploader } from './profile/cloudinaryStorage.js'
+import { createSuggestionsRoutes } from './routes/suggestions.js'
 import type { LlmConfig } from './llm/config.js'
+import type { Embedder } from './embeddings/embeddingProvider.js'
 
 export function mountRoutes(
   app: Hono,
   db: Db,
   jwtSecret: string,
   cronSecret: string,
-  llmConfig: LlmConfig | null
+  llmConfig: LlmConfig | null,
+  embedder: Embedder | null = null
 ) {
   const sources = [
     remoteOkSource,
@@ -63,7 +66,10 @@ export function mountRoutes(
   const cvUploader = createCloudinaryUploader(process.env)
 
   app.route('/auth', createAuthRoutes(db, jwtSecret))
-  app.route('/profile', createProfileRoutes(db, jwtSecret, undefined, resumeExtractor, cvUploader))
+  app.route(
+    '/profile',
+    createProfileRoutes(db, jwtSecret, undefined, resumeExtractor, cvUploader, embedder)
+  )
   app.route('/discovery', createDiscoveryRoutes(db, jwtSecret, sources))
   app.route('/verification', createVerificationRoutes(db, jwtSecret, pageEvidenceVerifier))
   app.route('/jobs', createJobsRoutes(db, jwtSecret, sources))
@@ -84,6 +90,12 @@ export function mountRoutes(
       llmConfig ? createJobPageExtractor(llmConfig.provider, llmConfig.requirements.model) : null
     )
   )
+
+  // Semantic suggestions only need OpenAI embeddings (independent of LLM_PROVIDER), so they
+  // mount whenever an embedder is configured, separately from the llmConfig-gated routes.
+  if (embedder) {
+    app.route('/suggestions', createSuggestionsRoutes(db, jwtSecret, embedder))
+  }
 
   if (llmConfig) {
     app.route(
