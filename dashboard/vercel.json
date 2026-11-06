@@ -1,0 +1,6 @@
+{
+  "installCommand": "cd .. && npm ci",
+  "buildCommand": "cd .. && npm run build --workspace=dashboard",
+  "outputDirectory": "dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}

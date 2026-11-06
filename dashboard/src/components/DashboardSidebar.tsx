@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import type { Application, Profile } from '@job-hunter/shared'
+import type { Profile, TrackedJob } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { canSync } from '../lib/syncAccess'
 import { useSavedJobs } from '../hooks/useSavedJobs'
 import { profileCompletenessPercent } from '../lib/profileCompleteness'
+import { isFollowUpOverdue } from '../lib/jobTracking'
 import { ThemeToggle } from './ThemeToggle'
 
 function BrandMark() {
@@ -25,7 +26,7 @@ function sidebarLinkClass({ isActive }: { isActive: boolean }): string {
 const SIDEBAR_LINKS = [
   { to: '/dashboard', label: 'Dashboard', icon: 'grid-outline' },
   { to: '/add-job', label: 'Add job', icon: 'add-outline' },
-  { to: '/applications', label: 'Applications', icon: 'clipboard-outline' },
+  { to: '/applications', label: 'Application Tracking', icon: 'clipboard-outline' },
   { to: '/profile', label: 'Profile', icon: 'person-outline' },
   { to: '/cv', label: 'CV', icon: 'document-text-outline' },
 ]
@@ -45,17 +46,17 @@ export function DashboardSidebar() {
   const searchRef = useRef<HTMLInputElement>(null)
   const [searchValue, setSearchValue] = useState('')
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [applications, setApplications] = useState<Application[]>([])
+  const [trackedJobs, setTrackedJobs] = useState<TrackedJob[]>([])
 
   useEffect(() => {
     apiFetch('/profile')
       .then((res) => (res.ok ? (res.json() as Promise<Profile>) : null))
       .then(setProfile)
       .catch(() => setProfile(null))
-    apiFetch('/applications')
-      .then((res) => (res.ok ? res.json() : { applications: [] }))
-      .then((body: { applications: Application[] }) => setApplications(body.applications))
-      .catch(() => setApplications([]))
+    apiFetch('/job-tracking')
+      .then((res) => (res.ok ? res.json() : { jobs: [] }))
+      .then((body: { jobs: TrackedJob[] }) => setTrackedJobs(body.jobs))
+      .catch(() => setTrackedJobs([]))
   }, [])
 
   useEffect(() => {
@@ -77,7 +78,8 @@ export function DashboardSidebar() {
     navigate(trimmed ? `/jobs?q=${encodeURIComponent(trimmed)}` : '/jobs')
   }
 
-  const readyCount = applications.filter((application) => application.status === 'ready').length
+  // Overdue follow-ups are the thing worth nudging the user toward on the tracker.
+  const overdueCount = trackedJobs.filter((job) => isFollowUpOverdue(job.followUpDate, job.status)).length
 
   return (
     <nav className="app-sidebar">
@@ -103,7 +105,7 @@ export function DashboardSidebar() {
           <NavLink key={to} to={to} className={sidebarLinkClass}>
             <ion-icon name={icon} style={{ fontSize: 18 }} />
             {label}
-            {to === '/applications' && readyCount > 0 && <span className="badge">{readyCount}</span>}
+            {to === '/applications' && overdueCount > 0 && <span className="badge">{overdueCount}</span>}
           </NavLink>
         ))}
 
@@ -122,13 +124,13 @@ export function DashboardSidebar() {
         )}
       </div>
 
-      {readyCount > 0 && (
+      {overdueCount > 0 && (
         <div className="app-sidebar-next">
           <div className="k">Next action</div>
           <b>
-            Review {readyCount} generated cover letter{readyCount === 1 ? '' : 's'}
+            Follow up on {overdueCount} job{overdueCount === 1 ? '' : 's'}
           </b>
-          <NavLink to="/applications">Review now →</NavLink>
+          <NavLink to="/applications">Open tracker →</NavLink>
         </div>
       )}
 

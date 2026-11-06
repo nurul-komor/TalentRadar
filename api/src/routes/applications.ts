@@ -40,12 +40,14 @@ export function createApplicationsRoutes(db: Db, jwtSecret: string) {
 
   applicationsRoutes.get('/:jobId', async (c) => {
     const jobId = c.req.param('jobId')
-    const application = await db.collection<Application>('applications').findOne({ jobId })
+    // Applications are owned per-user, so scope the lookup to the caller's
+    // profile. Another user's application for the same (shared) job simply
+    // reads as "not found" here — the drawer then starts the caller's own.
+    const application = await db
+      .collection<Application>('applications')
+      .findOne({ jobId, profileId: c.get('profileId') })
     if (!application) {
       return c.json({ error: 'application not found' }, 404)
-    }
-    if (application.profileId !== c.get('profileId')) {
-      return c.json({ error: 'forbidden' }, 403)
     }
 
     const latestRun = await db
@@ -69,12 +71,11 @@ export function createApplicationsRoutes(db: Db, jwtSecret: string) {
       return c.json({ error: 'answers must be an array of { question, answer }' }, 400)
     }
 
-    const application = await db.collection<Application>('applications').findOne({ jobId })
+    const application = await db
+      .collection<Application>('applications')
+      .findOne({ jobId, profileId: c.get('profileId') })
     if (!application) {
       return c.json({ error: 'application not found' }, 404)
-    }
-    if (application.profileId !== c.get('profileId')) {
-      return c.json({ error: 'forbidden' }, 403)
     }
 
     const updates = new Map<string, string | null>()
@@ -90,7 +91,7 @@ export function createApplicationsRoutes(db: Db, jwtSecret: string) {
     )
 
     await db.collection<Application>('applications').updateOne(
-      { jobId },
+      { jobId, profileId: c.get('profileId') },
       { $set: { requiredAnswers: mergedAnswers, updatedAt: new Date().toISOString() } }
     )
 

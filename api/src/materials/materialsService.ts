@@ -1,8 +1,10 @@
 import type { Db } from 'mongodb'
-import type { Job, Materials, Profile, SavedMaterials } from '@job-hunter/shared'
+import type { Materials, Profile, SavedMaterials } from '@job-hunter/shared'
 import { emptyResume } from '@job-hunter/shared'
 import { isWithinBudget, recordUsage } from '../scoring/aiUsageService.js'
 import { NotFoundError } from '../lib/errors.js'
+import { upsertTrackedJobForMaterials } from '../jobTracking/jobTrackingService.js'
+import { resolveJobForApply } from '../jobs/resolveJobForApply.js'
 import type { MaterialsGenerator } from './types'
 
 export interface GenerateMaterialsResult {
@@ -89,14 +91,10 @@ export async function generateMaterials(
   profileId: string,
   generator: MaterialsGenerator
 ): Promise<GenerateMaterialsResult> {
-  // `jobKey.sourceId` arrives as a plain string from the route layer (an unvalidated URL param),
-  // while `Job['sourceId']` is narrowed to the `JobSourceId` enum — cast at the query boundary
-  // rather than widening the stored type. A `sourceId` that isn't a real enum value simply won't
-  // match any document, so this falls through to the "job not found" branch below, same as any
-  // other unmatched key.
-  const job = await db
-    .collection<Job>('jobs')
-    .findOne({ sourceId: jobKey.sourceId as Job['sourceId'], sourceJobId: jobKey.sourceJobId })
+  // Resolves a discovered job (shared `jobs` collection) or a user-added job
+  // (`userJobs`, scoped to this profile via the `userJob:<id>` jobId scheme) into
+  // the common apply shape — see resolveJobForApply.
+  const job = await resolveJobForApply(db, jobKey.sourceId, jobKey.sourceJobId, profileId)
   if (!job) {
     throw new NotFoundError(`job not found: ${jobKey.sourceId}:${jobKey.sourceJobId}`)
   }
@@ -135,6 +133,11 @@ export async function generateMaterials(
     createdAt: new Date().toISOString(),
   }
   await materialsCollection.insertOne(materials)
+
+  // Surface the application in the tracker at "not applied" so generating docs
+  // and tracking the application are one step. Idempotent — regenerating never
+  // resets a row the user has already advanced.
+  await upsertTrackedJobForMaterials(db, profileId, jobId, job.company, job.title)
 
   return { status: 'generated', materials, reason: null }
 }

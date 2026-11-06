@@ -26,7 +26,7 @@ import {
 const PAGE_SIZE = 20
 const DEBOUNCE_MS = 300
 
-type CategoryFilter = 'all' | 'government' | 'private'
+type CategoryFilter = 'all' | 'government' | 'mine' | 'private'
 type SourceSelection = { kind: 'all' } | { kind: 'source'; id: JobSourceId } | { kind: 'company'; name: string }
 type DateFilter = 'all' | 'today' | 'week' | 'month'
 
@@ -62,6 +62,55 @@ const SOURCE_OPTIONS: Array<{ value: JobSourceId; label: string }> = [
 const SOURCE_LABELS: Record<JobSourceId, string> = Object.fromEntries(
   SOURCE_OPTIONS.map((option) => [option.value, option.label]),
 ) as Record<JobSourceId, string>
+
+// Programming-language filter. Values are the stable keys the API understands
+// (see LANGUAGE_PATTERNS in api/src/routes/jobs.ts); selecting several matches
+// any of them.
+const LANGUAGE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'python', label: 'Python' },
+  { value: 'typescript', label: 'TypeScript' },
+  { value: 'javascript', label: 'JavaScript' },
+  { value: 'java', label: 'Java' },
+  { value: 'go', label: 'Go (Golang)' },
+  { value: 'csharp', label: 'C#' },
+  { value: 'php', label: 'PHP' },
+  { value: 'cpp', label: 'C++' },
+  { value: 'kotlin', label: 'Kotlin' },
+  { value: 'rust', label: 'Rust' },
+]
+
+function parseLanguages(searchParams: URLSearchParams): string[] {
+  const raw = searchParams.get('languages')
+  if (!raw) return []
+  const valid = new Set(LANGUAGE_OPTIONS.map((option) => option.value))
+  return [...new Set(raw.split(',').map((value) => value.trim()).filter((value) => valid.has(value)))]
+}
+
+// Regex per language, mirroring LANGUAGE_PATTERNS in api/src/routes/jobs.ts.
+// Used to apply the language filter to the user's own added jobs, which are
+// fetched client-side and so aren't covered by the server-side jobs query.
+const LANGUAGE_MATCHERS: Record<string, string> = {
+  python: '\\bpython\\b',
+  typescript: '\\btypescript\\b',
+  javascript: '\\bjavascript\\b',
+  java: '\\bjava\\b',
+  go: '\\b(?:golang|go)\\b',
+  csharp: '(?:c#|\\bc[-\\s]?sharp\\b|\\.net\\b)',
+  php: '\\bphp\\b',
+  cpp: '(?:c\\+\\+|\\bcpp\\b)',
+  kotlin: '\\bkotlin\\b',
+  rust: '\\brust\\b',
+}
+
+// True when a user-added job mentions ANY of the selected languages in its
+// title, description, or location. An empty selection matches everything.
+function userJobMatchesLanguages(job: UserJob, languages: string[]): boolean {
+  if (languages.length === 0) return true
+  const pattern = languages.map((key) => LANGUAGE_MATCHERS[key]).filter(Boolean).join('|')
+  if (!pattern) return true
+  const haystack = `${job.title}\n${job.description}\n${job.location ?? ''}`
+  return new RegExp(pattern, 'i').test(haystack)
+}
 
 function parseSourceSelection(searchParams: URLSearchParams): SourceSelection {
   const sourceId = searchParams.get('sourceId')
@@ -189,6 +238,8 @@ export function JobsPage() {
         ? `company:${sourceSelection.name}`
         : 'all'
   const datePosted = (searchParams.get('datePosted') as DateFilter) || 'all'
+  const selectedLanguages = parseLanguages(searchParams)
+  const languagesKey = selectedLanguages.join(',')
   const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
 
   const [keyword, setKeyword] = useState(searchParams.get('q') ?? '')
@@ -215,10 +266,18 @@ export function JobsPage() {
     Number(category !== 'all') +
     Number(sourceSelection.kind !== 'all') +
     Number(datePosted !== 'all') +
+    Number(selectedLanguages.length > 0) +
     Number(keyword.trim() !== '') +
     Number(location.trim() !== '') +
     Number(salaryMin.trim() !== '' || salaryMax.trim() !== '')
   const hasActiveFilters = activeFilterCount > 0
+
+  function toggleLanguage(value: string, checked: boolean) {
+    const next = checked
+      ? [...selectedLanguages, value]
+      : selectedLanguages.filter((language) => language !== value)
+    updateFilters({ languages: next.length ? next.join(',') : null })
+  }
 
   function updateFilters(updates: Record<string, string | null>, opts: { resetOffset?: boolean } = {}) {
     const resetOffset = opts.resetOffset ?? true
@@ -312,12 +371,22 @@ export function JobsPage() {
       }
     }
 
+    // "My jobs" is a purely client-side view of the user's own added jobs
+    // (fetched separately into `myJobs`), so there's no discovery feed to load.
+    if (category === 'mine') {
+      setJobs([])
+      setTotal(0)
+      setLoading(false)
+      return
+    }
+
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) })
     if (category !== 'all') params.set('category', category)
     if (sourceSelection.kind === 'source') params.set('sourceId', sourceSelection.id)
     if (sourceSelection.kind === 'company') params.set('company', sourceSelection.name)
     const discoveredAfter = dateFilterCutoffIso(datePosted)
     if (discoveredAfter) params.set('discoveredAfter', discoveredAfter)
+    if (selectedLanguages.length > 0) params.set('languages', languagesKey)
     if (debouncedKeyword.trim()) params.set('q', debouncedKeyword.trim())
     if (debouncedLocation.trim()) params.set('location', debouncedLocation.trim())
     if (debouncedSalaryMin.trim()) params.set('salaryMin', debouncedSalaryMin.trim())
@@ -334,7 +403,7 @@ export function JobsPage() {
         setTotal(data.total)
       })
       .finally(() => setLoading(false))
-  }, [savedMode, savedKey, category, sourceSelectionKey, datePosted, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset])
+  }, [savedMode, savedKey, category, sourceSelectionKey, datePosted, languagesKey, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset])
 
   const rangeStart = total === 0 ? 0 : offset + 1
   const rangeEnd = Math.min(offset + PAGE_SIZE, total)
@@ -352,7 +421,7 @@ export function JobsPage() {
         />
       </div>
 
-      <Accordion defaultValue={['date', 'source']}>
+      <Accordion defaultValue={['date', 'language', 'source']}>
             <AccordionItem value="date">
               <AccordionTrigger>Date posted</AccordionTrigger>
               <AccordionContent>
@@ -369,6 +438,25 @@ export function JobsPage() {
                     </label>
                   ))}
                 </div>
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="language">
+              <AccordionTrigger>Language</AccordionTrigger>
+              <AccordionContent>
+                <ul className="flex flex-col gap-2">
+                  {LANGUAGE_OPTIONS.map((option) => (
+                    <li key={option.value}>
+                      <label className="check">
+                        <Checkbox
+                          checked={selectedLanguages.includes(option.value)}
+                          onCheckedChange={(checked) => toggleLanguage(option.value, checked === true)}
+                        />
+                        {option.label}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
               </AccordionContent>
             </AccordionItem>
 
@@ -450,20 +538,31 @@ export function JobsPage() {
     </div>
   )
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  // Jobs the user added themselves. Saved mode narrows to bookmarked ones; the
+  // language filter applies here too so it behaves like the discovery feed.
+  const visibleMyJobs = (savedMode
+    ? myJobs.filter((job) => job._id && savedIds.includes(job._id))
+    : myJobs
+  ).filter((job) => userJobMatchesLanguages(job, selectedLanguages))
+
+  // Added jobs render as ordinary rows in the list — on the "My jobs" tab, at
+  // the top of the first page of "All jobs", and in saved mode — but never under
+  // Government / Other jobs, which are discovery-only categories.
+  const myJobRows = savedMode
+    ? visibleMyJobs
+    : category === 'mine' || (category === 'all' && offset === 0)
+      ? visibleMyJobs
+      : []
+
   const jobsCountLabel = loading
     ? 'Searching…'
     : savedMode
       ? `${total.toLocaleString()} saved ${total === 1 ? 'job' : 'jobs'}`
-      : `${total.toLocaleString()} jobs found`
-
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
-
-  // Jobs the user added themselves show above the feed. Saved mode shows the
-  // discovery jobs they bookmarked in the main list, so narrow this companion
-  // section to just the bookmarked added jobs to match.
-  const visibleMyJobs = savedMode
-    ? myJobs.filter((job) => job._id && savedIds.includes(job._id))
-    : myJobs
+      : category === 'mine'
+        ? `${myJobRows.length.toLocaleString()} ${myJobRows.length === 1 ? 'job' : 'jobs'}`
+        : `${total.toLocaleString()} jobs found`
 
   function handleToggleSaved(jobId: string) {
     const willBeSaved = !isSaved(jobId)
@@ -499,6 +598,17 @@ export function JobsPage() {
             >
               Government
             </button>
+            {isAuthenticated && (
+              <button
+                type="button"
+                role="tab"
+                className={`seg${category === 'mine' ? ' on' : ''}`}
+                aria-selected={category === 'mine'}
+                onClick={() => updateFilters({ category: 'mine' })}
+              >
+                My jobs
+              </button>
+            )}
             <button
               type="button"
               role="tab"

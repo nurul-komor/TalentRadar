@@ -1,5 +1,6 @@
 import { ObjectId, type Db } from 'mongodb'
-import type { Application, Approval, AutomationRun, Job, Materials, Profile } from '@job-hunter/shared'
+import type { Application, Approval, AutomationRun, Materials, Profile } from '@job-hunter/shared'
+import { resolveJobForApply, type ResolvedApplyJob } from '../jobs/resolveJobForApply.js'
 import { recordRunResult, canSubmit } from '../applications/automationRunsService.js'
 import { writeAuditLog } from '../applications/auditLog.js'
 import { ForbiddenError, NotFoundError } from '../lib/errors.js'
@@ -12,13 +13,11 @@ async function loadJobMaterialsAndProfile(
   db: Db,
   jobKey: { sourceId: string; sourceJobId: string },
   callerProfileId: string
-): Promise<{ job: Job; materials: Materials; profile: Profile; jobId: string; application: Application }> {
+): Promise<{ job: ResolvedApplyJob; materials: Materials; profile: Profile; jobId: string; application: Application }> {
   const jobId = `${jobKey.sourceId}:${jobKey.sourceJobId}`
-  // Queried through the untyped collection (not db.collection<Job>) because
-  // jobKey.sourceId is a plain string here, narrower than Job's sourceId
-  // enum — same pattern applicationsService.createApplication already uses
-  // for this exact lookup.
-  const job = (await db.collection('jobs').findOne(jobKey)) as Job | null
+  // Resolves a discovered job or a user-added job (scoped to the caller) into the
+  // common apply shape — automation only needs the apply URL (normalizedUrl).
+  const job = await resolveJobForApply(db, jobKey.sourceId, jobKey.sourceJobId, callerProfileId)
   if (!job) {
     throw new NotFoundError(`job not found: ${jobId}`)
   }
@@ -27,7 +26,9 @@ async function loadJobMaterialsAndProfile(
   // automation can only ever act on behalf of the profile that owns the
   // application for this job, never an arbitrary caller or "the" one
   // profile in the database (see architect review finding 1).
-  const application = await db.collection<Application>('applications').findOne({ jobId })
+  const application = await db
+    .collection<Application>('applications')
+    .findOne({ jobId, profileId: callerProfileId })
   if (!application) {
     throw new NotFoundError(`no application exists for job ${jobId}`)
   }

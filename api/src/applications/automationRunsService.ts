@@ -70,7 +70,7 @@ export async function approveRun(
   const runs = db.collection<AutomationRun>('automationRuns')
   const approvals = db.collection<Approval>('approvals')
 
-  const application = await applications.findOne({ jobId })
+  const application = await applications.findOne({ jobId, profileId: actorProfileId })
   const run = await runs.findOne({ jobId, runNumber })
   if (!application || !run) {
     throw new NotFoundError(`no application or run found for ${jobId} run ${runNumber}`)

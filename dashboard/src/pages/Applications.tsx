@@ -1,411 +1,246 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Application, ApplicationStatus, AutomationRun, Materials, Profile } from '@job-hunter/shared'
+import type {
+  TrackedJob,
+  TrackedJobInput,
+  TrackedJobStatus,
+  TrackedJobLocationType,
+  UserJob,
+  Application,
+  Materials,
+} from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { LogoChip } from '../components/LogoChip'
 import { Button } from '../components/Button'
 import { FormError } from '../components/FormError'
-import { ScoreRing } from '../components/ScoreRing'
-import { materialFileName } from '../lib/filename'
+import {
+  STATUS_META,
+  statusLabel,
+  statusPillClass,
+  formatDate,
+  isFollowUpOverdue,
+  LOCATION_TYPE_LABELS,
+  LOCATION_TYPE_OPTIONS,
+} from '../lib/jobTracking'
 
-interface ApplicationsResponseBody {
-  applications: Application[]
+type View = 'board' | 'table'
+
+interface TrackedJobsResponse {
+  jobs: TrackedJob[]
 }
 
-interface ApplicationDetailResponseBody {
-  application: Application
-  latestRun: AutomationRun | null
+// The editable shape behind the add/edit form — every field a string so inputs
+// bind cleanly; empty strings become nulls on save.
+interface FormState {
+  company: string
+  position: string
+  status: TrackedJobStatus
+  jobUrl: string
+  appliedDate: string
+  salary: string
+  contactPerson: string
+  contactUrl: string
+  location: string
+  locationType: '' | TrackedJobLocationType
+  followUpDate: string
+  notes: string
 }
 
-interface ApproveResponseBody {
-  approved: boolean
-  reason: string | null
+const EMPTY_FORM: FormState = {
+  company: '',
+  position: '',
+  status: 'not_applied',
+  jobUrl: '',
+  appliedDate: '',
+  salary: '',
+  contactPerson: '',
+  contactUrl: '',
+  location: '',
+  locationType: '',
+  followUpDate: '',
+  notes: '',
 }
 
-// Automated apply (run/submit) drives a real headless browser and is only wired
-// up for local development — gate those actions so deployed builds don't show
-// buttons that can't work. Viewing applications and materials works everywhere.
-const IS_LOCALHOST =
-  typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)
-
-const STATUS_COLUMNS: Array<{ status: ApplicationStatus; label: string }> = [
-  { status: 'draft', label: 'Draft' },
-  { status: 'ready', label: 'Ready for approval' },
-  { status: 'submitted', label: 'Submitted' },
-  { status: 'failed', label: 'Failed' },
-]
-
-const STATUS_LABELS: Record<ApplicationStatus, string> = Object.fromEntries(
-  STATUS_COLUMNS.map(({ status, label }) => [status, label]),
-) as Record<ApplicationStatus, string>
-
-// Maps an application status to the `.auto` pill variant defined in index.css:
-// draft -> plain, ready -> awaiting confirmation, submitted -> success, failed -> error.
-function statusPillClass(status: ApplicationStatus): string {
-  switch (status) {
-    case 'ready':
-      return 'auto wait'
-    case 'submitted':
-      return 'auto ok'
-    case 'failed':
-      return 'auto fail'
-    default:
-      return 'auto'
+function formFromJob(job: TrackedJob): FormState {
+  return {
+    company: job.company,
+    position: job.position,
+    status: job.status,
+    jobUrl: job.jobUrl ?? '',
+    appliedDate: job.appliedDate ?? '',
+    salary: job.salary ?? '',
+    contactPerson: job.contactPerson ?? '',
+    contactUrl: job.contactUrl ?? '',
+    location: job.location ?? '',
+    locationType: job.locationType ?? '',
+    followUpDate: job.followUpDate ?? '',
+    notes: job.notes ?? '',
   }
 }
 
-function formatDateTime(isoString: string): string {
-  return new Date(isoString).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
-}
-
-function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text
-  return `${text.slice(0, maxLength).trimEnd()}…`
-}
-
-interface TimelineEvent {
-  at: string
-  label: string
-}
-
-function buildTimeline(application: Application, latestRun: AutomationRun | null): TimelineEvent[] {
-  const events: TimelineEvent[] = [{ at: application.createdAt, label: 'Application created' }]
-
-  if (latestRun) {
-    events.push({ at: latestRun.createdAt, label: `Run #${latestRun.runNumber} started — ${latestRun.status}` })
-    if (latestRun.updatedAt !== latestRun.createdAt) {
-      events.push({ at: latestRun.updatedAt, label: `Run #${latestRun.runNumber} updated — ${latestRun.status}` })
-    }
+// Turn the string-based form into an API payload, collapsing blanks to null.
+function formToInput(form: FormState): TrackedJobInput {
+  const orNull = (value: string) => (value.trim() ? value.trim() : null)
+  return {
+    company: form.company.trim(),
+    position: form.position.trim(),
+    status: form.status,
+    jobUrl: orNull(form.jobUrl),
+    appliedDate: orNull(form.appliedDate),
+    salary: orNull(form.salary),
+    contactPerson: orNull(form.contactPerson),
+    contactUrl: orNull(form.contactUrl),
+    location: orNull(form.location),
+    locationType: form.locationType === '' ? null : form.locationType,
+    followUpDate: orNull(form.followUpDate),
+    notes: orNull(form.notes),
   }
-
-  if (application.updatedAt !== application.createdAt) {
-    events.push({ at: application.updatedAt, label: `Application updated — ${application.status}` })
-  }
-
-  return events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
 }
 
 export function ApplicationsPage() {
-  const [applications, setApplications] = useState<Application[] | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
+  const [jobs, setJobs] = useState<TrackedJob[] | null>(null)
   const [listError, setListError] = useState<string | null>(null)
-  const [statusFilter, setStatusFilter] = useState<ApplicationStatus | null>(null)
+  const [view, setView] = useState<View>('board')
+  const [statusFilter, setStatusFilter] = useState<TrackedJobStatus | null>(null)
+  const [search, setSearch] = useState('')
 
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
-  const [detail, setDetail] = useState<ApplicationDetailResponseBody | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
-  const [detailError, setDetailError] = useState<string | null>(null)
+  // Drawer drives both add (editing === null) and edit (editing is the job).
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [editing, setEditing] = useState<TrackedJob | null>(null)
+  const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
-  const [materials, setMaterials] = useState<Materials | null>(null)
-  const [materialsStatus, setMaterialsStatus] = useState<'idle' | 'loading' | 'ready' | 'none' | 'error'>('idle')
+  const [importOpen, setImportOpen] = useState(false)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragOverStatus, setDragOverStatus] = useState<TrackedJobStatus | null>(null)
 
-  // Tracks which lifecycle action is in flight so only its button shows a busy
-  // state and the others disable while it runs.
-  const [actionBusy, setActionBusy] = useState<null | 'generate' | 'run' | 'answers' | 'submit' | 'download'>(null)
-  const [actionMessage, setActionMessage] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
-  // Draft edits for the required answers, keyed by question, before they're saved.
-  const [answerDraft, setAnswerDraft] = useState<Record<string, string>>({})
-  // Which document was just copied to the clipboard (for transient "Copied" feedback).
-  const [copied, setCopied] = useState<string | null>(null)
-
-  function copyText(key: string, text: string) {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(key)
-      setTimeout(() => setCopied(null), 1600)
-    })
-  }
-
-  function loadApplications() {
+  function loadJobs() {
     setListError(null)
-    apiFetch('/applications')
+    apiFetch('/job-tracking')
       .then(async (res) => {
         if (!res.ok) {
-          setListError('Failed to load applications.')
+          setListError('Failed to load tracked jobs.')
           return
         }
-        const data: ApplicationsResponseBody = await res.json()
-        setApplications(data.applications)
+        const data: TrackedJobsResponse = await res.json()
+        setJobs(data.jobs)
       })
-      .catch(() => setListError('Failed to load applications.'))
+      .catch(() => setListError('Failed to load tracked jobs.'))
   }
 
-  useEffect(() => {
-    loadApplications()
-    // Load the profile once so downloads can be named with the user's name + email.
-    apiFetch('/profile')
-      .then((res) => (res.ok ? (res.json() as Promise<Profile>) : null))
-      .then(setProfile)
-      .catch(() => setProfile(null))
-  }, [])
+  useEffect(loadJobs, [])
 
-  // Default to the first application once the list arrives, if nothing is selected yet.
-  useEffect(() => {
-    if (selectedJobId === null && applications && applications.length > 0) {
-      selectApplication(applications[0].jobId)
+  function openAdd() {
+    setEditing(null)
+    setForm(EMPTY_FORM)
+    setFormError(null)
+    setDrawerOpen(true)
+  }
+
+  function openEdit(job: TrackedJob) {
+    setEditing(job)
+    setForm(formFromJob(job))
+    setFormError(null)
+    setDrawerOpen(true)
+  }
+
+  function closeDrawer() {
+    setDrawerOpen(false)
+    setEditing(null)
+  }
+
+  async function saveForm() {
+    if (!form.company.trim() || !form.position.trim()) {
+      setFormError('Company and position are required.')
+      return
     }
-  }, [applications])
-
-  function loadDetail(jobId: string) {
-    setDetailLoading(true)
-    setDetailError(null)
-    setActionMessage(null)
-    setActionError(null)
-    apiFetch(`/applications/${encodeURIComponent(jobId)}`)
-      .then(async (res) => {
-        if (!res.ok) {
-          setDetailError('Failed to load application detail.')
-          setDetail(null)
-          return
-        }
-        const data: ApplicationDetailResponseBody = await res.json()
-        setDetail(data)
-        // Seed the editable answer drafts from whatever's stored so the inputs
-        // show current values and edits are diffed against them on save.
-        setAnswerDraft(
-          Object.fromEntries(data.application.requiredAnswers.map((a) => [a.question, a.answer ?? ''])),
-        )
-      })
-      .catch(() => {
-        setDetailError('Failed to load application detail.')
-        setDetail(null)
-      })
-      .finally(() => setDetailLoading(false))
-
-    loadMaterials(jobId)
-  }
-
-  // Materials may not exist yet for a job (generation hasn't run) — a 404 is a
-  // normal "nothing to show" state, not an error.
-  function loadMaterials(jobId: string) {
-    setMaterialsStatus('loading')
-    setMaterials(null)
-    apiFetch(`/materials/${encodeURIComponent(jobId)}`)
-      .then(async (res) => {
-        if (res.status === 404) {
-          setMaterialsStatus('none')
-          return
-        }
-        if (!res.ok) {
-          setMaterialsStatus('error')
-          return
-        }
-        const data: Materials = await res.json()
-        setMaterials(data)
-        setMaterialsStatus('ready')
-      })
-      .catch(() => setMaterialsStatus('error'))
-  }
-
-  function selectApplication(jobId: string) {
-    setSelectedJobId(jobId)
-    loadDetail(jobId)
-  }
-
-  function toggleStatusFilter(status: ApplicationStatus) {
-    setStatusFilter((current) => (current === status ? null : status))
-  }
-
-  async function readError(res: Response, fallback: string): Promise<string> {
-    const body = await res.json().catch(() => null)
-    return body?.error ?? body?.reason ?? fallback
-  }
-
-  // Generate (or regenerate) tailored materials for the selected application.
-  async function handleGenerateMaterials() {
-    if (!detail) return
-    const jobId = detail.application.jobId
-    setActionBusy('generate')
-    setActionError(null)
-    setActionMessage(null)
+    setSaving(true)
+    setFormError(null)
     try {
-      const res = await apiFetch(`/materials/${encodeURIComponent(jobId)}/generate`, { method: 'POST' })
+      const payload = formToInput(form)
+      const res = editing
+        ? await apiFetch(`/job-tracking/${editing._id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+        : await apiFetch('/job-tracking', { method: 'POST', body: JSON.stringify(payload) })
       if (!res.ok) {
-        setActionError(await readError(res, 'Failed to generate materials.'))
+        const body = await res.json().catch(() => null)
+        setFormError(body?.error ?? 'Failed to save.')
         return
       }
-      const body = await res.json()
-      if (body.status === 'deferred') {
-        setActionError(`Materials deferred: ${body.reason}`)
-        return
-      }
-      setActionMessage('Materials generated.')
-      loadDetail(jobId)
-      loadApplications()
+      closeDrawer()
+      loadJobs()
     } catch {
-      setActionError('Failed to generate materials.')
+      setFormError('Failed to save.')
     } finally {
-      setActionBusy(null)
+      setSaving(false)
     }
   }
 
-  // Download the ATS-tailored CV (latest version) for the selected application.
-  async function downloadTailoredCv(format: 'pdf' | 'docx') {
-    if (!detail) return
-    const jobId = detail.application.jobId
-    setActionBusy('download')
-    setActionError(null)
-    try {
-      // Cache-bust with the loaded materials version so a regenerated résumé is
-      // never masked by a stale cached download for the same URL.
-      const versionParam = materials?.version != null ? `&v=${materials.version}` : ''
-      const res = await apiFetch(
-        `/materials/${encodeURIComponent(jobId)}/export?doc=tailoredCv&format=${format}${versionParam}`,
-      )
-      if (!res.ok) {
-        setActionError('Failed to download tailored CV.')
-        return
-      }
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = materialFileName({
-        fullName: profile?.resume?.fullName,
-        email: profile?.email,
-        kind: 'cv',
-        ext: format,
-      })
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
-    } catch {
-      setActionError('Failed to download tailored CV.')
-    } finally {
-      setActionBusy(null)
+  async function deleteJob(job: TrackedJob) {
+    if (!window.confirm(`Remove ${job.position} at ${job.company} from your tracker?`)) return
+    const res = await apiFetch(`/job-tracking/${job._id}`, { method: 'DELETE' })
+    if (res.ok) {
+      if (editing?._id === job._id) closeDrawer()
+      loadJobs()
     }
   }
 
-  // Launch the headless-browser automation run that fills the application form.
-  async function handleRunAutomation() {
-    if (!detail) return
-    const jobId = detail.application.jobId
-    setActionBusy('run')
-    setActionError(null)
-    setActionMessage(null)
-    try {
-      const res = await apiFetch(`/automation/${encodeURIComponent(jobId)}/run`, { method: 'POST' })
-      if (!res.ok) {
-        setActionError(await readError(res, 'Failed to run automation.'))
-        return
-      }
-      setActionMessage('Automation run complete.')
-      loadDetail(jobId)
-      loadApplications()
-    } catch {
-      setActionError('Failed to run automation.')
-    } finally {
-      setActionBusy(null)
-    }
+  // Patch just the status (inline table select, or a board drop). Optimistically
+  // updates local state so the card moves instantly, then reconciles on reload.
+  async function changeStatus(job: TrackedJob, status: TrackedJobStatus, order?: number) {
+    if (job.status === status && order === undefined) return
+    setJobs((current) =>
+      (current ?? []).map((j) => (j._id === job._id ? { ...j, status, ...(order !== undefined ? { order } : {}) } : j)),
+    )
+    const body: Record<string, unknown> = { status }
+    if (order !== undefined) body.order = order
+    const res = await apiFetch(`/job-tracking/${job._id}`, { method: 'PATCH', body: JSON.stringify(body) })
+    if (!res.ok) loadJobs()
   }
-
-  // Persist the edited required answers so the run can clear the submit gate.
-  async function handleSaveAnswers() {
-    if (!detail) return
-    const jobId = detail.application.jobId
-    setActionBusy('answers')
-    setActionError(null)
-    setActionMessage(null)
-    try {
-      const answers = detail.application.requiredAnswers.map((entry) => ({
-        question: entry.question,
-        answer: answerDraft[entry.question]?.trim() ? answerDraft[entry.question].trim() : null,
-      }))
-      const res = await apiFetch(`/applications/${encodeURIComponent(jobId)}/answers`, {
-        method: 'PUT',
-        body: JSON.stringify({ answers }),
-      })
-      if (!res.ok) {
-        setActionError(await readError(res, 'Failed to save answers.'))
-        return
-      }
-      setActionMessage('Answers saved.')
-      loadDetail(jobId)
-    } catch {
-      setActionError('Failed to save answers.')
-    } finally {
-      setActionBusy(null)
-    }
-  }
-
-  // Approve the run, then — if approval succeeds — submit the application. These
-  // are two backend steps; the UI drives them as one "Confirm & submit" action.
-  async function handleConfirmAndSubmit() {
-    if (!detail?.latestRun) return
-    const jobId = detail.application.jobId
-    const runNumber = detail.latestRun.runNumber
-    setActionBusy('submit')
-    setActionError(null)
-    setActionMessage(null)
-    try {
-      const approveRes = await apiFetch(
-        `/applications/${encodeURIComponent(jobId)}/runs/${runNumber}/approve`,
-        { method: 'POST' },
-      )
-      if (!approveRes.ok) {
-        setActionError(await readError(approveRes, 'Failed to approve this application.'))
-        return
-      }
-      const approval: ApproveResponseBody = await approveRes.json()
-      if (!approval.approved) {
-        setActionError(approval.reason ?? 'Not approved — resolve the required answers first.')
-        return
-      }
-
-      const submitRes = await apiFetch(`/automation/${encodeURIComponent(jobId)}/runs/${runNumber}/submit`, {
-        method: 'POST',
-      })
-      if (!submitRes.ok) {
-        setActionError(await readError(submitRes, 'Approved, but submission failed.'))
-        loadDetail(jobId)
-        loadApplications()
-        return
-      }
-      const run: AutomationRun = await submitRes.json()
-      setActionMessage(run.status === 'submitted' ? 'Application submitted.' : 'Submission attempt recorded as failed.')
-      loadDetail(jobId)
-      loadApplications()
-    } catch {
-      setActionError('Failed to submit this application.')
-    } finally {
-      setActionBusy(null)
-    }
-  }
-
-  const requiredAnswersProgress = useMemo(() => {
-    const requiredAnswers = detail?.application.requiredAnswers ?? []
-    const answered = requiredAnswers.filter((item) => item.answer !== null).length
-    const total = requiredAnswers.length
-    const percentage = total === 0 ? 0 : Math.round((answered / total) * 100)
-    return { answered, total, percentage }
-  }, [detail])
 
   const counts = useMemo(() => {
-    const base: Record<ApplicationStatus, number> = { draft: 0, ready: 0, submitted: 0, failed: 0 }
-    for (const application of applications ?? []) {
-      base[application.status] += 1
-    }
+    const base = {} as Record<TrackedJobStatus, number>
+    for (const meta of STATUS_META) base[meta.status] = 0
+    for (const job of jobs ?? []) base[job.status] = (base[job.status] ?? 0) + 1
     return base
-  }, [applications])
+  }, [jobs])
 
-  // The master list: every application, narrowed to the active status filter.
-  const filteredApplications = useMemo(
-    () => (applications ?? []).filter((application) => !statusFilter || application.status === statusFilter),
-    [applications, statusFilter],
-  )
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    return (jobs ?? []).filter((job) => {
+      if (statusFilter && job.status !== statusFilter) return false
+      if (!term) return true
+      return (
+        job.company.toLowerCase().includes(term) ||
+        job.position.toLowerCase().includes(term) ||
+        (job.location ?? '').toLowerCase().includes(term) ||
+        (job.contactPerson ?? '').toLowerCase().includes(term)
+      )
+    })
+  }, [jobs, statusFilter, search])
 
-  const hasApplications = (applications?.length ?? 0) > 0
+  const hasJobs = (jobs?.length ?? 0) > 0
+
+  // Board drop: move the dragged job into `status` at the top of that column.
+  function handleDrop(status: TrackedJobStatus) {
+    const job = (jobs ?? []).find((j) => j._id === dragId)
+    setDragId(null)
+    setDragOverStatus(null)
+    if (!job) return
+    const columnMin = Math.min(0, ...(jobs ?? []).filter((j) => j.status === status).map((j) => j.order))
+    changeStatus(job, status, columnMin - 1)
+  }
+
+  function set<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((current) => ({ ...current, [key]: value }))
+  }
 
   return (
     <>
       <header className="page-head">
         <div className="wrap">
-          <div className="kicker">Applications</div>
-          <h1>Track every application in flight.</h1>
-          <p>From drafted materials to a submitted application, see where each one stands and approve the ones ready to go.</p>
+          <div className="kicker">Application Tracking</div>
+          <h1>Track every application in one place.</h1>
+          <p>From first contact to a signed offer — follow where each application stands and never miss a follow-up.</p>
         </div>
       </header>
 
@@ -417,319 +252,648 @@ export function ApplicationsPage() {
             </div>
           )}
 
-          {!listError && applications === null ? (
+          {/* Toolbar: view toggle · search · actions */}
+          <div className="jt-toolbar">
+            <div className="jt-viewtoggle" role="tablist" aria-label="View">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'board'}
+                className={view === 'board' ? 'on' : ''}
+                onClick={() => setView('board')}
+              >
+                <ion-icon name="grid-outline" /> Board
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === 'table'}
+                className={view === 'table' ? 'on' : ''}
+                onClick={() => setView('table')}
+              >
+                <ion-icon name="list-outline" /> Table
+              </button>
+            </div>
+
+            <div className="jt-search">
+              <ion-icon name="search-outline" />
+              <input
+                type="text"
+                placeholder="Search company, role, contact…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+
+            <div className="jt-actions">
+              <Button variant="ghost" onClick={() => setImportOpen(true)}>
+                <ion-icon name="enter-outline" /> Import
+              </Button>
+              <Button variant="indigo" onClick={openAdd}>
+                <ion-icon name="add-outline" /> Add application
+              </Button>
+            </div>
+          </div>
+
+          {/* Stat row doubles as a status filter */}
+          {hasJobs && (
+            <div className="jt-stats">
+              <button
+                type="button"
+                className={`jt-stat${statusFilter === null ? ' on' : ''}`}
+                onClick={() => setStatusFilter(null)}
+              >
+                <div className="n">{jobs?.length ?? 0}</div>
+                <div className="l">All</div>
+              </button>
+              {STATUS_META.filter((meta) => counts[meta.status] > 0).map((meta) => (
+                <button
+                  key={meta.status}
+                  type="button"
+                  className={`jt-stat${statusFilter === meta.status ? ' on' : ''}`}
+                  onClick={() => setStatusFilter((cur) => (cur === meta.status ? null : meta.status))}
+                >
+                  <div className="n">{counts[meta.status]}</div>
+                  <div className="l">{meta.label}</div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {jobs === null && !listError ? (
             <p className="saved-empty">
               <b>Loading…</b>
             </p>
-          ) : !listError && !hasApplications ? (
+          ) : !hasJobs ? (
             <p className="saved-empty">
-              <b>No applications yet</b>
-              Generate materials from a job&apos;s detail page to start one.
+              <b>No applications tracked yet</b>
+              Add an application manually, or import one from your saved jobs and applications.
+              <span style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 16 }}>
+                <Button variant="ghost" onClick={() => setImportOpen(true)}>
+                  <ion-icon name="enter-outline" /> Import
+                </Button>
+                <Button variant="indigo" onClick={openAdd}>
+                  <ion-icon name="add-outline" /> Add your first application
+                </Button>
+              </span>
             </p>
-          ) : (
-            <>
-              <div className="app-stats">
-                {STATUS_COLUMNS.map(({ status, label }) => (
-                  <button
-                    key={status}
-                    type="button"
-                    className={`astat${statusFilter === status ? ' on' : ''}`}
-                    onClick={() => toggleStatusFilter(status)}
+          ) : view === 'board' ? (
+            <div className="jt-board">
+              {STATUS_META.map((meta) => {
+                const columnJobs = filtered
+                  .filter((job) => job.status === meta.status)
+                  .sort((a, b) => a.order - b.order)
+                return (
+                  <div
+                    key={meta.status}
+                    className={`jt-col${dragOverStatus === meta.status ? ' drop' : ''}`}
+                    onDragOver={(event) => {
+                      event.preventDefault()
+                      if (dragOverStatus !== meta.status) setDragOverStatus(meta.status)
+                    }}
+                    onDragLeave={(event) => {
+                      // Only clear when leaving the column entirely, not a child.
+                      if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+                        setDragOverStatus((cur) => (cur === meta.status ? null : cur))
+                      }
+                    }}
+                    onDrop={() => handleDrop(meta.status)}
                   >
-                    <div className="n">{counts[status]}</div>
-                    <div className="l">{label}</div>
-                  </button>
-                ))}
-              </div>
-
-              <div className="app-workspace">
-                <div className="app-list">
-                  <div className="app-list-h">
-                    <span>{statusFilter ? STATUS_LABELS[statusFilter] : 'All applications'}</span>
-                    <span className="n">{filteredApplications.length}</span>
-                  </div>
-                  {filteredApplications.map((application) => (
-                    <button
-                      key={application.jobId}
-                      type="button"
-                      className={`acard${selectedJobId === application.jobId ? ' on' : ''}`}
-                      onClick={() => selectApplication(application.jobId)}
-                    >
-                      <div className="r">
-                        <LogoChip name={application.company} />
-                        <div>
-                          <b>{application.title}</b>
-                          <small>{application.company}</small>
-                        </div>
-                      </div>
-                      <div style={{ marginTop: 10 }}>
-                        <span className={statusPillClass(application.status)}>{STATUS_LABELS[application.status]}</span>
-                      </div>
-                      <div className="foot">
-                        <span>{application.materialsVersion != null ? `v${application.materialsVersion}` : 'no materials'}</span>
-                        <span>{formatDateTime(application.updatedAt)}</span>
-                      </div>
-                    </button>
-                  ))}
-                  {filteredApplications.length === 0 && (
-                    <p style={{ color: 'var(--muted-text)', fontSize: 13, padding: '4px 2px' }}>
-                      No applications in this status.
-                    </p>
-                  )}
-                </div>
-
-                {!selectedJobId ? (
-                  <div className="app-detail-empty">Select an application to see its details.</div>
-                ) : (
-                <div className="timeline">
-                  <div className="tl-activity ev-card">
-                    <h2 style={{ fontSize: 18, marginBottom: 14 }}>Activity</h2>
-                    {detailLoading ? (
-                      <p style={{ color: 'var(--muted-text)', fontSize: 14 }}>Loading…</p>
-                    ) : detailError ? (
-                      <FormError message={detailError} />
-                    ) : detail ? (
-                      <ul className="tl">
-                        {buildTimeline(detail.application, detail.latestRun).map((event, index) => (
-                          <li key={`${event.at}-${index}`}>
-                            {event.label}
-                            <small>{formatDateTime(event.at)}</small>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
-
-                  {detail && (
-                    <div className="ev-card tl-detail">
-                      <div className="head">
-                        <div>
-                          <div className="t">Application</div>
-                          <div className="v">
-                            {detail.application.title} · {detail.application.company}
-                          </div>
-                        </div>
-                        <span className={statusPillClass(detail.application.status)}>
-                          {STATUS_LABELS[detail.application.status]}
-                        </span>
-                      </div>
-
-                      <div className="ev-kv" style={{ marginTop: 18 }}>
-                        <div>
-                          <div className="t">Updated</div>
-                          <div className="v">{formatDateTime(detail.application.updatedAt)}</div>
-                        </div>
-                        <div>
-                          <div className="t">Materials</div>
-                          <div className="v">
-                            {detail.application.materialsVersion != null ? `v${detail.application.materialsVersion}` : '—'}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="t">Latest run</div>
-                          <div className="v">{detail.latestRun ? `#${detail.latestRun.runNumber} · ${detail.latestRun.status}` : '—'}</div>
-                        </div>
-                        <div>
-                          <div className="t">Manual apply</div>
-                          <div className="v">
-                            {detail.latestRun?.manualApplyUrl ? (
-                              <a href={detail.latestRun.manualApplyUrl} target="_blank" rel="noreferrer">
-                                Open link
-                              </a>
-                            ) : (
-                              '—'
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {detail.latestRun?.blockReason && (
-                        <div style={{ marginTop: 14 }}>
-                          <div className="ev-kv">
-                            <div>
-                              <div className="t">Blocked</div>
-                              <div className="v warn">{detail.latestRun.blockReason}</div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {detail.application.requiredAnswers.length > 0 && (
-                        <div style={{ marginTop: 18 }}>
-                          <div className="t" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--faint)' }}>
-                            Required answers
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 }}>
-                            <ScoreRing score={requiredAnswersProgress.percentage} size={40} strokeWidth={4} />
-                            <span style={{ fontSize: 13, color: 'var(--muted-text)' }}>
-                              {requiredAnswersProgress.answered} of {requiredAnswersProgress.total} answered
-                            </span>
-                          </div>
-                          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            {detail.application.requiredAnswers.map((item, index) => (
-                              <label key={index} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
-                                <span style={{ color: 'var(--fg-2)' }}>{item.question}</span>
-                                <input
-                                  className="field"
-                                  type="text"
-                                  value={answerDraft[item.question] ?? ''}
-                                  placeholder="Your answer"
-                                  disabled={detail.application.status === 'submitted' || actionBusy !== null}
-                                  onChange={(event) =>
-                                    setAnswerDraft((current) => ({ ...current, [item.question]: event.target.value }))
-                                  }
-                                />
-                              </label>
-                            ))}
-                          </div>
-                          {detail.application.status !== 'submitted' && (
-                            <div style={{ marginTop: 10 }}>
-                              <Button variant="ghost" onClick={handleSaveAnswers} disabled={actionBusy !== null}>
-                                {actionBusy === 'answers' ? 'Saving…' : 'Save answers'}
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      <div style={{ marginTop: 18 }}>
-                        <div className="t" style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--faint)' }}>
-                          Materials preview
-                        </div>
-                        {(materialsStatus === 'loading' || actionBusy === 'generate' || actionBusy === 'run') && (
-                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }} aria-hidden="true">
-                            <div className="sk" style={{ width: '32%' }} />
-                            <div className="sk" style={{ width: '100%' }} />
-                            <div className="sk" style={{ width: '92%' }} />
-                            <div className="sk" style={{ width: '70%' }} />
-                            <div className="sk" style={{ width: '28%', marginTop: 8 }} />
-                            <div className="sk" style={{ width: '96%' }} />
-                            <div className="sk" style={{ width: '60%' }} />
-                          </div>
-                        )}
-                        {materialsStatus === 'none' && actionBusy !== 'generate' && actionBusy !== 'run' && (
-                          <p style={{ marginTop: 8, color: 'var(--muted-text)', fontSize: 13.5 }}>
-                            No materials generated for this application yet.
-                          </p>
-                        )}
-                        {materialsStatus === 'error' && (
-                          <div style={{ marginTop: 8 }}>
-                            <FormError message="Failed to load materials." />
-                          </div>
-                        )}
-                        {materialsStatus === 'ready' && materials && actionBusy !== 'generate' && actionBusy !== 'run' && (
-                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            <div>
-                              <div className="dp-h">
-                                <span>Cover letter</span>
-                                <button
-                                  type="button"
-                                  className={`copy-btn${copied === 'cover' ? ' ok' : ''}`}
-                                  onClick={() => copyText('cover', materials.coverLetter)}
-                                >
-                                  {copied === 'cover' ? 'Copied' : 'Copy'}
-                                </button>
-                              </div>
-                              <p style={{ marginTop: 4, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
-                                {truncate(materials.coverLetter, 320)}
-                              </p>
-                            </div>
-                            <div>
-                              <div className="dp-h">
-                                <span>Tailored CV</span>
-                                <button
-                                  type="button"
-                                  className={`copy-btn${copied === 'cv' ? ' ok' : ''}`}
-                                  onClick={() => copyText('cv', materials.tailoredCv)}
-                                >
-                                  {copied === 'cv' ? 'Copied' : 'Copy'}
-                                </button>
-                              </div>
-                              <p style={{ marginTop: 4, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
-                                {truncate(materials.tailoredCv, 320)}
-                              </p>
-                              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                                <Button variant="ghost" onClick={() => downloadTailoredCv('pdf')} disabled={actionBusy !== null}>
-                                  {actionBusy === 'download' ? 'Preparing…' : 'Download CV (PDF)'}
-                                </Button>
-                                <Button variant="ghost" onClick={() => downloadTailoredCv('docx')} disabled={actionBusy !== null}>
-                                  Download CV (DOCX)
-                                </Button>
-                              </div>
-                            </div>
-                            {materials.unmetRequirements.length > 0 && (
-                              <div>
-                                <strong style={{ fontSize: 13 }}>Unmet requirements</strong>
-                                <ul style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13.5 }}>
-                                  {materials.unmetRequirements.map((requirement, index) => (
-                                    <li key={index}>{requirement}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {actionError && (
-                        <div style={{ marginTop: 14 }}>
-                          <FormError message={actionError} />
-                        </div>
-                      )}
-
-                      {actionMessage && (
-                        <p style={{ marginTop: 14, fontSize: 13.5, color: 'var(--cyan-text)' }}>{actionMessage}</p>
-                      )}
-
-                      {detail.application.status === 'submitted' ? (
-                        <p style={{ marginTop: 18, fontSize: 13.5, color: 'var(--cyan-text)' }}>
-                          This application has been submitted — no further action needed.
-                        </p>
-                      ) : !IS_LOCALHOST ? (
-                        <p style={{ marginTop: 18, fontSize: 13, color: 'var(--muted-text)' }}>
-                          Automated apply (run &amp; submit) is available in local development. You can still generate and
-                          copy materials to apply manually.
-                        </p>
-                      ) : (
-                        <div className="ev-actions" style={{ flexWrap: 'wrap', gap: 10 }}>
-                          <Button variant="ghost" onClick={handleGenerateMaterials} disabled={actionBusy !== null}>
-                            {actionBusy === 'generate'
-                              ? 'Generating…'
-                              : materialsStatus === 'ready'
-                                ? 'Regenerate materials'
-                                : 'Generate materials'}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            onClick={handleRunAutomation}
-                            disabled={actionBusy !== null || materialsStatus !== 'ready'}
-                          >
-                            {actionBusy === 'run' ? 'Running…' : detail.latestRun ? 'Re-run automation' : 'Run automation'}
-                          </Button>
-                          <Button
-                            variant="indigo"
-                            onClick={handleConfirmAndSubmit}
-                            disabled={
-                              actionBusy !== null ||
-                              !detail.latestRun ||
-                              (detail.latestRun.status !== 'ready_for_approval' &&
-                                detail.latestRun.status !== 'approved') ||
-                              requiredAnswersProgress.answered < requiredAnswersProgress.total
-                            }
-                          >
-                            {actionBusy === 'submit' ? 'Submitting…' : 'Confirm & submit'}
-                          </Button>
-                        </div>
-                      )}
+                    <div className="jt-col-h">
+                      <span className={`jt-dot ${meta.tone}`} aria-hidden="true" />
+                      <span className="t">{meta.label}</span>
+                      <span className="n">{columnJobs.length}</span>
                     </div>
-                  )}
-                </div>
-                )}
-              </div>
-            </>
+                    <div className="jt-col-body">
+                      {columnJobs.map((job) => {
+                        const overdue = isFollowUpOverdue(job.followUpDate, job.status)
+                        return (
+                          <div
+                            key={job._id}
+                            role="button"
+                            tabIndex={0}
+                            className={`jt-card${dragId === job._id ? ' dragging' : ''}`}
+                            draggable
+                            onDragStart={(event) => {
+                              // Some browsers need data set on the transfer for the drag to initiate.
+                              event.dataTransfer.effectAllowed = 'move'
+                              event.dataTransfer.setData('text/plain', job._id ?? '')
+                              setDragId(job._id ?? null)
+                            }}
+                            onDragEnd={() => {
+                              setDragId(null)
+                              setDragOverStatus(null)
+                            }}
+                            onClick={() => openEdit(job)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                openEdit(job)
+                              }
+                            }}
+                          >
+                            <div className="r">
+                              <LogoChip name={job.company} size={30} />
+                              <div className="min0">
+                                <b>{job.position}</b>
+                                <small>{job.company}</small>
+                              </div>
+                            </div>
+                            <div className="jt-card-meta">
+                              {job.locationType && (
+                                <span className="jt-tag">{LOCATION_TYPE_LABELS[job.locationType]}</span>
+                              )}
+                              {job.location && <span className="jt-tag muted">{job.location}</span>}
+                              {job.materialsJobId && (
+                                <span className="jt-tag docs" title="Résumé & cover letter generated">
+                                  <ion-icon name="sparkles-outline" /> Docs
+                                </span>
+                              )}
+                            </div>
+                            {job.followUpDate && (
+                              <div className={`jt-followup${overdue ? ' overdue' : ''}`}>
+                                <ion-icon name="calendar-outline" />
+                                {overdue ? 'Overdue · ' : 'Follow up · '}
+                                {formatDate(job.followUpDate)}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                      {columnJobs.length === 0 && <div className="jt-col-empty">Drop here</div>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="jt-table-wrap">
+              <table className="jt-table">
+                <thead>
+                  <tr>
+                    <th>Company / Role</th>
+                    <th>Status</th>
+                    <th>Location</th>
+                    <th>Salary</th>
+                    <th>Applied</th>
+                    <th>Follow-up</th>
+                    <th>Contact</th>
+                    <th aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((job) => {
+                    const overdue = isFollowUpOverdue(job.followUpDate, job.status)
+                    return (
+                      <tr key={job._id}>
+                        <td>
+                          <div className="jt-cell-co">
+                            <LogoChip name={job.company} size={30} />
+                            <div className="min0">
+                              <b>{job.position}</b>
+                              {job.jobUrl ? (
+                                <a href={job.jobUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+                                  {job.company} <ion-icon name="open-outline" />
+                                </a>
+                              ) : (
+                                <small>{job.company}</small>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <select
+                            className={`jt-status-select ${statusPillClass(job.status)}`}
+                            value={job.status}
+                            onChange={(event) => changeStatus(job, event.target.value as TrackedJobStatus)}
+                          >
+                            {STATUS_META.map((meta) => (
+                              <option key={meta.status} value={meta.status}>
+                                {meta.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          {job.location || '—'}
+                          {job.locationType && <span className="jt-tag" style={{ marginLeft: 6 }}>{LOCATION_TYPE_LABELS[job.locationType]}</span>}
+                        </td>
+                        <td>{job.salary || '—'}</td>
+                        <td>{formatDate(job.appliedDate)}</td>
+                        <td className={overdue ? 'jt-overdue-cell' : ''}>{formatDate(job.followUpDate)}</td>
+                        <td>
+                          {job.contactUrl ? (
+                            <a href={job.contactUrl} target="_blank" rel="noreferrer">
+                              {job.contactPerson || 'Contact'}
+                            </a>
+                          ) : (
+                            job.contactPerson || '—'
+                          )}
+                        </td>
+                        <td>
+                          <div className="jt-row-actions">
+                            <button type="button" title="Edit" onClick={() => openEdit(job)}>
+                              <ion-icon name="create-outline" />
+                            </button>
+                            <button type="button" title="Remove" onClick={() => deleteJob(job)}>
+                              <ion-icon name="trash-outline" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {filtered.length === 0 && (
+                <p style={{ color: 'var(--muted-text)', fontSize: 13.5, padding: '16px 2px' }}>No jobs match this filter.</p>
+              )}
+            </div>
           )}
         </div>
       </section>
+
+      {drawerOpen && (
+        <JobDrawer
+          editing={editing}
+          form={form}
+          set={set}
+          error={formError}
+          saving={saving}
+          onClose={closeDrawer}
+          onSave={saveForm}
+          onDelete={editing ? () => deleteJob(editing) : undefined}
+        />
+      )}
+
+      {importOpen && (
+        <ImportModal
+          onClose={() => setImportOpen(false)}
+          onImported={() => {
+            setImportOpen(false)
+            loadJobs()
+          }}
+        />
+      )}
     </>
+  )
+}
+
+// --- Generated materials panel (shown in the edit drawer) ------------------
+
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text
+  return `${text.slice(0, max).trimEnd()}…`
+}
+
+function MaterialsPanel({ materialsJobId, company }: { materialsJobId: string; company: string }) {
+  const [materials, setMaterials] = useState<Materials | null>(null)
+  const [status, setStatus] = useState<'loading' | 'ready' | 'none' | 'error'>('loading')
+  const [copied, setCopied] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState<string | null>(null)
+
+  useEffect(() => {
+    setStatus('loading')
+    apiFetch(`/materials/${encodeURIComponent(materialsJobId)}`)
+      .then(async (res) => {
+        if (res.status === 404) {
+          setStatus('none')
+          return
+        }
+        if (!res.ok) {
+          setStatus('error')
+          return
+        }
+        setMaterials(await res.json())
+        setStatus('ready')
+      })
+      .catch(() => setStatus('error'))
+  }, [materialsJobId])
+
+  function copy(key: string, text: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key)
+      setTimeout(() => setCopied(null), 1500)
+    })
+  }
+
+  async function download(doc: 'tailoredCv' | 'coverLetter', format: 'pdf' | 'docx') {
+    const key = `${doc}-${format}`
+    setDownloading(key)
+    try {
+      const version = materials?.version != null ? `&v=${materials.version}` : ''
+      const res = await apiFetch(
+        `/materials/${encodeURIComponent(materialsJobId)}/export?doc=${doc}&format=${format}${version}`,
+      )
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const safeCompany = company.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
+      link.href = url
+      link.download = `${safeCompany}-${doc === 'tailoredCv' ? 'resume' : 'cover-letter'}.${format}`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } finally {
+      setDownloading(null)
+    }
+  }
+
+  const docs: Array<{ key: 'coverLetter' | 'tailoredCv'; label: string }> = [
+    { key: 'tailoredCv', label: 'Résumé (ATS)' },
+    { key: 'coverLetter', label: 'Cover letter' },
+  ]
+
+  return (
+    <div className="jt-materials">
+      <div className="jt-materials-h">
+        <ion-icon name="sparkles-outline" />
+        Generated materials
+      </div>
+      {status === 'loading' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} aria-hidden="true">
+          <div className="sk" style={{ width: '40%' }} />
+          <div className="sk" style={{ width: '100%' }} />
+          <div className="sk" style={{ width: '85%' }} />
+        </div>
+      )}
+      {status === 'none' && (
+        <p className="jt-materials-empty">
+          No résumé or cover letter generated for this job yet. Generate them from the job&apos;s detail page.
+        </p>
+      )}
+      {status === 'error' && <FormError message="Failed to load generated materials." />}
+      {status === 'ready' && materials && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {docs.map(({ key, label }) => (
+            <div key={key} className="jt-doc">
+              <div className="jt-doc-h">
+                <span>{label}</span>
+                <button
+                  type="button"
+                  className={`jt-copy${copied === key ? ' ok' : ''}`}
+                  onClick={() => copy(key, materials[key])}
+                >
+                  {copied === key ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+              <p className="jt-doc-preview">{truncate(materials[key], 360)}</p>
+              <div className="jt-doc-actions">
+                <Button variant="ghost" onClick={() => download(key, 'pdf')} disabled={downloading !== null}>
+                  <ion-icon name="download-outline" /> {downloading === `${key}-pdf` ? 'Preparing…' : 'PDF'}
+                </Button>
+                <Button variant="ghost" onClick={() => download(key, 'docx')} disabled={downloading !== null}>
+                  <ion-icon name="download-outline" /> {downloading === `${key}-docx` ? 'Preparing…' : 'DOCX'}
+                </Button>
+              </div>
+            </div>
+          ))}
+          {materials.unmetRequirements.length > 0 && (
+            <div className="jt-doc">
+              <div className="jt-doc-h">
+                <span>Unmet requirements</span>
+              </div>
+              <ul className="jt-unmet">
+                {materials.unmetRequirements.map((req, index) => (
+                  <li key={index}>{req}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// --- Add / edit drawer -----------------------------------------------------
+
+interface JobDrawerProps {
+  editing: TrackedJob | null
+  form: FormState
+  set: <K extends keyof FormState>(key: K, value: FormState[K]) => void
+  error: string | null
+  saving: boolean
+  onClose: () => void
+  onSave: () => void
+  onDelete?: () => void
+}
+
+function JobDrawer({ editing, form, set, error, saving, onClose, onSave, onDelete }: JobDrawerProps) {
+  return (
+    <div className="jt-overlay" onClick={onClose}>
+      <div className="jt-drawer" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div className="jt-drawer-h">
+          <h2>{editing ? 'Edit application' : 'Add application'}</h2>
+          <button type="button" className="jt-icon-btn" onClick={onClose} aria-label="Close">
+            <ion-icon name="close-outline" />
+          </button>
+        </div>
+
+        <div className="jt-drawer-body">
+          <div className="jt-fgrid">
+            <label className="jt-field">
+              <span>Company *</span>
+              <input value={form.company} onChange={(e) => set('company', e.target.value)} placeholder="Acme Inc." />
+            </label>
+            <label className="jt-field">
+              <span>Position *</span>
+              <input value={form.position} onChange={(e) => set('position', e.target.value)} placeholder="Senior Engineer" />
+            </label>
+            <label className="jt-field">
+              <span>Status</span>
+              <select value={form.status} onChange={(e) => set('status', e.target.value as TrackedJobStatus)}>
+                {STATUS_META.map((meta) => (
+                  <option key={meta.status} value={meta.status}>
+                    {meta.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="jt-field">
+              <span>Location type</span>
+              <select value={form.locationType} onChange={(e) => set('locationType', e.target.value as FormState['locationType'])}>
+                <option value="">—</option>
+                {LOCATION_TYPE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {LOCATION_TYPE_LABELS[option]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="jt-field">
+              <span>Location</span>
+              <input value={form.location} onChange={(e) => set('location', e.target.value)} placeholder="Dhaka / Remote" />
+            </label>
+            <label className="jt-field">
+              <span>Salary</span>
+              <input value={form.salary} onChange={(e) => set('salary', e.target.value)} placeholder="BDT 160,000–210,000" />
+            </label>
+            <label className="jt-field">
+              <span>Applied date</span>
+              <input type="date" value={form.appliedDate} onChange={(e) => set('appliedDate', e.target.value)} />
+            </label>
+            <label className="jt-field">
+              <span>Follow-up date</span>
+              <input type="date" value={form.followUpDate} onChange={(e) => set('followUpDate', e.target.value)} />
+            </label>
+            <label className="jt-field full">
+              <span>Job URL</span>
+              <input value={form.jobUrl} onChange={(e) => set('jobUrl', e.target.value)} placeholder="https://…" />
+            </label>
+            <label className="jt-field">
+              <span>Contact person</span>
+              <input value={form.contactPerson} onChange={(e) => set('contactPerson', e.target.value)} placeholder="Name" />
+            </label>
+            <label className="jt-field">
+              <span>Contact URL</span>
+              <input value={form.contactUrl} onChange={(e) => set('contactUrl', e.target.value)} placeholder="https://linkedin.com/…" />
+            </label>
+            <label className="jt-field full">
+              <span>Notes</span>
+              <textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Anything worth remembering…" rows={4} />
+            </label>
+          </div>
+
+          {editing?.materialsJobId && (
+            <MaterialsPanel materialsJobId={editing.materialsJobId} company={editing.company} />
+          )}
+
+          {error && (
+            <div style={{ marginTop: 14 }}>
+              <FormError message={error} />
+            </div>
+          )}
+        </div>
+
+        <div className="jt-drawer-foot">
+          {onDelete && (
+            <Button variant="ghost" onClick={onDelete} disabled={saving}>
+              <ion-icon name="trash-outline" /> Remove
+            </Button>
+          )}
+          <div style={{ flex: 1 }} />
+          <Button variant="ghost" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button variant="indigo" onClick={onSave} disabled={saving}>
+            {saving ? 'Saving…' : editing ? 'Save changes' : 'Add application'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// --- Import modal ----------------------------------------------------------
+
+interface ImportSource {
+  kind: 'userJob' | 'application'
+  id: string
+  title: string
+  subtitle: string
+}
+
+function ImportModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+  const [sources, setSources] = useState<ImportSource[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  useEffect(() => {
+    Promise.all([
+      apiFetch('/user-jobs')
+        .then((res) => (res.ok ? res.json() : { jobs: [] }))
+        .catch(() => ({ jobs: [] })),
+      apiFetch('/applications')
+        .then((res) => (res.ok ? res.json() : { applications: [] }))
+        .catch(() => ({ applications: [] })),
+    ])
+      .then(([userJobsBody, appsBody]) => {
+        const userJobs: ImportSource[] = (userJobsBody.jobs as UserJob[]).map((job) => ({
+          kind: 'userJob',
+          id: job._id ?? '',
+          title: job.title,
+          subtitle: job.company,
+        }))
+        const apps: ImportSource[] = (appsBody.applications as Application[]).map((app) => ({
+          kind: 'application',
+          id: app.jobId,
+          title: app.title,
+          subtitle: app.company,
+        }))
+        setSources([...userJobs, ...apps])
+      })
+      .catch(() => setError('Failed to load importable jobs.'))
+  }, [])
+
+  async function importOne(source: ImportSource) {
+    setBusyId(source.id)
+    setError(null)
+    try {
+      const res = await apiFetch('/job-tracking/import', {
+        method: 'POST',
+        body: JSON.stringify({ kind: source.kind, id: source.id }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        setError(body?.error ?? 'Failed to import.')
+        return
+      }
+      onImported()
+    } catch {
+      setError('Failed to import.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div className="jt-overlay" onClick={onClose}>
+      <div className="jt-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <div className="jt-drawer-h">
+          <h2>Import an application</h2>
+          <button type="button" className="jt-icon-btn" onClick={onClose} aria-label="Close">
+            <ion-icon name="close-outline" />
+          </button>
+        </div>
+        <div className="jt-modal-body">
+          <p style={{ color: 'var(--muted-text)', fontSize: 13.5, marginBottom: 14 }}>
+            Pull a job you already saved or started an application for into your tracker.
+          </p>
+          {error && (
+            <div style={{ marginBottom: 12 }}>
+              <FormError message={error} />
+            </div>
+          )}
+          {sources === null ? (
+            <p style={{ color: 'var(--muted-text)', fontSize: 14 }}>Loading…</p>
+          ) : sources.length === 0 ? (
+            <p className="saved-empty" style={{ padding: 28 }}>
+              <b>Nothing to import</b>
+              Save a job or start an application first.
+            </p>
+          ) : (
+            <div className="jt-import-list">
+              {sources.map((source) => (
+                <div key={`${source.kind}-${source.id}`} className="jt-import-row">
+                  <LogoChip name={source.subtitle} size={30} />
+                  <div className="min0">
+                    <b>{source.title}</b>
+                    <small>
+                      {source.subtitle} · {source.kind === 'userJob' ? 'Saved job' : 'Application'}
+                    </small>
+                  </div>
+                  <Button variant="ghost" onClick={() => importOne(source)} disabled={busyId === source.id}>
+                    {busyId === source.id ? 'Importing…' : 'Import'}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }

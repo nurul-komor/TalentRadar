@@ -60,6 +60,33 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+// Programming-language filter. Each option maps to a regex matched against a
+// job's title, description, and extracted required skills. Patterns are tuned
+// to the quirks of language names: word boundaries keep `java` from matching
+// `javascript`, `go` also accepts `golang`, and `c#`/`c++` match their symbols.
+const LANGUAGE_PATTERNS: Record<string, string> = {
+  python: '\\bpython\\b',
+  typescript: '\\btypescript\\b',
+  javascript: '\\bjavascript\\b',
+  java: '\\bjava\\b',
+  go: '\\b(?:golang|go)\\b',
+  csharp: '(?:c#|\\bc[-\\s]?sharp\\b|\\.net\\b)',
+  php: '\\bphp\\b',
+  cpp: '(?:c\\+\\+|\\bcpp\\b)',
+  kotlin: '\\bkotlin\\b',
+  rust: '\\brust\\b',
+}
+
+function parseLanguages(raw: string | undefined): string[] | undefined {
+  if (!raw) return undefined
+  const selected = raw
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value in LANGUAGE_PATTERNS)
+  const deduped = [...new Set(selected)]
+  return deduped.length ? deduped : undefined
+}
+
 function buildJobsFilter(query: {
   status?: JobStatus
   sourceId?: JobSourceId
@@ -70,8 +97,12 @@ function buildJobsFilter(query: {
   salaryMin?: number
   salaryMax?: number
   discoveredAfter?: string
+  languages?: string[]
 }): Filter<Job> {
   const filter: Filter<Job> = {}
+  // Each `$or` group lives under `$and` so multiple text filters (keyword +
+  // language) compose instead of one overwriting the other's `$or` key.
+  const andGroups: Filter<Job>[] = []
   if (query.status) filter.status = query.status
   if (query.sourceId) filter.sourceId = query.sourceId
   if (query.category === 'government') filter.sourceId = { $in: GOVT_JOB_SOURCE_IDS }
@@ -80,11 +111,25 @@ function buildJobsFilter(query: {
   if (query.company) filter.company = { $regex: `^${escapeRegex(query.company)}$`, $options: 'i' }
   if (query.keyword) {
     const pattern = escapeRegex(query.keyword)
-    filter.$or = [{ title: { $regex: pattern, $options: 'i' } }, { company: { $regex: pattern, $options: 'i' } }]
+    andGroups.push({
+      $or: [{ title: { $regex: pattern, $options: 'i' } }, { company: { $regex: pattern, $options: 'i' } }],
+    })
+  }
+  if (query.languages && query.languages.length > 0) {
+    // Match ANY selected language, across the fields most likely to name it.
+    const pattern = query.languages.map((key) => LANGUAGE_PATTERNS[key]).join('|')
+    andGroups.push({
+      $or: [
+        { title: { $regex: pattern, $options: 'i' } },
+        { rawDescription: { $regex: pattern, $options: 'i' } },
+        { 'extractedRequirements.requiredSkills': { $regex: pattern, $options: 'i' } },
+      ],
+    })
   }
   if (query.salaryMin !== undefined) filter.salaryMax = { $gte: query.salaryMin }
   if (query.salaryMax !== undefined) filter.salaryMin = { $lte: query.salaryMax }
   if (query.discoveredAfter) filter.discoveredAt = { $gte: query.discoveredAfter }
+  if (andGroups.length > 0) filter.$and = andGroups
   return filter
 }
 
@@ -104,6 +149,7 @@ export function createJobsRoutes(db: Db, jwtSecret: string, sources: JobSource[]
       salaryMin: parseSalaryBound(c.req.query('salaryMin')),
       salaryMax: parseSalaryBound(c.req.query('salaryMax')),
       discoveredAfter: parseIsoDate(c.req.query('discoveredAfter')),
+      languages: parseLanguages(c.req.query('languages')),
     })
 
     const jobs = db.collection<Job>('jobs')

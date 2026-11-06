@@ -14,6 +14,7 @@ import { createUserJobsRoutes } from './routes/userJobs.js'
 import { createJobPageExtractor } from './userJobs/userJobsService.js'
 import { createApplicationsRoutes } from './routes/applications.js'
 import { createAutomationRoutes } from './routes/automation.js'
+import { createJobTrackingRoutes } from './routes/jobTracking.js'
 import { remoteOkSource } from './discovery/sources/remoteok.js'
 import { weWorkRemotelySource } from './discovery/sources/weworkremotely.js'
 import { himalayasSource } from './discovery/sources/himalayas.js'
@@ -69,6 +70,7 @@ export function mountRoutes(
   app.route('/cron', createCronRoutes(db, cronSecret, sources))
   app.route('/applications', createApplicationsRoutes(db, jwtSecret))
   app.route('/automation', createAutomationRoutes(db, jwtSecret))
+  app.route('/job-tracking', createJobTrackingRoutes(db, jwtSecret))
   // User-added jobs work with or without an LLM: the URL preview uses the
   // configured provider when present and falls back to heuristic extraction
   // otherwise, so this route mounts unconditionally.

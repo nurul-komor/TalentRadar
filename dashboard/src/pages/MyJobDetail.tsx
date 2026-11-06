@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import type { UserJob, UserJobVisibility } from '@job-hunter/shared'
+import type { Profile, UserJob, UserJobVisibility } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { AppNav } from '../components/Nav'
 import { FormError } from '../components/FormError'
 import { Pill } from '../components/Pill'
 import { LogoChip } from '../components/LogoChip'
+import { ApplyDrawer } from '../components/ApplyDrawer'
 
 function formatSalary(job: Pick<UserJob, 'salaryMin' | 'salaryMax'>): string {
   if (job.salaryMin == null && job.salaryMax == null) return '—'
@@ -33,8 +34,10 @@ export function MyJobDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [job, setJob] = useState<UserJob | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   useEffect(() => {
     apiFetch(`/user-jobs/${id}`).then(async (res) => {
@@ -44,6 +47,10 @@ export function MyJobDetailPage() {
       }
       setJob(await res.json())
     })
+    apiFetch('/profile')
+      .then((res) => (res.ok ? (res.json() as Promise<Profile>) : null))
+      .then(setProfile)
+      .catch(() => setProfile(null))
   }, [id])
 
   async function toggleVisibility() {
@@ -193,17 +200,9 @@ export function MyJobDetailPage() {
 
           <div className="ev-card">
             <div className="ev-actions">
-              {job.url ? (
-                <a href={job.url} target="_blank" rel="noreferrer" className="btn btn-indigo">
-                  <ion-icon name="open-outline" />
-                  Apply
-                </a>
-              ) : (
-                <button type="button" className="btn btn-indigo" disabled title="No application link on this job">
-                  <ion-icon name="open-outline" />
-                  Apply
-                </button>
-              )}
+              <button type="button" className="btn btn-indigo" onClick={() => setDrawerOpen(true)}>
+                Apply
+              </button>
               <button type="button" className="btn btn-ghost" disabled={busy} onClick={toggleVisibility}>
                 Make {job.visibility === 'private' ? 'public' : 'private'}
               </button>
@@ -215,6 +214,18 @@ export function MyJobDetailPage() {
           </div>
         </aside>
       </div>
+
+      <ApplyDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        sourceId="userJob"
+        sourceJobId={job._id ?? ''}
+        company={job.company}
+        title={job.title}
+        applyUrl={job.url}
+        profile={profile}
+        onProfileChange={setProfile}
+      />
     </div>
   )
 }
