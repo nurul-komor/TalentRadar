@@ -3,7 +3,11 @@ import { ObjectId, type Db, type Filter } from 'mongodb'
 import type { Job, JobSourceId, JobStatus } from '@job-hunter/shared'
 import { JobSourceIdSchema, JobStatusSchema, UNSCORED_JOB_SOURCE_IDS } from '@job-hunter/shared'
 import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
+import { verifyAuthToken } from '../lib/jwt.js'
 import type { JobSource } from '../discovery/types.js'
+import type { Embedder } from '../embeddings/embeddingProvider.js'
+import { embedProfile } from '../suggestions/embeddingService.js'
+import { cosineSimilarity, cosineToUnitScore } from '../suggestions/vectorSearch.js'
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
@@ -133,12 +137,31 @@ function buildJobsFilter(query: {
   return filter
 }
 
-export function createJobsRoutes(db: Db, jwtSecret: string, sources: JobSource[]) {
+// Reads the caller's profileId from a Bearer token if one is present and valid. The jobs feed
+// is public, so this is optional — it returns null (rather than 401) when there's no usable
+// token, letting the handler fall back to the anonymous behavior.
+async function optionalProfileId(authHeader: string | undefined, jwtSecret: string): Promise<string | null> {
+  if (!authHeader?.startsWith('Bearer ')) return null
+  try {
+    const payload = await verifyAuthToken(authHeader.slice('Bearer '.length), jwtSecret)
+    return payload.sub
+  } catch {
+    return null
+  }
+}
+
+export function createJobsRoutes(
+  db: Db,
+  jwtSecret: string,
+  sources: JobSource[],
+  embedder: Embedder | null = null
+) {
   const jobsRoutes = new Hono<{ Variables: AuthVariables }>()
 
   jobsRoutes.get('/', async (c) => {
     const limit = parseLimit(c.req.query('limit'))
     const offset = parseOffset(c.req.query('offset'))
+    const sortByMatch = c.req.query('sort') === 'match'
     const filter = buildJobsFilter({
       status: parseStatus(c.req.query('status')),
       sourceId: parseSourceId(c.req.query('sourceId')),
@@ -153,6 +176,34 @@ export function createJobsRoutes(db: Db, jwtSecret: string, sources: JobSource[]
     })
 
     const jobs = db.collection<Job>('jobs')
+
+    // "Best match": re-rank the filtered feed by semantic similarity to the signed-in user's
+    // resume. Applied only when an embedder is configured and the caller has a resume to embed;
+    // otherwise we silently fall back to the default newest-first ordering below.
+    if (sortByMatch && embedder) {
+      const profileId = await optionalProfileId(c.req.header('Authorization'), jwtSecret)
+      const queryVector = profileId ? await embedProfile(db, profileId, embedder).catch(() => null) : null
+      if (queryVector) {
+        // Rank every filtered job that has an embedding; cosine in-app so arbitrary filters
+        // (keyword/salary/date) still apply, which $vectorSearch can't express.
+        const candidates = await jobs
+          .find({ ...filter, embedding: { $type: 'array' } })
+          .project<Job>({ embedding: 1, title: 1, company: 1, location: 1, salaryMin: 1, salaryMax: 1, rawDescription: 1, sourceId: 1, status: 1, score: 1, normalizedUrl: 1, discoveredAt: 1, postedAt: 1 })
+          .toArray()
+
+        const ranked = candidates
+          .map((job) => {
+            const { embedding, ...rest } = job
+            // (1+cos)/2 scale to match the /suggestions semantic score the user sees elsewhere.
+            const unit = cosineToUnitScore(cosineSimilarity(queryVector, embedding as number[]))
+            const matchScore = Math.round(unit * 1000) / 10
+            return { ...rest, matchScore }
+          })
+          .sort((a, b) => b.matchScore - a.matchScore)
+
+        return c.json({ jobs: ranked.slice(offset, offset + limit), total: ranked.length })
+      }
+    }
 
     const [results, total] = await Promise.all([
       jobs.find(filter).sort({ discoveredAt: -1 }).skip(offset).limit(limit).toArray(),

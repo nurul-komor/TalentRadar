@@ -135,7 +135,7 @@ export function DashboardPage() {
 
   const [profile, setProfile] = useState<Profile | null>(null)
 
-  const [recommendedJobs, setRecommendedJobs] = useState<Job[]>([])
+  const [recommendedJobs, setRecommendedJobs] = useState<Array<Job & { _id: string; matchScore?: number }>>([])
   const [jobsError, setJobsError] = useState<string | null>(null)
 
   const [applications, setApplications] = useState<Application[] | null>(null)
@@ -153,15 +153,20 @@ export function DashboardPage() {
       .catch(() => setProfile(null))
   }, [])
 
+  // Recommendations come from the semantic /suggestions endpoint — jobs ranked by how well they
+  // match the user's resume — rather than the rule-based score (which is 0 until a job is scored).
+  // A 404 means suggestions aren't configured on the server; just show the empty state quietly.
   useEffect(() => {
-    apiFetch('/jobs?status=verified&limit=4')
+    apiFetch('/suggestions?limit=4')
       .then(async (res) => {
+        if (res.status === 404) return
         if (!res.ok) {
           setJobsError('Failed to load recommended jobs.')
           return
         }
-        const data: JobsResponseBody = await res.json()
-        setRecommendedJobs([...data.jobs].sort((a, b) => (b.score ?? -1) - (a.score ?? -1)))
+        const data: { suggestions: Array<{ job: Job & { _id: string }; semanticScore: number }> } =
+          await res.json()
+        setRecommendedJobs(data.suggestions.map((s) => ({ ...s.job, matchScore: s.semanticScore })))
       })
       .catch(() => setJobsError('Failed to load recommended jobs.'))
   }, [])
@@ -404,7 +409,9 @@ export function DashboardPage() {
               </h3>
               {jobsError && <FormError message={jobsError} />}
               {!jobsError && recommendedJobs.length === 0 ? (
-                <p className="tile-empty">No verified jobs to recommend yet — check back soon.</p>
+                <p className="tile-empty">
+                  Add your resume to get personalised job matches. <Link to="/cv">Add resume →</Link>
+                </p>
               ) : (
                 <div className="hlist">
                   {recommendedJobs.map((job) => (
@@ -421,10 +428,12 @@ export function DashboardPage() {
                             {job.location ? ` · ${job.location}` : ''}
                           </div>
                         </div>
-                        <ScoreRing score={job.score ?? 0} size={40} />
+                        <ScoreRing score={Math.round(job.matchScore ?? job.score ?? 0)} size={40} />
                       </div>
                       <div className="tags">
-                        <Pill tone="verified">Verified</Pill>
+                        {typeof job.matchScore === 'number' && (
+                          <Pill tone="verified">{Math.round(job.matchScore)}% match</Pill>
+                        )}
                       </div>
                       <div className="foot">
                         <span className="src">{relativeTimeFromNow(job.discoveredAt)}</span>

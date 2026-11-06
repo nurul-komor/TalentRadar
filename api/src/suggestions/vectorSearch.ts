@@ -1,8 +1,13 @@
 import type { Db } from 'mongodb'
-import type { Job, JobSourceId } from '@job-hunter/shared'
+import type { Job, JobSourceId, JobStatus } from '@job-hunter/shared'
 import { UNSCORED_JOB_SOURCE_IDS } from '@job-hunter/shared'
 
 export const VECTOR_INDEX_NAME = 'jobs_embedding_index'
+
+// Job statuses eligible for suggestions. Mirrors what the public /jobs feed surfaces
+// (everything except 'rejected') rather than runScoring's verified-only scope — the
+// discovery feed may never be promoted to 'verified', and users still want matches from it.
+export const SUGGESTIBLE_JOB_STATUSES: JobStatus[] = ['discovered', 'verified']
 
 export interface JobMatch {
   job: Job
@@ -21,6 +26,9 @@ export async function ensureVectorIndexes(db: Db, dimensions = 1536): Promise<vo
       definition: {
         fields: [
           { type: 'vector', path: 'embedding', numDimensions: dimensions, similarity: 'cosine' },
+          // Fields used in the $vectorSearch `filter` must be declared here as `filter` type.
+          { type: 'filter', path: 'status' },
+          { type: 'filter', path: 'sourceId' },
         ],
       },
     })
@@ -39,7 +47,14 @@ export async function ensureVectorIndexes(db: Db, dimensions = 1536): Promise<vo
 // stop attempting the aggregation and go straight to the in-memory path on every later call.
 let vectorSearchUnavailable = false
 
-function cosineSimilarity(a: number[], b: number[]): number {
+// Maps a raw cosine similarity (-1..1) to the 0..1 scale Atlas reports as `vectorSearchScore`
+// for a cosine index, i.e. (1 + cos) / 2. Used so the in-memory fallback and the /jobs match
+// sort produce the same score scale as the Atlas $vectorSearch path.
+export function cosineToUnitScore(cosine: number): number {
+  return (1 + cosine) / 2
+}
+
+export function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0
   let magA = 0
   let magB = 0
@@ -76,7 +91,7 @@ export async function searchSimilarJobs(
               numCandidates: Math.max(limit * 10, 100),
               limit,
               filter: {
-                status: 'verified',
+                status: { $in: SUGGESTIBLE_JOB_STATUSES },
                 sourceId: { $nin: UNSCORED_JOB_SOURCE_IDS as JobSourceId[] },
               },
             },
@@ -100,14 +115,18 @@ export async function searchSimilarJobs(
   // In-memory fallback — fine for the current feed size; O(n) over embedded jobs.
   const embedded = await jobs
     .find({
-      status: 'verified',
+      status: { $in: SUGGESTIBLE_JOB_STATUSES },
       sourceId: { $nin: UNSCORED_JOB_SOURCE_IDS },
       embedding: { $type: 'array' },
     })
     .toArray()
 
   return embedded
-    .map((job) => ({ job, similarity: cosineSimilarity(queryVector, job.embedding as number[]) }))
+    .map((job) => ({
+      job,
+      // Normalize to Atlas's (1+cos)/2 scale so fallback scores match the $vectorSearch path.
+      similarity: cosineToUnitScore(cosineSimilarity(queryVector, job.embedding as number[])),
+    }))
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, limit)
 }

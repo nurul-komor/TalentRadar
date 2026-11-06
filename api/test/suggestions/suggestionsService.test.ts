@@ -96,10 +96,10 @@ describe('embeddingService', () => {
     expect(Array.isArray(stored?.embedding)).toBe(true)
     expect(stored?.embeddingModel).toBe('text-embedding-3-small')
 
-    // Second run: nothing changed, so no new embed call and everything is skipped.
+    // Second run: both jobs are already embedded, so the lazy (missing-only) pass finds no
+    // candidates and makes no new embed call.
     const second = await embedJobs(db, embedder)
     expect(second.embedded).toBe(0)
-    expect(second.skipped).toBe(2)
     expect(embedder.calls).toHaveLength(1)
   })
 

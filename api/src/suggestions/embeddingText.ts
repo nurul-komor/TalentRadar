@@ -1,10 +1,25 @@
 import type { Job, Profile } from '@job-hunter/shared'
 
-// The exact text embedded for a job: title, full description, and extracted required skills
-// (when available). Kept as a pure function so the same text feeds both the embed call and
-// the sha256 hash that decides whether a re-embed is needed.
+// Job descriptions are stored as HTML; tags and entities inflate the token count far beyond
+// what the plain text would, so we strip them before embedding. This keeps the embedded text
+// semantically clean and well under the model's token limit.
+function stripHtml(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#\d+;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// The exact text embedded for a job: title, plain-text description, and extracted required
+// skills (when available). Kept as a pure function so the same text feeds both the embed call
+// and the sha256 hash that decides whether a re-embed is needed.
 export function jobEmbeddingText(job: Pick<Job, 'title' | 'rawDescription' | 'extractedRequirements'>): string {
-  const parts = [job.title, job.rawDescription]
+  const parts = [job.title, stripHtml(job.rawDescription)]
   const skills = job.extractedRequirements?.requiredSkills ?? []
   if (skills.length > 0) {
     parts.push(`Required skills: ${skills.join(', ')}`)

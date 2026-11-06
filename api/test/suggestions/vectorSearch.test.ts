@@ -72,8 +72,9 @@ describe('searchSimilarJobs (in-memory fallback)', () => {
 
     expect(matches.map((m) => m.job.sourceJobId)).toEqual(['python', 'design'])
     expect(matches[0].similarity).toBeGreaterThan(matches[1].similarity)
+    // Scores are normalized to Atlas's (1+cos)/2 scale: identical → 1, orthogonal → 0.5.
     expect(matches[0].similarity).toBeCloseTo(1, 5)
-    expect(matches[1].similarity).toBeCloseTo(0, 5)
+    expect(matches[1].similarity).toBeCloseTo(0.5, 5)
   })
 
   it('respects the limit and skips jobs without an embedding', async () => {

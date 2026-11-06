@@ -72,7 +72,7 @@ export function mountRoutes(
   )
   app.route('/discovery', createDiscoveryRoutes(db, jwtSecret, sources))
   app.route('/verification', createVerificationRoutes(db, jwtSecret, pageEvidenceVerifier))
-  app.route('/jobs', createJobsRoutes(db, jwtSecret, sources))
+  app.route('/jobs', createJobsRoutes(db, jwtSecret, sources, embedder))
   app.route('/public', createPublicRoutes(db))
   app.route('/admin', createAdminRoutes(db, jwtSecret))
   app.route('/cron', createCronRoutes(db, cronSecret, sources))

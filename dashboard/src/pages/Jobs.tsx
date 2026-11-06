@@ -129,8 +129,12 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced
 }
 
+// matchScore is present only on responses from the "Best match" sort (sort=match); it's the
+// semantic similarity (0–100) between the job and the signed-in user's resume.
+type FeedJob = Job & { _id: string; matchScore?: number }
+
 interface JobsResponseBody {
-  jobs: Array<Job & { _id: string }>
+  jobs: FeedJob[]
   total: number
 }
 
@@ -215,12 +219,14 @@ function requirementsPreview(rawDescription: string): string | null {
 export function JobsPage() {
   const { isAuthenticated } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [jobs, setJobs] = useState<Array<Job & { _id: string }>>([])
+  const [jobs, setJobs] = useState<FeedJob[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [trackedCompanies, setTrackedCompanies] = useState<TrackedCompany[]>([])
   const [myJobs, setMyJobs] = useState<UserJob[]>([])
+  // Whether the signed-in user has a resume to match against — gates the "Best match" sort.
+  const [hasResume, setHasResume] = useState(false)
 
   const { isSaved, toggleSaved, savedIds } = useSavedJobs()
   // "Saved jobs" mode (reached via /jobs?saved=1 from the sidebar) shows only
@@ -241,6 +247,12 @@ export function JobsPage() {
   const selectedLanguages = parseLanguages(searchParams)
   const languagesKey = selectedLanguages.join(',')
   const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
+
+  // "Best match" semantic sort is only meaningful for a signed-in user with a resume, and not
+  // in the saved / "my jobs" views (which aren't the discovery feed). The server falls back to
+  // newest-first if it can't match, but we only surface the control when it will actually work.
+  const canSortByMatch = isAuthenticated && hasResume && !savedMode && category !== 'mine'
+  const sortByMatch = canSortByMatch && searchParams.get('sort') === 'match'
 
   const [keyword, setKeyword] = useState(searchParams.get('q') ?? '')
   const [location, setLocation] = useState(searchParams.get('location') ?? '')
@@ -308,12 +320,24 @@ export function JobsPage() {
   useEffect(() => {
     if (!isAuthenticated) {
       setMyJobs([])
+      setHasResume(false)
       return
     }
     apiFetch('/user-jobs')
       .then((res) => (res.ok ? res.json() : { jobs: [] }))
       .then((body: { jobs: UserJob[] }) => setMyJobs(body.jobs))
       .catch(() => setMyJobs([]))
+    // A resume (uploaded CV text or a non-empty structured resume) is what the "Best match"
+    // sort ranks against. resumeEmbedding itself is projected out of the profile response, so
+    // we infer eligibility from the resume content the server does return.
+    apiFetch('/profile')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((profile: { cvText?: string | null; resume?: { skillGroups?: unknown[] } } | null) => {
+        const hasCv = Boolean(profile?.cvText && profile.cvText.trim())
+        const hasSkills = Boolean(profile?.resume?.skillGroups && profile.resume.skillGroups.length > 0)
+        setHasResume(hasCv || hasSkills)
+      })
+      .catch(() => setHasResume(false))
   }, [isAuthenticated])
 
   useEffect(() => {
@@ -382,6 +406,7 @@ export function JobsPage() {
     }
 
     const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) })
+    if (sortByMatch) params.set('sort', 'match')
     if (category !== 'all') params.set('category', category)
     if (sourceSelection.kind === 'source') params.set('sourceId', sourceSelection.id)
     if (sourceSelection.kind === 'company') params.set('company', sourceSelection.name)
@@ -404,7 +429,7 @@ export function JobsPage() {
         setTotal(data.total)
       })
       .finally(() => setLoading(false))
-  }, [savedMode, savedKey, category, sourceSelectionKey, datePosted, languagesKey, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset])
+  }, [savedMode, savedKey, category, sourceSelectionKey, datePosted, languagesKey, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset, sortByMatch])
 
   const rangeStart = total === 0 ? 0 : offset + 1
   const rangeEnd = Math.min(offset + PAGE_SIZE, total)
@@ -677,6 +702,29 @@ export function JobsPage() {
           </Drawer>
 
           <div className="results">
+            {canSortByMatch && (
+              <div className="segment" role="tablist" aria-label="Sort jobs" style={{ marginBottom: 16 }}>
+                <button
+                  type="button"
+                  role="tab"
+                  className={`seg${!sortByMatch ? ' on' : ''}`}
+                  aria-selected={!sortByMatch}
+                  onClick={() => updateFilters({ sort: null })}
+                >
+                  Newest
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className={`seg${sortByMatch ? ' on' : ''}`}
+                  aria-selected={sortByMatch}
+                  onClick={() => updateFilters({ sort: 'match' })}
+                >
+                  <ion-icon name="sparkles-outline" style={{ fontSize: 13, marginRight: 4, verticalAlign: 'middle' }} />
+                  Best match
+                </button>
+              </div>
+            )}
             {savedMode && (
               <div className="saved-banner">
                 <span>
@@ -793,7 +841,7 @@ export function JobsPage() {
                 const requirements = requirementsPreview(job.rawDescription)
                 return (
                   <article key={job._id} className="jrow">
-                    <ScoreRing score={job.score ?? 0} />
+                    <ScoreRing score={job.matchScore ?? job.score ?? 0} />
                     <div className="main">
                       <div className="title">
                         <Link to={`/jobs/${job._id}`}>{job.title}</Link>
@@ -804,6 +852,9 @@ export function JobsPage() {
                         {job.location ? ` · ${job.location}` : ''}
                       </div>
                       <div className="tags">
+                        {typeof job.matchScore === 'number' && (
+                          <Pill tone="verified">{Math.round(job.matchScore)}% match</Pill>
+                        )}
                         {job.status === 'verified' && <Pill tone="verified">Verified</Pill>}
                         {job.sourceId === 'teletalk-govt' && <Pill tone="govt">Government</Pill>}
                         <Pill tone="mono">{formatSalary(job)}</Pill>
