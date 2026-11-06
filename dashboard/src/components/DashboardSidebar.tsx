@@ -25,6 +25,7 @@ function sidebarLinkClass({ isActive }: { isActive: boolean }): string {
 
 const SIDEBAR_LINKS = [
   { to: '/dashboard', label: 'Dashboard', icon: 'grid-outline' },
+  { to: '/suggestions', label: 'Suggested', icon: 'sparkles-outline' },
   { to: '/add-job', label: 'Add Job', icon: 'add-outline' },
   { to: '/applications', label: 'Applications', icon: 'clipboard-outline' },
   { to: '/profile', label: 'Profile', icon: 'person-outline' },

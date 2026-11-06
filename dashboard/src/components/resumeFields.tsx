@@ -347,20 +347,50 @@ export function EducationEntryFields({ entry, index, onChange, onRemove }: Educa
 }
 
 // Repeatable-list section header with an "add" affordance, shared by the
-// experience / education / skills steps.
+// experience / education / skills steps. When `count` is 0 and an `emptyHint`
+// is supplied (Profile page), a dashed placeholder is shown in place of the
+// list so the section never reads as broken/empty — Onboarding omits both
+// props and keeps its original bare "add" affordance.
 interface RepeatableSectionProps {
   addLabel: string
   onAdd: () => void
   children: ReactNode
+  count?: number
+  emptyHint?: string
+  emptyIcon?: string
 }
 
-export function RepeatableSection({ addLabel, onAdd, children }: RepeatableSectionProps) {
+export function RepeatableSection({
+  addLabel,
+  onAdd,
+  children,
+  count,
+  emptyHint,
+  emptyIcon = 'add-circle-outline',
+}: RepeatableSectionProps) {
+  const showEmpty = count === 0 && emptyHint != null
   return (
     <div>
-      {children}
-      <Button type="button" variant="ghost" className="mt-2" onClick={onAdd}>
-        <ion-icon name="add-outline" /> {addLabel}
-      </Button>
+      {showEmpty ? (
+        <button
+          type="button"
+          onClick={onAdd}
+          className="flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-8 text-center transition-colors hover:border-ring hover:bg-muted/60"
+        >
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <ion-icon name={emptyIcon} style={{ fontSize: 20 }} />
+          </span>
+          <span className="text-sm font-medium text-foreground">{addLabel}</span>
+          <span className="max-w-xs text-xs text-muted-foreground">{emptyHint}</span>
+        </button>
+      ) : (
+        <>
+          {children}
+          <Button type="button" variant="ghost" className="mt-2" onClick={onAdd}>
+            <ion-icon name="add-outline" /> {addLabel}
+          </Button>
+        </>
+      )}
     </div>
   )
 }

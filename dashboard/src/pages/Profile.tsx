@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { emptyResume } from '@job-hunter/shared'
 import type { Eligibility, Profile, Resume } from '@job-hunter/shared'
@@ -33,35 +33,112 @@ const WORK_AUTH_OPTIONS: Array<{ value: WorkAuthorization; label: string }> = [
   { value: 'visa_required', label: 'Visa required' },
 ]
 
+// Section ids are shared between the on-page anchors (scroll-mt handles the
+// offset) and the "jump to section" nav + completeness checklist so clicking a
+// checklist row takes the user straight to the fields that still need filling.
+const SECTION = {
+  personal: 'section-personal',
+  links: 'section-links',
+  experience: 'section-experience',
+  education: 'section-education',
+  skills: 'section-skills',
+  projects: 'section-projects',
+  eligibility: 'section-eligibility',
+  preferences: 'section-preferences',
+} as const
+
 // Mirrors the required-field set the onboarding wizard enforces. Used both for
 // the completeness checklist and to flip onboardingCompletedAt once satisfied.
+// `target` is where the checklist row scrolls (a section id) or links (the CV
+// upload lives on its own page).
 function requiredChecks(resume: Resume, cvText: string | null) {
   return [
-    { key: 'fullName', label: 'Full name', done: !!resume.fullName?.trim() },
-    { key: 'phone', label: 'Phone number', done: !!resume.phone?.trim() },
-    { key: 'country', label: 'Country', done: !!resume.location.country?.trim() },
-    { key: 'city', label: 'City', done: !!resume.location.city?.trim() },
-    { key: 'linkedin', label: 'LinkedIn profile', done: !!resume.linkedin?.trim() },
-    { key: 'github', label: 'Portfolio / GitHub', done: !!resume.github?.trim() },
-    { key: 'cv', label: 'CV uploaded', done: cvText != null },
-    { key: 'experience', label: 'Work experience', done: resume.experience.length > 0 },
-    { key: 'education', label: 'Education', done: resume.education.length > 0 },
+    { key: 'fullName', label: 'Full name', done: !!resume.fullName?.trim(), target: SECTION.personal },
+    { key: 'phone', label: 'Phone number', done: !!resume.phone?.trim(), target: SECTION.personal },
+    { key: 'country', label: 'Country', done: !!resume.location.country?.trim(), target: SECTION.personal },
+    { key: 'city', label: 'City', done: !!resume.location.city?.trim(), target: SECTION.personal },
+    { key: 'linkedin', label: 'LinkedIn profile', done: !!resume.linkedin?.trim(), target: SECTION.links },
+    { key: 'github', label: 'Portfolio / GitHub', done: !!resume.github?.trim(), target: SECTION.links },
+    { key: 'cv', label: 'CV uploaded', done: cvText != null, target: '/cv' as const },
+    { key: 'experience', label: 'Work experience', done: resume.experience.length > 0, target: SECTION.experience },
+    { key: 'education', label: 'Education', done: resume.education.length > 0, target: SECTION.education },
     {
       key: 'skills',
       label: 'Skills',
       done: resume.skillGroups.some((g) => g.skills.length > 0),
+      target: SECTION.skills,
     },
   ]
 }
 
+const SECTION_NAV: Array<{ id: string; label: string; icon: string }> = [
+  { id: SECTION.personal, label: 'Personal', icon: 'person-outline' },
+  { id: SECTION.links, label: 'Links', icon: 'link-outline' },
+  { id: SECTION.experience, label: 'Experience', icon: 'briefcase-outline' },
+  { id: SECTION.education, label: 'Education', icon: 'school-outline' },
+  { id: SECTION.skills, label: 'Skills', icon: 'build-outline' },
+  { id: SECTION.projects, label: 'Projects', icon: 'cube-outline' },
+  { id: SECTION.eligibility, label: 'Eligibility', icon: 'shield-checkmark-outline' },
+  { id: SECTION.preferences, label: 'Preferences', icon: 'options-outline' },
+]
+
 const selectClass =
   'flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]'
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function scrollToSection(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function initialsFor(name: string | null | undefined, email: string): string {
+  const source = name?.trim() || email
+  const parts = source.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return source.slice(0, 2).toUpperCase()
+}
+
+// Section shell with an icon, title, and optional one-line description. `id`
+// anchors the "jump to" nav and completeness checklist; `complete` renders a
+// subtle status badge so progress is readable while scrolling.
+function Section({
+  id,
+  icon,
+  title,
+  description,
+  complete,
+  children,
+}: {
+  id: string
+  icon: string
+  title: string
+  description?: string
+  complete?: boolean
+  children: ReactNode
+}) {
   return (
-    <section className="rounded-2xl border border-border bg-card p-6">
-      <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-      <div className="mt-4">{children}</div>
+    <section id={id} className="scroll-mt-6 rounded-2xl border border-border bg-card p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+            <ion-icon name={icon} style={{ fontSize: 18 }} />
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold leading-tight text-foreground">{title}</h2>
+            {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
+          </div>
+        </div>
+        {complete != null && (
+          <span
+            className={cn(
+              'inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium',
+              complete ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+            )}
+          >
+            <ion-icon name={complete ? 'checkmark-circle' : 'ellipse-outline'} style={{ fontSize: 13 }} />
+            {complete ? 'Complete' : 'Needs info'}
+          </span>
+        )}
+      </div>
+      <div className="mt-5">{children}</div>
     </section>
   )
 }
@@ -81,6 +158,9 @@ export function ProfilePage() {
   const [saved, setSaved] = useState(false)
   const [generatingCv, setGeneratingCv] = useState(false)
   const [cvExportError, setCvExportError] = useState<string | null>(null)
+  // Snapshot of the last-persisted form state; compared against the live form
+  // to drive the "unsaved changes" affordance and disable Save when clean.
+  const [baseline, setBaseline] = useState<string | null>(null)
 
   useEffect(() => {
     apiFetch('/profile').then(async (res) => {
@@ -89,19 +169,39 @@ export function ProfilePage() {
         return
       }
       const data: Profile = await res.json()
+      const loadedResume = { ...emptyResume(), ...data.resume }
       setProfile(data)
-      setResume({ ...emptyResume(), ...data.resume })
+      setResume(loadedResume)
       setWorkAuthorization(data.eligibility.workAuthorization)
       setCountries(data.eligibility.countries)
       setTargetRoles(data.preferences.targetRoles)
       setLocations(data.preferences.locations)
       setRemoteOnly(data.preferences.remoteOnly)
       setMinSalaryUsd(data.preferences.minSalaryUsd?.toString() ?? '')
+      setBaseline(
+        JSON.stringify({
+          resume: loadedResume,
+          workAuthorization: data.eligibility.workAuthorization,
+          countries: data.eligibility.countries,
+          targetRoles: data.preferences.targetRoles,
+          locations: data.preferences.locations,
+          remoteOnly: data.preferences.remoteOnly,
+          minSalaryUsd: data.preferences.minSalaryUsd?.toString() ?? '',
+        })
+      )
     })
   }, [])
 
+  const snapshot = useMemo(
+    () =>
+      JSON.stringify({ resume, workAuthorization, countries, targetRoles, locations, remoteOnly, minSalaryUsd }),
+    [resume, workAuthorization, countries, targetRoles, locations, remoteOnly, minSalaryUsd]
+  )
+  const dirty = baseline != null && snapshot !== baseline
+
   function patchResume(patch: Partial<Resume>) {
     setResume((prev) => ({ ...prev, ...patch }))
+    setSaved(false)
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -135,6 +235,8 @@ export function ProfilePage() {
       }
       setProfile(await res.json())
       setSaved(true)
+      // Re-baseline so the form reads as clean again after a successful save.
+      setBaseline(snapshot)
       await refreshProfile()
     } finally {
       setSaving(false)
@@ -168,19 +270,46 @@ export function ProfilePage() {
 
   const hasCv = profile?.cvText != null
   const checks = requiredChecks(resume, profile?.cvText ?? null)
-  const completeness = Math.round((checks.filter((c) => c.done).length / checks.length) * 100)
+  const doneCount = checks.filter((c) => c.done).length
+  const completeness = Math.round((doneCount / checks.length) * 100)
+
+  // Per-section completeness for the inline status badges.
+  const personalComplete = checks
+    .filter((c) => c.target === SECTION.personal)
+    .every((c) => c.done)
+  const linksComplete = checks.filter((c) => c.target === SECTION.links).every((c) => c.done)
 
   return (
     <div>
-      <header className="border-b border-border">
-        <div className="mx-auto max-w-5xl px-6 py-10">
-          <div className="text-xs font-semibold uppercase tracking-wider text-primary">Account</div>
-          <h1 className="mt-2 text-2xl font-bold text-foreground sm:text-3xl">Profile</h1>
-          <p className="mt-2 text-sm text-muted-foreground">{profile?.email ?? 'Loading…'}</p>
+      <header className="border-b border-border bg-card/40">
+        <div className="mx-auto flex max-w-5xl flex-col gap-5 px-6 py-10 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex h-14 w-14 flex-none items-center justify-center rounded-2xl bg-primary/10 text-lg font-semibold text-primary">
+              {profile ? initialsFor(resume.fullName, profile.email) : '··'}
+            </div>
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-primary">Account</div>
+              <h1 className="mt-1 text-2xl font-bold text-foreground sm:text-3xl">
+                {resume.fullName?.trim() || 'Your profile'}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">{profile?.email ?? 'Loading…'}</p>
+            </div>
+          </div>
+          {profile && (
+            <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3">
+              <ScoreRing score={completeness} size={44} strokeWidth={4} />
+              <div className="leading-tight">
+                <div className="text-sm font-semibold text-foreground">Profile complete</div>
+                <div className="text-xs text-muted-foreground">
+                  {doneCount} of {checks.length} steps done
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl px-6 pb-16">
+      <div className="mx-auto max-w-5xl px-6 pb-24">
         {error && (
           <div className="mt-6">
             <FormError message={error} />
@@ -192,7 +321,13 @@ export function ProfilePage() {
         ) : (
           <form onSubmit={handleSubmit} className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
             <div className="flex flex-col gap-6">
-              <Section title="Personal details">
+              <Section
+                id={SECTION.personal}
+                icon="person-outline"
+                title="Personal details"
+                description="How you appear to recruiters and on your generated CV."
+                complete={personalComplete}
+              >
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="pf-email">Email</Label>
@@ -255,7 +390,13 @@ export function ProfilePage() {
                 </div>
               </Section>
 
-              <Section title="Professional links">
+              <Section
+                id={SECTION.links}
+                icon="link-outline"
+                title="Professional links"
+                description="Where recruiters can see more of your work."
+                complete={linksComplete}
+              >
                 <div className="grid grid-cols-1 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="pf-linkedin">LinkedIn profile</Label>
@@ -278,9 +419,18 @@ export function ProfilePage() {
                 </div>
               </Section>
 
-              <Section title="Work experience">
+              <Section
+                id={SECTION.experience}
+                icon="briefcase-outline"
+                title="Work experience"
+                description="List roles with your most recent first."
+                complete={resume.experience.length > 0}
+              >
                 <RepeatableSection
                   addLabel="Add experience"
+                  count={resume.experience.length}
+                  emptyIcon="briefcase-outline"
+                  emptyHint="Add the roles you've held so we can match you against open jobs."
                   onAdd={() =>
                     patchResume({
                       experience: appendEntry(resume.experience, {
@@ -305,9 +455,18 @@ export function ProfilePage() {
                 </RepeatableSection>
               </Section>
 
-              <Section title="Education">
+              <Section
+                id={SECTION.education}
+                icon="school-outline"
+                title="Education"
+                description="Degrees, bootcamps, and credentials."
+                complete={resume.education.length > 0}
+              >
                 <RepeatableSection
                   addLabel="Add education"
+                  count={resume.education.length}
+                  emptyIcon="school-outline"
+                  emptyHint="Add your degrees or certifications."
                   onAdd={() =>
                     patchResume({ education: appendEntry(resume.education, { institution: '', credential: '' }) })
                   }
@@ -324,9 +483,18 @@ export function ProfilePage() {
                 </RepeatableSection>
               </Section>
 
-              <Section title="Skills">
+              <Section
+                id={SECTION.skills}
+                icon="build-outline"
+                title="Skills"
+                description="Group related skills by category."
+                complete={resume.skillGroups.some((g) => g.skills.length > 0)}
+              >
                 <RepeatableSection
                   addLabel="Add skill group"
+                  count={resume.skillGroups.length}
+                  emptyIcon="build-outline"
+                  emptyHint="Group your skills (e.g. Languages, Frameworks) to strengthen matches."
                   onAdd={() => patchResume({ skillGroups: appendEntry(resume.skillGroups, { category: '', skills: [] }) })}
                 >
                   {resume.skillGroups.map((entry, index) => (
@@ -341,9 +509,17 @@ export function ProfilePage() {
                 </RepeatableSection>
               </Section>
 
-              <Section title="Projects">
+              <Section
+                id={SECTION.projects}
+                icon="cube-outline"
+                title="Projects"
+                description="Side projects and notable work (optional)."
+              >
                 <RepeatableSection
                   addLabel="Add project"
+                  count={resume.projects.length}
+                  emptyIcon="cube-outline"
+                  emptyHint="Showcase side projects or open-source work."
                   onAdd={() =>
                     patchResume({
                       projects: appendEntry(resume.projects, {
@@ -368,7 +544,12 @@ export function ProfilePage() {
                 </RepeatableSection>
               </Section>
 
-              <Section title="Eligibility">
+              <Section
+                id={SECTION.eligibility}
+                icon="shield-checkmark-outline"
+                title="Eligibility"
+                description="Helps us filter roles you can actually take."
+              >
                 <div className="grid grid-cols-1 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="pf-workAuth">Work authorization</Label>
@@ -376,7 +557,10 @@ export function ProfilePage() {
                       id="pf-workAuth"
                       className={selectClass}
                       value={workAuthorization}
-                      onChange={(e) => setWorkAuthorization(e.target.value as WorkAuthorization)}
+                      onChange={(e) => {
+                        setWorkAuthorization(e.target.value as WorkAuthorization)
+                        setSaved(false)
+                      }}
                     >
                       {WORK_AUTH_OPTIONS.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -390,22 +574,39 @@ export function ProfilePage() {
                     <TagList
                       items={countries}
                       placeholder="Add a country"
-                      onAdd={(value) => setCountries((prev) => [...prev, value])}
-                      onRemove={(index) => setCountries((prev) => prev.filter((_, i) => i !== index))}
+                      onAdd={(value) => {
+                        setCountries((prev) => [...prev, value])
+                        setSaved(false)
+                      }}
+                      onRemove={(index) => {
+                        setCountries((prev) => prev.filter((_, i) => i !== index))
+                        setSaved(false)
+                      }}
                     />
                   </div>
                 </div>
               </Section>
 
-              <Section title="Job preferences">
+              <Section
+                id={SECTION.preferences}
+                icon="options-outline"
+                title="Job preferences"
+                description="Shapes which roles we surface for you."
+              >
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-1.5 sm:col-span-2">
                     <Label>Target roles</Label>
                     <TagList
                       items={targetRoles}
                       placeholder="Add a role"
-                      onAdd={(value) => setTargetRoles((prev) => [...prev, value])}
-                      onRemove={(index) => setTargetRoles((prev) => prev.filter((_, i) => i !== index))}
+                      onAdd={(value) => {
+                        setTargetRoles((prev) => [...prev, value])
+                        setSaved(false)
+                      }}
+                      onRemove={(index) => {
+                        setTargetRoles((prev) => prev.filter((_, i) => i !== index))
+                        setSaved(false)
+                      }}
                     />
                   </div>
                   <div className="flex flex-col gap-1.5 sm:col-span-2">
@@ -413,8 +614,14 @@ export function ProfilePage() {
                     <TagList
                       items={locations}
                       placeholder="Add a location"
-                      onAdd={(value) => setLocations((prev) => [...prev, value])}
-                      onRemove={(index) => setLocations((prev) => prev.filter((_, i) => i !== index))}
+                      onAdd={(value) => {
+                        setLocations((prev) => [...prev, value])
+                        setSaved(false)
+                      }}
+                      onRemove={(index) => {
+                        setLocations((prev) => prev.filter((_, i) => i !== index))
+                        setSaved(false)
+                      }}
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
@@ -425,7 +632,10 @@ export function ProfilePage() {
                       min={0}
                       value={minSalaryUsd}
                       placeholder="e.g. 80000"
-                      onChange={(e) => setMinSalaryUsd(e.target.value)}
+                      onChange={(e) => {
+                        setMinSalaryUsd(e.target.value)
+                        setSaved(false)
+                      }}
                     />
                   </div>
                   <label className="flex items-center gap-2.5 sm:mt-7">
@@ -433,43 +643,89 @@ export function ProfilePage() {
                       type="checkbox"
                       className="h-4 w-4"
                       checked={remoteOnly}
-                      onChange={(e) => setRemoteOnly(e.target.checked)}
+                      onChange={(e) => {
+                        setRemoteOnly(e.target.checked)
+                        setSaved(false)
+                      }}
                     />
                     <span className="text-sm text-foreground">Only show remote roles</span>
                   </label>
                 </div>
               </Section>
 
-              <div className="flex items-center gap-4">
-                <Button type="submit" size="lg" disabled={saving}>
+              {/* Sticky save bar — stays reachable through the long form and
+                  surfaces unsaved-change state without a scroll to the bottom. */}
+              <div className="sticky bottom-4 z-10 flex items-center justify-between gap-4 rounded-2xl border border-border bg-card/90 px-5 py-3 shadow-lg backdrop-blur">
+                <div className="flex items-center gap-2 text-sm">
+                  {dirty ? (
+                    <>
+                      <span className="h-2 w-2 flex-none rounded-full bg-amber-500" />
+                      <span className="text-muted-foreground">Unsaved changes</span>
+                    </>
+                  ) : saved ? (
+                    <>
+                      <ion-icon name="checkmark-circle" style={{ color: 'var(--primary)', fontSize: 16 }} />
+                      <span className="font-medium text-primary">All changes saved</span>
+                    </>
+                  ) : (
+                    <>
+                      <ion-icon name="checkmark-circle-outline" style={{ color: 'var(--muted-foreground)', fontSize: 16 }} />
+                      <span className="text-muted-foreground">Up to date</span>
+                    </>
+                  )}
+                </div>
+                <Button type="submit" size="lg" disabled={saving || !dirty}>
                   {saving ? 'Saving…' : 'Save changes'}
                 </Button>
-                {saved && <span className="text-sm font-semibold text-primary">Saved.</span>}
               </div>
             </div>
 
-            <aside className="flex flex-col gap-6">
-              <div className="rounded-2xl border border-border bg-card p-6 text-center">
-                <div className="mx-auto w-fit">
-                  <ScoreRing score={completeness} size={88} strokeWidth={6} />
+            <aside className="flex flex-col gap-6 lg:sticky lg:top-6 lg:self-start">
+              <div className="rounded-2xl border border-border bg-card p-6">
+                <div className="flex items-center gap-4">
+                  <ScoreRing score={completeness} size={72} strokeWidth={6} />
+                  <div>
+                    <h2 className="text-base font-semibold text-foreground">Profile completeness</h2>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      {doneCount} of {checks.length} required steps
+                    </p>
+                  </div>
                 </div>
-                <h2 className="mt-4 text-base font-semibold text-foreground">Profile completeness</h2>
-                <ul className="mt-4 space-y-2 text-left">
-                  {checks.map((item) => (
-                    <li
-                      key={item.key}
-                      className={cn(
-                        'flex items-center gap-2 text-sm',
-                        item.done ? 'text-foreground' : 'text-muted-foreground'
-                      )}
-                    >
-                      <ion-icon
-                        name={item.done ? 'checkmark-circle' : 'ellipse-outline'}
-                        style={{ color: item.done ? 'var(--primary)' : 'var(--muted-foreground)' }}
-                      />
-                      {item.label}
-                    </li>
-                  ))}
+                <ul className="mt-5 space-y-1">
+                  {checks.map((item) => {
+                    const row = (
+                      <>
+                        <ion-icon
+                          name={item.done ? 'checkmark-circle' : 'ellipse-outline'}
+                          style={{ color: item.done ? 'var(--primary)' : 'var(--muted-foreground)', fontSize: 16 }}
+                        />
+                        <span className="flex-1 text-left">{item.label}</span>
+                        {!item.done && (
+                          <ion-icon
+                            name="chevron-forward-outline"
+                            style={{ color: 'var(--muted-foreground)', fontSize: 13 }}
+                          />
+                        )}
+                      </>
+                    )
+                    const base = cn(
+                      'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors',
+                      item.done ? 'text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    )
+                    return (
+                      <li key={item.key}>
+                        {item.target === '/cv' ? (
+                          <Link to="/cv" className={base}>
+                            {row}
+                          </Link>
+                        ) : (
+                          <button type="button" onClick={() => scrollToSection(item.target)} className={base}>
+                            {row}
+                          </button>
+                        )}
+                      </li>
+                    )
+                  })}
                 </ul>
               </div>
 
@@ -509,6 +765,26 @@ export function ProfilePage() {
                   {generatingCv ? 'Generating…' : 'Generate CV (PDF)'}
                 </Button>
               </div>
+
+              <nav className="hidden rounded-2xl border border-border bg-card p-4 lg:block">
+                <div className="px-2 pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Jump to
+                </div>
+                <ul className="space-y-0.5">
+                  {SECTION_NAV.map((item) => (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => scrollToSection(item.id)}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        <ion-icon name={item.icon} style={{ fontSize: 15 }} />
+                        {item.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
             </aside>
           </form>
         )}

@@ -19,6 +19,7 @@ import { OnboardingPage } from './pages/Onboarding'
 import { CvPage } from './pages/Cv'
 import { AddJobPage } from './pages/AddJob'
 import { JobsPage } from './pages/Jobs'
+import { SuggestionsPage } from './pages/Suggestions'
 import { JobDetailPage } from './pages/JobDetail'
 import { MyJobDetailPage } from './pages/MyJobDetail'
 import { ApplicationsPage } from './pages/Applications'
@@ -45,6 +46,7 @@ export default function App() {
                 <Route path="/my-jobs/:id" element={<MyJobDetailPage />} />
                 <Route element={<DashboardLayout />}>
                   <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/suggestions" element={<SuggestionsPage />} />
                   <Route path="/add-job" element={<AddJobPage />} />
                   <Route path="/sync" element={<SyncPage />} />
                   <Route path="/applications" element={<ApplicationsPage />} />
