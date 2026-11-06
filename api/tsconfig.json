@@ -10,9 +10,11 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  // Only source is compiled here. Vercel's @vercel/node builder reads this
-  // tsconfig when building the serverless function and would otherwise pull
-  // test files into the program — those fail to resolve @job-hunter/shared on a
-  // cold build and break the deploy. Tests are type-checked via tsconfig.test.json.
-  "include": ["src"]
+  // src plus the serverless entry (api/index.ts). The entry must be type-checked
+  // here — it wires the app together and previously shipped a wrong argument to
+  // mountRoutes (a bare LlmConfig instead of the AiRuntime holder) that 500'd
+  // /admin/settings/ai, undetected because it sat outside the program. Tests are
+  // still excluded (they fail to resolve @job-hunter/shared on a cold Vercel
+  // build and break the deploy) and are type-checked via tsconfig.test.json.
+  "include": ["src", "api"]
 }
