@@ -11,7 +11,6 @@ import { createAdminRoutes } from './routes/admin.js'
 import { createCronRoutes } from './routes/cron.js'
 import { createMaterialsRoutes } from './routes/materials.js'
 import { createUserJobsRoutes } from './routes/userJobs.js'
-import { createJobPageExtractor } from './userJobs/userJobsService.js'
 import { createApplicationsRoutes } from './routes/applications.js'
 import { createAutomationRoutes } from './routes/automation.js'
 import { createJobTrackingRoutes } from './routes/jobTracking.js'
@@ -29,21 +28,18 @@ import { cefaloSource } from './discovery/sources/cefalo.js'
 import { vivasoftSource } from './discovery/sources/vivasoft.js'
 import { dsInnovatorsSource } from './discovery/sources/dsInnovators.js'
 import { pageEvidenceVerifier } from './verification/pageEvidenceVerifier.js'
-import { createRequirementsExtractor } from './scoring/requirementsExtractor.js'
-import { createMaterialsGenerator } from './materials/materialsGenerator.js'
-import { createResumeExtractor } from './profile/resumeExtractor.js'
 import { createCloudinaryUploader } from './profile/cloudinaryStorage.js'
 import { createSuggestionsRoutes } from './routes/suggestions.js'
-import type { LlmConfig } from './llm/config.js'
-import type { Embedder } from './embeddings/embeddingProvider.js'
+import type { AiRuntime } from './ai/aiRuntime.js'
 
 export function mountRoutes(
   app: Hono,
   db: Db,
   jwtSecret: string,
   cronSecret: string,
-  llmConfig: LlmConfig | null,
-  embedder: Embedder | null = null
+  // The live AI runtime: route handlers read providers/embedder/extractors off it per
+  // request, so credentials saved via the admin settings page apply without a redeploy.
+  ai: AiRuntime
 ) {
   const sources = [
     remoteOkSource,
@@ -60,65 +56,37 @@ export function mountRoutes(
     vivasoftSource,
     dsInnovatorsSource,
   ]
-  const resumeExtractor = llmConfig
-    ? createResumeExtractor(llmConfig.provider, llmConfig.resume.model)
-    : null
+  // The CV uploader is env-only (Cloudinary), unaffected by AI settings, so it's built once.
   const cvUploader = createCloudinaryUploader(process.env)
 
   app.route('/auth', createAuthRoutes(db, jwtSecret))
   app.route(
     '/profile',
-    createProfileRoutes(db, jwtSecret, undefined, resumeExtractor, cvUploader, embedder)
+    createProfileRoutes(
+      db,
+      jwtSecret,
+      undefined,
+      () => ai.resumeExtractor,
+      () => cvUploader,
+      () => ai.embedder
+    )
   )
   app.route('/discovery', createDiscoveryRoutes(db, jwtSecret, sources))
   app.route('/verification', createVerificationRoutes(db, jwtSecret, pageEvidenceVerifier))
-  app.route('/jobs', createJobsRoutes(db, jwtSecret, sources, embedder))
+  app.route('/jobs', createJobsRoutes(db, jwtSecret, sources, () => ai.embedder))
   app.route('/public', createPublicRoutes(db))
-  app.route('/admin', createAdminRoutes(db, jwtSecret))
+  app.route('/admin', createAdminRoutes(db, jwtSecret, ai))
   app.route('/cron', createCronRoutes(db, cronSecret, sources))
   app.route('/applications', createApplicationsRoutes(db, jwtSecret))
   app.route('/automation', createAutomationRoutes(db, jwtSecret))
   app.route('/job-tracking', createJobTrackingRoutes(db, jwtSecret))
-  // User-added jobs work with or without an LLM: the URL preview uses the
-  // configured provider when present and falls back to heuristic extraction
-  // otherwise, so this route mounts unconditionally.
-  app.route(
-    '/user-jobs',
-    createUserJobsRoutes(
-      db,
-      jwtSecret,
-      llmConfig ? createJobPageExtractor(llmConfig.provider, llmConfig.requirements.model) : null
-    )
-  )
-
-  // Semantic suggestions only need OpenAI embeddings (independent of LLM_PROVIDER), so they
-  // mount whenever an embedder is configured, separately from the llmConfig-gated routes.
-  if (embedder) {
-    app.route('/suggestions', createSuggestionsRoutes(db, jwtSecret, embedder))
-  }
-
-  if (llmConfig) {
-    app.route(
-      '/scoring',
-      createScoringRoutes(
-        db,
-        jwtSecret,
-        createRequirementsExtractor(llmConfig.provider, llmConfig.requirements.model)
-      )
-    )
-    app.route(
-      '/materials',
-      createMaterialsRoutes(
-        db,
-        jwtSecret,
-        createMaterialsGenerator(
-          llmConfig.provider,
-          llmConfig.materials.model,
-          llmConfig.materials.reasoning
-        )
-      )
-    )
-  }
+  // All AI-backed routes mount unconditionally and resolve the current provider/embedder off
+  // the runtime per request — a route returns 503 (or, for user-jobs, falls back to heuristic
+  // extraction) when nothing is configured, and starts working the moment credentials are saved.
+  app.route('/user-jobs', createUserJobsRoutes(db, jwtSecret, () => ai.jobPageExtractor))
+  app.route('/suggestions', createSuggestionsRoutes(db, jwtSecret, () => ai.embedder))
+  app.route('/scoring', createScoringRoutes(db, jwtSecret, () => ai.requirementsExtractor))
+  app.route('/materials', createMaterialsRoutes(db, jwtSecret, () => ai.materialsGenerator))
 
   return app
 }

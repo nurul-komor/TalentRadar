@@ -151,7 +151,8 @@ export function createJobsRoutes(
   db: Db,
   jwtSecret: string,
   sources: JobSource[],
-  embedder: Embedder | null = null
+  // Read per request so a runtime embedding change applies immediately; null = no embedder.
+  getEmbedder: () => Embedder | null = () => null
 ) {
   const jobsRoutes = new Hono<{ Variables: AuthVariables }>()
 
@@ -179,6 +180,7 @@ export function createJobsRoutes(
     // we silently fall back to the default newest-first ordering below. The vector ranking runs in
     // Atlas (searchRankedJobsPage); the full `filter` is re-applied to the ranked pool so every
     // filter still works.
+    const embedder = getEmbedder()
     if (sortByMatch && embedder) {
       const profileId = await optionalProfileId(c.req.header('Authorization'), jwtSecret)
       const queryVector = profileId ? await embedProfile(db, profileId, embedder).catch(() => null) : null

@@ -96,7 +96,7 @@ describe('scoring routes', () => {
 
     app = new Hono()
     app.route('/auth', createAuthRoutes(db, JWT_SECRET))
-    app.route('/scoring', createScoringRoutes(db, JWT_SECRET, fakeExtractor))
+    app.route('/scoring', createScoringRoutes(db, JWT_SECRET, () => fakeExtractor))
   })
 
   afterEach(async () => {

@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import type { Profile, TrackedJob } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
-import { canSync } from '../lib/syncAccess'
+import { canSync, isAdmin } from '../lib/syncAccess'
 import { useSavedJobs } from '../hooks/useSavedJobs'
 import { profileCompletenessPercent } from '../lib/profileCompleteness'
 import { isFollowUpOverdue } from '../lib/jobTracking'
@@ -40,10 +40,11 @@ function initialsFromEmail(email: string | null): string {
   return local.slice(0, 2).toUpperCase()
 }
 
-// Shared account popover. Opens from the sidebar foot (desktop) or the "Account"
-// tab (tablet/phone) and surfaces the account's important links + log out. Saved
-// Jobs and Job Sync live here too because they are not in the mobile tab bar.
-function AccountMenu({ variant, title, subtitle }: { variant: 'sidebar' | 'tabs'; title?: string; subtitle?: string }) {
+// Shared account popover. Opens from the sidebar foot (desktop) or the mobile
+// top-header avatar (tablet/phone) and surfaces the account's important links +
+// log out. Saved Jobs and Job Sync live here too because they are not in the
+// mobile tab bar.
+function AccountMenu({ variant, title, subtitle }: { variant: 'sidebar' | 'header'; title?: string; subtitle?: string }) {
   const { email, logout } = useAuth()
   const { savedIds } = useSavedJobs()
   const navigate = useNavigate()
@@ -72,6 +73,7 @@ function AccountMenu({ variant, title, subtitle }: { variant: 'sidebar' | 'tabs'
     { to: '/cv', label: 'Resume', icon: 'document-text-outline', badge: 0 },
     { to: '/jobs?saved=1', label: 'Saved Jobs', icon: 'briefcase-outline', badge: savedIds.length },
     ...(canSync(email) ? [{ to: '/sync', label: 'Job Sync', icon: 'refresh-outline', badge: 0 }] : []),
+    ...(isAdmin(email) ? [{ to: '/settings', label: 'Settings', icon: 'settings-outline', badge: 0 }] : []),
   ]
 
   function go(to: string) {
@@ -113,19 +115,20 @@ function AccountMenu({ variant, title, subtitle }: { variant: 'sidebar' | 'tabs'
     </div>
   )
 
-  if (variant === 'tabs') {
+  if (variant === 'header') {
     return (
-      <div className="app-mobile-account account-anchor" ref={anchorRef}>
+      <div className="app-mobile-header-account account-anchor" ref={anchorRef}>
         <button
           type="button"
-          className={`app-mobile-tabs-btn${open ? ' current' : ''}`}
+          className={`app-mobile-header-avatar${open ? ' current' : ''}`}
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label="Account"
           onClick={() => setOpen((v) => !v)}
         >
-          <ion-icon name="person-circle-outline" style={{ fontSize: 18 }} />
-          Account
+          <span className="avatar" aria-hidden="true">
+            {initialsFromEmail(email)}
+          </span>
         </button>
         {menu}
       </div>
@@ -237,6 +240,13 @@ export function DashboardSidebar() {
           <NavLink to="/sync" className={sidebarLinkClass}>
             <ion-icon name="refresh-outline" style={{ fontSize: 18 }} />
             Job Sync
+          </NavLink>
+        )}
+
+        {isAdmin(email) && (
+          <NavLink to="/settings" className={sidebarLinkClass}>
+            <ion-icon name="settings-outline" style={{ fontSize: 18 }} />
+            Settings
           </NavLink>
         )}
       </div>

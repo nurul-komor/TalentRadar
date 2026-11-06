@@ -157,10 +157,16 @@ export function OnboardingPage() {
     setStep((s) => Math.max(s - 1, 0))
   }
 
-  // "Skip for now" lets the user into the app without finishing. They can
-  // complete it later from Profile, and applying to a job will route them back
-  // here until it's done.
+  // "Skip for now" advances past the current step without validating it, so a
+  // user can skip steps one at a time. On the final step there's nothing left to
+  // skip, so it leaves onboarding entirely — they can finish later from Profile,
+  // and applying to a job routes them back here until it's done.
   function handleSkip() {
+    if (step < STEPS.length - 1) {
+      setStepError(null)
+      setStep((s) => s + 1)
+      return
+    }
     skipOnboarding()
     navigate('/jobs', { replace: true })
   }
@@ -485,7 +491,7 @@ export function OnboardingPage() {
                   {submitting ? 'Finishing…' : 'Finish setup'}
                 </Button>
               ) : (
-                <Button type="button" onClick={goNext}>
+                <Button type="button" onClick={goNext} disabled={cvUploading}>
                   Continue
                 </Button>
               )}

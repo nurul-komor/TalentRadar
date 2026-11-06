@@ -24,6 +24,7 @@ import { JobDetailPage } from './pages/JobDetail'
 import { MyJobDetailPage } from './pages/MyJobDetail'
 import { ApplicationsPage } from './pages/Applications'
 import { AdminPage } from './pages/Admin'
+import { SettingsPage } from './pages/Settings'
 
 export default function App() {
   return (
@@ -52,6 +53,10 @@ export default function App() {
                   <Route path="/applications" element={<ApplicationsPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/cv" element={<CvPage />} />
+                  {/* Admin-only settings, inside the dashboard shell so it keeps the sidebar. */}
+                  <Route element={<AdminRoute />}>
+                    <Route path="/settings" element={<SettingsPage />} />
+                  </Route>
                 </Route>
                 <Route element={<AdminRoute />}>
                   <Route path="/admin" element={<AdminPage />} />

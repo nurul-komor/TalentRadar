@@ -90,7 +90,7 @@ describe('materials routes', () => {
 
     app = new Hono()
     app.route('/auth', createAuthRoutes(db, JWT_SECRET))
-    app.route('/materials', createMaterialsRoutes(db, JWT_SECRET, fakeGenerator))
+    app.route('/materials', createMaterialsRoutes(db, JWT_SECRET, () => fakeGenerator))
   })
 
   afterEach(async () => {

@@ -212,7 +212,7 @@ describe('profile routes with resume extraction', () => {
     db = conn.db
     app = new Hono()
     app.route('/auth', createAuthRoutes(db, JWT_SECRET))
-    app.route('/profile', createProfileRoutes(db, JWT_SECRET, fakeCvParser, fakeResumeExtractor))
+    app.route('/profile', createProfileRoutes(db, JWT_SECRET, fakeCvParser, () => fakeResumeExtractor))
     originalDailyBudget = process.env.ANTHROPIC_DAILY_BUDGET_USD
   })
 
@@ -298,7 +298,7 @@ describe('profile CV upload with file storage', () => {
     db = conn.db
     app = new Hono()
     app.route('/auth', createAuthRoutes(db, JWT_SECRET))
-    app.route('/profile', createProfileRoutes(db, JWT_SECRET, fakeCvParser, null, uploader))
+    app.route('/profile', createProfileRoutes(db, JWT_SECRET, fakeCvParser, () => null, () => uploader))
   }
 
   afterEach(async () => {

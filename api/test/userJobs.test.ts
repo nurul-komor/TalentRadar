@@ -60,7 +60,7 @@ describe('user jobs routes', () => {
 
     app = new Hono()
     app.route('/auth', createAuthRoutes(db, JWT_SECRET))
-    app.route('/user-jobs', createUserJobsRoutes(db, JWT_SECRET, fakeExtractor))
+    app.route('/user-jobs', createUserJobsRoutes(db, JWT_SECRET, () => fakeExtractor))
   })
 
   afterEach(async () => {

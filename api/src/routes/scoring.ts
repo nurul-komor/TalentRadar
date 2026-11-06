@@ -5,11 +5,20 @@ import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
 import { runScoring } from '../scoring/scoringService.js'
 import type { JobRequirementsExtractor } from '../scoring/types.js'
 
-export function createScoringRoutes(db: Db, jwtSecret: string, extractor: JobRequirementsExtractor) {
+// `getExtractor` is read per request (not captured once) so credentials saved at runtime via
+// the admin settings page take effect immediately; it returns null when no LLM is configured.
+export function createScoringRoutes(
+  db: Db,
+  jwtSecret: string,
+  getExtractor: () => JobRequirementsExtractor | null
+) {
   const scoringRoutes = new Hono<{ Variables: AuthVariables }>()
   scoringRoutes.use('*', createRequireAuth(jwtSecret))
 
   scoringRoutes.post('/run', async (c) => {
+    const extractor = getExtractor()
+    if (!extractor) return c.json({ error: 'AI is not configured' }, 503)
+
     const profile = (await db
       .collection('profiles')
       .findOne({ _id: new ObjectId(c.get('profileId')) })) as Profile | null

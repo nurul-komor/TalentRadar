@@ -12,11 +12,21 @@ import type { MaterialsGenerator } from '../materials/types.js'
 const EXPORTABLE_DOCS = ['tailoredCv', 'coverLetter', 'outreachMessage'] as const
 type ExportableDoc = (typeof EXPORTABLE_DOCS)[number]
 
-export function createMaterialsRoutes(db: Db, jwtSecret: string, generator: MaterialsGenerator) {
+// `getGenerator` is read per request so runtime-saved AI credentials apply immediately; it
+// returns null when no LLM is configured (only the /generate endpoint needs it — the
+// save/fetch/export endpoints work regardless).
+export function createMaterialsRoutes(
+  db: Db,
+  jwtSecret: string,
+  getGenerator: () => MaterialsGenerator | null
+) {
   const materialsRoutes = new Hono<{ Variables: AuthVariables }>()
   materialsRoutes.use('*', createRequireAuth(jwtSecret))
 
   materialsRoutes.post('/:jobId/generate', async (c) => {
+    const generator = getGenerator()
+    if (!generator) return c.json({ error: 'AI is not configured' }, 503)
+
     const jobIdParam = c.req.param('jobId')
     const separatorIndex = jobIdParam.indexOf(':')
     const sourceId = separatorIndex === -1 ? '' : jobIdParam.slice(0, separatorIndex)

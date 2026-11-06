@@ -1,5 +1,14 @@
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import * as pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs'
 import mammoth from 'mammoth'
+
+// Run pdf.js entirely on the main thread. By default pdf.js loads its worker
+// via a dynamic `import(workerSrc)`, which the Vercel/esbuild bundler can't see
+// statically — so the worker module isn't included in the serverless function
+// bundle and `getDocument()` throws at runtime (works locally, fails deployed).
+// Registering the statically-imported worker on `globalThis.pdfjsWorker` makes
+// pdf.js use its `WorkerMessageHandler` directly and skip the dynamic import.
+;(globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = pdfjsWorker
 
 export const DOCX_MIME_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document'

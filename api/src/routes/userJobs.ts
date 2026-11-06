@@ -15,7 +15,14 @@ import {
 
 const URL_SCHEMA_PATTERN = /^https?:\/\//i
 
-export function createUserJobsRoutes(db: Db, jwtSecret: string, extractor: JobPageExtractor | null) {
+// `getExtractor` is read per request so runtime-saved AI credentials apply immediately; it
+// returns null when no LLM is configured, in which case preview/resync fall back to the
+// heuristic extractor exactly as before.
+export function createUserJobsRoutes(
+  db: Db,
+  jwtSecret: string,
+  getExtractor: () => JobPageExtractor | null
+) {
   const userJobsRoutes = new Hono<{ Variables: AuthVariables }>()
   userJobsRoutes.use('*', createRequireAuth(jwtSecret))
 
@@ -27,7 +34,7 @@ export function createUserJobsRoutes(db: Db, jwtSecret: string, extractor: JobPa
       return c.json({ error: 'Enter a valid http(s) URL.' }, 400)
     }
     try {
-      const preview = await previewJobFromUrl(url, extractor)
+      const preview = await previewJobFromUrl(url, getExtractor())
       return c.json(preview)
     } catch (reason) {
       if (reason instanceof PreviewError) return c.json({ error: reason.message }, 422)
@@ -84,7 +91,7 @@ export function createUserJobsRoutes(db: Db, jwtSecret: string, extractor: JobPa
     const id = c.req.param('id')
     if (!ObjectId.isValid(id)) return c.json({ error: 'job not found' }, 404)
     try {
-      const job = await resyncUserJob(db, c.get('profileId'), id, extractor)
+      const job = await resyncUserJob(db, c.get('profileId'), id, getExtractor())
       if (!job) return c.json({ error: 'job not found' }, 404)
       return c.json(job)
     } catch (reason) {

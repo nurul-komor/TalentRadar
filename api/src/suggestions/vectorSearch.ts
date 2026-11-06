@@ -47,6 +47,12 @@ export async function ensureVectorIndexes(db: Db, dimensions = 1536): Promise<vo
 // stop attempting the aggregation and go straight to the in-memory path on every later call.
 let vectorSearchUnavailable = false
 
+// Lets the admin vector-status endpoint report whether this process has fallen back to the
+// in-memory cosine path. Null = never attempted a $vectorSearch yet this process.
+export function isVectorSearchUnavailable(): boolean {
+  return vectorSearchUnavailable
+}
+
 // Maps a raw cosine similarity (-1..1) to the 0..1 scale Atlas reports as `vectorSearchScore`
 // for a cosine index, i.e. (1 + cos) / 2. Used so the in-memory fallback and the /jobs match
 // sort produce the same score scale as the Atlas $vectorSearch path.

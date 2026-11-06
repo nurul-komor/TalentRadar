@@ -17,13 +17,15 @@ const MAX_CV_FILE_BYTES = 10 * 1024 * 1024
 // profile responses. Applied alongside the passwordHash exclusion on every read.
 const PROFILE_PROJECTION = { passwordHash: 0, resumeEmbedding: 0 } as const
 
+// The AI-backed dependencies are supplied as getters read per request, so credentials or the
+// embedding mode saved at runtime (admin settings page) take effect without a redeploy.
 export function createProfileRoutes(
   db: Db,
   jwtSecret: string,
   cvParser: CvParser = parseCvFile,
-  resumeExtractor: ResumeExtractor | null = null,
-  cvUploader: CvUploader | null = null,
-  embedder: Embedder | null = null
+  getResumeExtractor: () => ResumeExtractor | null = () => null,
+  getCvUploader: () => CvUploader | null = () => null,
+  getEmbedder: () => Embedder | null = () => null
 ) {
   const profileRoutes = new Hono<{ Variables: AuthVariables }>()
   profileRoutes.use('*', createRequireAuth(jwtSecret))
@@ -90,6 +92,10 @@ export function createProfileRoutes(
   })
 
   profileRoutes.post('/cv', async (c) => {
+    // Resolve the AI-backed deps once per request from the live runtime.
+    const resumeExtractor = getResumeExtractor()
+    const cvUploader = getCvUploader()
+    const embedder = getEmbedder()
     const body = await c.req.parseBody()
     const file = body.file
     if (!(file instanceof File)) {
@@ -106,7 +112,13 @@ export function createProfileRoutes(
     let cvText: string
     try {
       cvText = await cvParser(buffer, file.type)
-    } catch {
+    } catch (reason) {
+      console.error('failed to parse CV file', {
+        mimeType: file.type,
+        size: file.size,
+        name: file.name,
+        reason,
+      })
       return c.json({ error: 'failed to parse file' }, 400)
     }
 
