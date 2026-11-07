@@ -1149,7 +1149,10 @@ a.kpi:hover{transform:translateY(-3px);border-color:var(--line-strong);box-shado
 .app-mobile-header{display:none;}
 @media (max-width:900px){
   .app-sidebar{display:none;}
-  .app-main{margin-left:0;padding-top:calc(60px + env(safe-area-inset-top,0px));padding-bottom:96px;}
+  /* On phones the inner .wrap (or a page's own px-* gutter) already supplies the
+     side padding, so drop .app-main's horizontal padding to avoid a doubled gutter
+     that left cards unnecessarily narrow. Keep safe-area insets for notched devices. */
+  .app-main{margin-left:0;padding-top:calc(60px + env(safe-area-inset-top,0px));padding-bottom:96px;padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px);}
 
   /* Mobile top header: brand + account. Account moved here so the bottom tab bar
      fits all six primary destinations without clipping. */

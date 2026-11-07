@@ -90,7 +90,12 @@ const SECTION_NAV: Array<{ id: string; label: string; icon: string }> = [
 const selectClass =
   'flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]'
 
+// Custom event a Section listens for so the completeness checklist can expand a
+// collapsed card (on phone, sections are accordions) before scrolling to it.
+const OPEN_SECTION_EVENT = 'profile:open-section'
+
 function scrollToSection(id: string) {
+  window.dispatchEvent(new CustomEvent(OPEN_SECTION_EVENT, { detail: id }))
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
@@ -110,6 +115,7 @@ function Section({
   title,
   description,
   complete,
+  defaultOpen = false,
   children,
 }: {
   id: string
@@ -117,33 +123,60 @@ function Section({
   title: string
   description?: string
   complete?: boolean
+  // Collapsed-by-default drives the phone-only accordion; the first section opens
+  // on load. On md+ the card is always expanded regardless of this state.
+  defaultOpen?: boolean
   children: ReactNode
 }) {
+  const [open, setOpen] = useState(defaultOpen)
+
+  // Let the completeness checklist expand this card when it jumps here.
+  useEffect(() => {
+    function handleOpen(event: Event) {
+      if ((event as CustomEvent<string>).detail === id) setOpen(true)
+    }
+    window.addEventListener(OPEN_SECTION_EVENT, handleOpen)
+    return () => window.removeEventListener(OPEN_SECTION_EVENT, handleOpen)
+  }, [id])
+
   return (
-    <section id={id} className="scroll-mt-6 rounded-2xl border border-border bg-card p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-foreground">
-            <Icon name={icon} style={{ fontSize: 18 }} />
-          </span>
-          <div>
-            <h2 className="text-lg font-semibold leading-tight text-foreground">{title}</h2>
-            {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
-          </div>
+    <section id={id} className="scroll-mt-6 rounded-2xl border border-border bg-card p-4 md:p-6">
+      {/* Header doubles as the accordion toggle on phone; inert (always-open) on md+.
+          Phone uses a compact single-line row (description hidden, status reduced to a
+          check icon) so the icon/title/status/chevron don't fight for width. */}
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 text-left md:items-start md:gap-4 md:pointer-events-none"
+      >
+        <span className="flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-accent text-accent-foreground md:mt-0.5">
+          <Icon name={icon} style={{ fontSize: 18 }} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-base font-semibold leading-tight text-foreground md:whitespace-normal md:text-lg">
+            {title}
+          </h2>
+          {description && <p className="mt-0.5 hidden text-sm text-muted-foreground md:block">{description}</p>}
         </div>
         {complete != null && (
           <span
             className={cn(
-              'inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium',
+              'inline-flex flex-none items-center gap-1 rounded-full p-1.5 text-xs font-medium md:px-2.5 md:py-1',
               complete ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
             )}
           >
             <Icon name={complete ? 'checkmark-circle' : 'ellipse-outline'} style={{ fontSize: 13 }} />
-            {complete ? 'Complete' : 'Needs info'}
+            <span className="hidden md:inline">{complete ? 'Complete' : 'Needs info'}</span>
           </span>
         )}
-      </div>
-      <div className="mt-5">{children}</div>
+        <Icon
+          name="chevron-down-outline"
+          className={cn('flex-none transition-transform md:hidden', open && 'rotate-180')}
+          style={{ fontSize: 18 }}
+        />
+      </button>
+      <div className={cn('mt-5', open ? 'block' : 'hidden md:block')}>{children}</div>
     </section>
   )
 }
@@ -332,6 +365,7 @@ export function ProfilePage() {
                 title="Personal details"
                 description="How you appear to recruiters and on your generated CV."
                 complete={personalComplete}
+                defaultOpen
               >
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="flex flex-col gap-1.5">
