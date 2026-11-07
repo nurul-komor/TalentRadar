@@ -1,3 +1,4 @@
+import { Icon } from '../components/Icon'
 import { useCallback, useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import type { Job } from '@job-hunter/shared'
@@ -117,7 +118,7 @@ export function SyncPage() {
             <p>Pull the latest jobs from all configured sources and see what changed.</p>
             <div className="quick">
               <button type="button" className="btn btn-indigo" onClick={handleRunSync} disabled={running}>
-                <ion-icon name="refresh-outline" style={{ fontSize: 15, display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }} />
+                <Icon name="refresh-outline" style={{ fontSize: 15, display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }} />
                 {running ? 'Syncing…' : 'Sync now'}
               </button>
             </div>

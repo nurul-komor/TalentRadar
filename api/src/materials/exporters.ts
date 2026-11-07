@@ -1,10 +1,13 @@
 import PDFDocument from 'pdfkit'
-import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx'
+import { Document, Packer, Paragraph, TextRun, ExternalHyperlink, HeadingLevel } from 'docx'
 
 // The tailored CV is generated as GitHub-flavored Markdown. These helpers parse
-// the small subset it uses — `# name`, `## section`, `- bullet`, `**bold**` — so
-// the PDF/DOCX come out formatted rather than showing literal markdown markers.
+// the small subset it uses — `# name`, `## section`, `- bullet`, `**bold**`, and
+// `[label](url)` links — so the PDF/DOCX come out formatted (and links clickable)
+// rather than showing literal markdown markers.
 // Legacy records (plain UPPERCASE headings, no markdown) are still handled.
+
+const LINK_COLOR = '1A56DB'
 
 const LEGACY_SECTION_HEADINGS = new Set([
   'SUMMARY',
@@ -26,7 +29,13 @@ type LineKind = 'name' | 'heading' | 'bullet' | 'text'
 
 interface ParsedLine {
   kind: LineKind
-  text: string // markdown markers for structure stripped; inline **bold** preserved
+  text: string // structure markers stripped; inline **bold** and [label](url) preserved
+}
+
+interface InlineSegment {
+  text: string
+  bold: boolean
+  href?: string // set when the segment is a hyperlink
 }
 
 function classifyLine(raw: string): ParsedLine | null {
@@ -42,16 +51,25 @@ function classifyLine(raw: string): ParsedLine | null {
   return { kind: 'text', text: t }
 }
 
-// Splits a line into alternating normal / bold (**…**) segments.
-function inlineSegments(text: string): Array<{ text: string; bold: boolean }> {
-  return text
-    .split(/(\*\*[^*]+\*\*)/g)
-    .filter((part) => part.length > 0)
-    .map((part) =>
-      part.startsWith('**') && part.endsWith('**')
-        ? { text: part.slice(2, -2), bold: true }
-        : { text: part, bold: false },
-    )
+// Splits a line into normal / bold (**…**) / link ([label](url)) segments,
+// scanning left to right so bold and links can both appear on the same line.
+const INLINE_TOKEN_RE = /\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)]+)\)/g
+
+export function inlineSegments(text: string): InlineSegment[] {
+  const segments: InlineSegment[] = []
+  let lastIndex = 0
+  for (const m of text.matchAll(INLINE_TOKEN_RE)) {
+    const start = m.index ?? 0
+    if (start > lastIndex) segments.push({ text: text.slice(lastIndex, start), bold: false })
+    if (m[1] !== undefined) {
+      segments.push({ text: m[1], bold: true }) // **bold**
+    } else {
+      segments.push({ text: m[2], bold: false, href: m[3] }) // [label](url)
+    }
+    lastIndex = start + m[0].length
+  }
+  if (lastIndex < text.length) segments.push({ text: text.slice(lastIndex), bold: false })
+  return segments.filter((seg) => seg.text.length > 0)
 }
 
 export async function exportToPdf(text: string, opts: { resume?: boolean } = {}): Promise<Buffer> {
@@ -69,12 +87,27 @@ export async function exportToPdf(text: string, opts: { resume?: boolean } = {})
     }
 
     const contentWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right
-    const writeInline = (text: string, options: PDFKit.Mixins.TextOptions, baseFont: 'Helvetica' | 'Helvetica-Bold') => {
+    const writeInline = (
+      text: string,
+      options: PDFKit.Mixins.TextOptions,
+      baseFont: 'Helvetica' | 'Helvetica-Bold',
+      baseColor: string,
+    ) => {
       const segments = inlineSegments(text)
       segments.forEach((seg, index) => {
-        doc
-          .font(seg.bold ? 'Helvetica-Bold' : baseFont)
-          .text(seg.text, { ...options, continued: index < segments.length - 1 })
+        const continued = index < segments.length - 1
+        if (seg.href) {
+          // Clickable hyperlink: blue + underlined, opens on click in the PDF.
+          doc
+            .font(baseFont)
+            .fillColor(`#${LINK_COLOR}`)
+            .text(seg.text, { ...options, continued, link: seg.href, underline: true })
+        } else {
+          doc
+            .font(seg.bold ? 'Helvetica-Bold' : baseFont)
+            .fillColor(baseColor)
+            .text(seg.text, { ...options, continued, link: null, underline: false })
+        }
       })
     }
 
@@ -108,11 +141,11 @@ export async function exportToPdf(text: string, opts: { resume?: boolean } = {})
       }
       if (parsed.kind === 'bullet') {
         doc.fillColor('#222222').fontSize(10.5)
-        writeInline(`•  ${parsed.text}`, { indent: 12, lineGap: 1.5 }, 'Helvetica')
+        writeInline(`•  ${parsed.text}`, { indent: 12, lineGap: 1.5 }, 'Helvetica', '#222222')
         continue
       }
       doc.fillColor('#111111').fontSize(10.5)
-      writeInline(parsed.text, { lineGap: 1.5 }, 'Helvetica')
+      writeInline(parsed.text, { lineGap: 1.5 }, 'Helvetica', '#111111')
     }
 
     doc.end()
@@ -129,8 +162,14 @@ export async function exportToDocx(text: string, opts: { resume?: boolean } = {}
   }
 
   const runs = (text: string, opts: { bold?: boolean; size?: number; color?: string } = {}) =>
-    inlineSegments(text).map(
-      (seg) => new TextRun({ text: seg.text, bold: seg.bold || opts.bold, size: opts.size, color: opts.color }),
+    inlineSegments(text).map((seg) =>
+      seg.href
+        ? // Clickable hyperlink: blue + underlined, opens on click in Word.
+          new ExternalHyperlink({
+            link: seg.href,
+            children: [new TextRun({ text: seg.text, size: opts.size, color: LINK_COLOR, underline: {} })],
+          })
+        : new TextRun({ text: seg.text, bold: seg.bold || opts.bold, size: opts.size, color: opts.color }),
     )
 
   const children: Paragraph[] = []

@@ -1,8 +1,37 @@
-import { useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { Icon } from './Icon'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
 import { useAuth } from '../auth/AuthContext'
 import { ThemeToggle } from './ThemeToggle'
+
+// Hides the nav when scrolling down and reveals it when scrolling back up.
+// Always visible near the top of the page.
+function useHideOnScroll(): boolean {
+  const [hidden, setHidden] = useState(false)
+
+  useEffect(() => {
+    let last = window.scrollY
+    let ticking = false
+    function update() {
+      const y = window.scrollY
+      if (y < 80) setHidden(false)
+      else if (y > last + 6) setHidden(true)
+      else if (y < last - 6) setHidden(false)
+      last = y
+      ticking = false
+    }
+    function onScroll() {
+      if (ticking) return
+      ticking = true
+      requestAnimationFrame(update)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
+  return hidden
+}
 
 function BrandMark() {
   return (
@@ -18,6 +47,54 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
   return isActive ? 'current' : ''
 }
 
+// Horizontal nav links with a single "pill" that slides between items to mark
+// the active route — mirrors the dashboard sidebar's sliding indicator.
+function NavLinks({ links }: { links: { to: string; label: string }[] }) {
+  const location = useLocation()
+  const ref = useRef<HTMLDivElement>(null)
+  const [indicator, setIndicator] = useState<{ left: number; width: number; ready: boolean }>({
+    left: 0,
+    width: 0,
+    ready: false,
+  })
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    function reposition() {
+      const current = el!.querySelector<HTMLElement>('a.current')
+      if (!current) {
+        setIndicator((prev) => ({ ...prev, ready: false }))
+        return
+      }
+      setIndicator({ left: current.offsetLeft, width: current.offsetWidth, ready: true })
+    }
+    reposition()
+    const observer = new ResizeObserver(reposition)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [location.pathname])
+
+  return (
+    <div className="nav-links" ref={ref}>
+      <span
+        className="nav-links-indicator"
+        aria-hidden="true"
+        style={{
+          transform: `translateX(${indicator.left}px)`,
+          width: indicator.width,
+          opacity: indicator.ready ? 1 : 0,
+        }}
+      />
+      {links.map((link) => (
+        <NavLink key={link.to} to={link.to} className={navLinkClass}>
+          {link.label}
+        </NavLink>
+      ))}
+    </div>
+  )
+}
+
 function NavMenuToggle({ open, onClick }: { open: boolean; onClick: () => void }) {
   return (
     <button
@@ -28,9 +105,9 @@ function NavMenuToggle({ open, onClick }: { open: boolean; onClick: () => void }
       onClick={onClick}
     >
       {open ? (
-        <ion-icon name="close-outline" style={{ fontSize: 20 }} />
+        <Icon name="close-outline" style={{ fontSize: 20 }} />
       ) : (
-        <ion-icon name="menu-outline" style={{ fontSize: 20 }} />
+        <Icon name="menu-outline" style={{ fontSize: 20 }} />
       )}
     </button>
   )
@@ -47,21 +124,16 @@ export function PublicNav() {
   const { isAuthenticated } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const closeMenu = () => setMenuOpen(false)
+  const hidden = useHideOnScroll()
 
   return (
-    <nav className="nav">
+    <nav className={`nav${hidden && !menuOpen ? ' nav-hidden' : ''}`}>
       <div className="wrap nav-row">
         <NavLink to="/" className="brand" onClick={closeMenu}>
           <BrandMark />
           Hunter
         </NavLink>
-        <div className="nav-links">
-          {PUBLIC_LINKS.map((link) => (
-            <NavLink key={link.to} to={link.to} className={navLinkClass}>
-              {link.label}
-            </NavLink>
-          ))}
-        </div>
+        <NavLinks links={PUBLIC_LINKS} />
         <div className="nav-cta">
           <ThemeToggle />
           {isAuthenticated ? (
@@ -136,21 +208,16 @@ export function AppNav() {
   const { email, logout } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
   const closeMenu = () => setMenuOpen(false)
+  const hidden = useHideOnScroll()
 
   return (
-    <nav className="nav app-nav">
+    <nav className={`nav app-nav${hidden && !menuOpen ? ' nav-hidden' : ''}`}>
       <div className="wrap nav-row">
         <NavLink to="/" className="brand" onClick={closeMenu}>
           <BrandMark />
           Hunter
         </NavLink>
-        <div className="nav-links">
-          {APP_LINKS.map((link) => (
-            <NavLink key={link.to} to={link.to} className={navLinkClass}>
-              {link.label}
-            </NavLink>
-          ))}
-        </div>
+        <NavLinks links={APP_LINKS} />
         <div className="nav-cta">
           <ThemeToggle />
           <MenuPrimitive.Root>

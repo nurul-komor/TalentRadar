@@ -14,6 +14,7 @@ export const JobSourceIdSchema = z.enum([
   'cefalo',
   'vivasoft',
   'dsinnovators',
+  'adzuna',
 ])
 
 export const JobStatusSchema = z.enum(['discovered', 'verified', 'rejected'])

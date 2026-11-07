@@ -1,3 +1,4 @@
+import { Icon } from '../components/Icon'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { Profile, UserJob, UserJobVisibility } from '@job-hunter/shared'
@@ -156,25 +157,25 @@ export function MyJobDetailPage() {
                     title="View original posting"
                     aria-label="View original posting"
                   >
-                    <ion-icon name="open-outline" style={{ fontSize: 18 }} />
+                    <Icon name="open-outline" style={{ fontSize: 18 }} />
                   </a>
                 )}
               </div>
               <div className="meta">
                 <span>
-                  <ion-icon name="business-outline" />
+                  <Icon name="business-outline" />
                   {job.company}
                 </span>
                 <span>
-                  <ion-icon name="location-outline" />
+                  <Icon name="location-outline" />
                   {job.location ?? 'Location unknown'}
                 </span>
                 <span>
-                  <ion-icon name="wallet-outline" />
+                  <Icon name="wallet-outline" />
                   {formatSalary(job)}
                 </span>
                 <span>
-                  <ion-icon name="calendar-outline" />
+                  <Icon name="calendar-outline" />
                   {formatDate(job.createdAt)}
                 </span>
               </div>
@@ -233,12 +234,12 @@ export function MyJobDetailPage() {
               </button>
               {job.url && (
                 <button type="button" className="btn btn-ghost" disabled={syncBusy} onClick={forceSync}>
-                  <ion-icon name="refresh-outline" />
+                  <Icon name="refresh-outline" />
                   {syncBusy ? 'Syncing…' : 'Force sync'}
                 </button>
               )}
               <button type="button" className="btn btn-ghost aj-danger" disabled={busy} onClick={remove}>
-                <ion-icon name="trash-outline" />
+                <Icon name="trash-outline" />
                 Delete
               </button>
             </div>

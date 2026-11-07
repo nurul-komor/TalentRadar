@@ -1,3 +1,4 @@
+import { Icon } from '../components/Icon'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Job } from '@job-hunter/shared'
@@ -142,7 +143,7 @@ export function SuggestionsPage() {
                     <Link to={`/jobs/${job._id}`}>{job.title}</Link>
                   </div>
                   <div className="sub">
-                    <ion-icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
+                    <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
                     {job.company}
                     {job.location ? ` · ${job.location}` : ''}
                   </div>

@@ -1,3 +1,4 @@
+import { Icon } from '../components/Icon'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { UserJob, UserJobPreview, UserJobVisibility } from '@job-hunter/shared'
@@ -188,7 +189,7 @@ export function AddJobPage() {
           <h1>Add a job</h1>
           <p>Paste a link to any job posting and sync a preview, or enter the details yourself. Saved jobs land in your private list — flip any of them public whenever you like.</p>
           <Link to="/jobs" className="btn btn-ghost" style={{ marginTop: 8 }}>
-            <ion-icon name="briefcase-outline" />
+            <Icon name="briefcase-outline" />
             View on jobs page
           </Link>
         </div>
@@ -206,7 +207,7 @@ export function AddJobPage() {
             className={`seg${mode === 'link' ? ' on' : ''}`}
             onClick={() => setMode('link')}
           >
-            <ion-icon name="link-outline" /> From a link
+            <Icon name="link-outline" /> From a link
           </button>
           <button
             type="button"
@@ -215,7 +216,7 @@ export function AddJobPage() {
             className={`seg${mode === 'manual' ? ' on' : ''}`}
             onClick={() => setMode('manual')}
           >
-            <ion-icon name="create-outline" /> Enter manually
+            <Icon name="create-outline" /> Enter manually
           </button>
         </div>
 
@@ -224,7 +225,7 @@ export function AddJobPage() {
             <div className="field full">
               <label htmlFor="syncUrl">Job posting URL</label>
               <div className="in">
-                <ion-icon name="link-outline" />
+                <Icon name="link-outline" />
                 <input
                   id="syncUrl"
                   type="url"
@@ -241,7 +242,7 @@ export function AddJobPage() {
               </div>
             </div>
             <Button variant="indigo" onClick={syncFromUrl} disabled={syncBusy || !syncUrl.trim()}>
-              <ion-icon name="refresh-outline" />
+              <Icon name="refresh-outline" />
               {syncBusy ? 'Syncing…' : 'Sync preview'}
             </Button>
           </div>
@@ -260,35 +261,35 @@ export function AddJobPage() {
               <div className="field">
                 <label htmlFor="company">Company</label>
                 <div className="in">
-                  <ion-icon name="business-outline" />
+                  <Icon name="business-outline" />
                   <input id="company" value={form.company} onChange={(e) => setField('company', e.target.value)} placeholder="Acme Corp" />
                 </div>
               </div>
               <div className="field">
                 <label htmlFor="location">Location</label>
                 <div className="in">
-                  <ion-icon name="location-outline" />
+                  <Icon name="location-outline" />
                   <input id="location" value={form.location} onChange={(e) => setField('location', e.target.value)} placeholder="Remote" />
                 </div>
               </div>
               <div className="field">
                 <label htmlFor="url">Source URL</label>
                 <div className="in">
-                  <ion-icon name="link-outline" />
+                  <Icon name="link-outline" />
                   <input id="url" value={form.url} onChange={(e) => setField('url', e.target.value)} placeholder="https://…" />
                 </div>
               </div>
               <div className="field">
                 <label htmlFor="salaryMin">Salary min</label>
                 <div className="in">
-                  <ion-icon name="wallet-outline" />
+                  <Icon name="wallet-outline" />
                   <input id="salaryMin" inputMode="numeric" value={form.salaryMin} onChange={(e) => setField('salaryMin', e.target.value)} placeholder="80000" />
                 </div>
               </div>
               <div className="field">
                 <label htmlFor="salaryMax">Salary max</label>
                 <div className="in">
-                  <ion-icon name="wallet-outline" />
+                  <Icon name="wallet-outline" />
                   <input id="salaryMax" inputMode="numeric" value={form.salaryMax} onChange={(e) => setField('salaryMax', e.target.value)} placeholder="120000" />
                 </div>
               </div>
@@ -312,7 +313,7 @@ export function AddJobPage() {
                     className={`seg${visibility === 'private' ? ' on' : ''}`}
                     onClick={() => setVisibility('private')}
                   >
-                    <ion-icon name="lock-closed-outline" /> Private
+                    <Icon name="lock-closed-outline" /> Private
                   </button>
                   <button
                     type="button"
@@ -321,7 +322,7 @@ export function AddJobPage() {
                     className={`seg${visibility === 'public' ? ' on' : ''}`}
                     onClick={() => setVisibility('public')}
                   >
-                    <ion-icon name="globe-outline" /> Public
+                    <Icon name="globe-outline" /> Public
                   </button>
                 </div>
                 <p className="add-job-hint">
@@ -332,7 +333,7 @@ export function AddJobPage() {
               </div>
             </div>
             <Button variant="indigo" onClick={save} disabled={saveBusy || !canSave} style={{ marginTop: 6 }}>
-              <ion-icon name="save-outline" />
+              <Icon name="save-outline" />
               {saveBusy ? 'Saving…' : 'Save to my job list'}
             </Button>
           </section>
@@ -349,11 +350,11 @@ export function AddJobPage() {
                   <div className="aj-main">
                     <div className="aj-title">{job.title}</div>
                     <div className="aj-meta">
-                      <span><ion-icon name="business-outline" /> {job.company}</span>
-                      {job.location && <span><ion-icon name="location-outline" /> {job.location}</span>}
+                      <span><Icon name="business-outline" /> {job.company}</span>
+                      {job.location && <span><Icon name="location-outline" /> {job.location}</span>}
                       {job.url && (
                         <a href={job.url} target="_blank" rel="noreferrer" className="aj-link">
-                          <ion-icon name="open-outline" /> Source
+                          <Icon name="open-outline" /> Source
                         </a>
                       )}
                     </div>
@@ -363,7 +364,7 @@ export function AddJobPage() {
                       {job.visibility === 'public' ? 'Public' : 'Private'}
                     </Pill>
                     <Link to={`/my-jobs/${job._id}`} className="btn btn-ghost btn-sm">
-                      <ion-icon name="eye-outline" /> View
+                      <Icon name="eye-outline" /> View
                     </Link>
                     <button
                       type="button"
@@ -380,7 +381,7 @@ export function AddJobPage() {
                       onClick={() => remove(job)}
                       aria-label="Delete job"
                     >
-                      <ion-icon name="trash-outline" />
+                      <Icon name="trash-outline" />
                     </button>
                   </div>
                 </div>

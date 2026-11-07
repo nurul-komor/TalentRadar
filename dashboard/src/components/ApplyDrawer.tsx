@@ -1,3 +1,4 @@
+import { Icon } from './Icon'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Profile } from '@job-hunter/shared'
@@ -489,7 +490,7 @@ export function ApplyDrawer({
                   className={`tab${activeTab === 'manual' ? ' active' : ''}`}
                   onClick={() => setActiveTab('manual')}
                 >
-                  <ion-icon name="create-outline" /> Prepare
+                  <Icon name="create-outline" /> Prepare
                 </button>
                 <button
                   type="button"
@@ -498,7 +499,7 @@ export function ApplyDrawer({
                   className={`tab${activeTab === 'automated' ? ' active' : ''}`}
                   onClick={() => setActiveTab('automated')}
                 >
-                  <ion-icon name="hardware-chip-outline" /> Automated
+                  <Icon name="hardware-chip-outline" /> Automated
                 </button>
                 <button
                   type="button"
@@ -507,7 +508,7 @@ export function ApplyDrawer({
                   className={`tab${activeTab === 'onsite' ? ' active' : ''}`}
                   onClick={() => setActiveTab('onsite')}
                 >
-                  <ion-icon name="globe-outline" /> On site
+                  <Icon name="globe-outline" /> On site
                 </button>
               </div>
 
@@ -519,7 +520,7 @@ export function ApplyDrawer({
 
                   {isProfileThin(profile) && (
                     <div className="mb-3 flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
-                      <ion-icon
+                      <Icon
                         name="bulb-outline"
                         style={{ color: 'var(--primary)', fontSize: 18, flex: 'none', marginTop: 2 }}
                       />
@@ -534,7 +535,7 @@ export function ApplyDrawer({
                           className="mt-1.5 inline-flex items-center gap-1 font-medium text-primary hover:underline"
                         >
                           Complete profile
-                          <ion-icon name="arrow-forward-outline" style={{ fontSize: 13 }} />
+                          <Icon name="arrow-forward-outline" style={{ fontSize: 13 }} />
                         </Link>
                       </div>
                     </div>
@@ -545,7 +546,7 @@ export function ApplyDrawer({
                   <div className="gen-grid">
                     <button type="button" className="gen-card" onClick={generateCoverLetter} disabled={coverBusy}>
                       <span className="gc-icon">
-                        <ion-icon name="sparkles-outline" />
+                        <Icon name="sparkles-outline" />
                       </span>
                       <span className="gc-title">
                         {coverBusy
@@ -558,7 +559,7 @@ export function ApplyDrawer({
                     </button>
                     <button type="button" className="gen-card" onClick={generateResume} disabled={cvBusy}>
                       <span className="gc-icon">
-                        <ion-icon name="document-text-outline" />
+                        <Icon name="document-text-outline" />
                       </span>
                       <span className="gc-title">
                         {cvBusy ? 'Generating…' : cvPreview ? 'Regenerate résumé' : 'Résumé (ATS)'}
@@ -569,7 +570,7 @@ export function ApplyDrawer({
 
                   {!coverRequested && !cvRequested && !coverBusy && !cvBusy && (
                     <div className="empty-hint">
-                      <ion-icon name="document-outline" />
+                      <Icon name="document-outline" />
                       <span>Nothing generated yet — pick a document above to get started.</span>
                     </div>
                   )}
@@ -598,9 +599,9 @@ export function ApplyDrawer({
                         <span>Cover letter (draft)</span>
                         <button type="button" className={`copy-btn${copyState === 'copied' ? ' ok' : ''}`} onClick={copyCoverLetter}>
                           {copyState === 'copied' ? (
-                            <ion-icon name="checkmark-outline" style={{ fontSize: 14 }} />
+                            <Icon name="checkmark-outline" style={{ fontSize: 14 }} />
                           ) : (
-                            <ion-icon name="copy-outline" style={{ fontSize: 14 }} />
+                            <Icon name="copy-outline" style={{ fontSize: 14 }} />
                           )}
                           {copyState === 'copied' ? 'Copied' : 'Copy'}
                         </button>
@@ -613,7 +614,7 @@ export function ApplyDrawer({
                           onClick={() => downloadDoc('coverLetter', 'cover')}
                           disabled={actionBusy}
                         >
-                          <ion-icon name="download-outline" />
+                          <Icon name="download-outline" />
                           {actionBusy ? 'Preparing…' : 'Download cover letter (PDF)'}
                         </button>
                         <button
@@ -623,9 +624,9 @@ export function ApplyDrawer({
                           disabled={coverSaveState !== 'idle'}
                         >
                           {coverSaveState === 'saved' ? (
-                            <ion-icon name="checkmark-outline" />
+                            <Icon name="checkmark-outline" />
                           ) : (
-                            <ion-icon name="save-outline" />
+                            <Icon name="save-outline" />
                           )}
                           {coverSaveState === 'saving'
                             ? 'Saving…'
@@ -662,9 +663,9 @@ export function ApplyDrawer({
                         <span>Tailored CV (ATS-optimized)</span>
                         <button type="button" className={`copy-btn${cvCopyState === 'copied' ? ' ok' : ''}`} onClick={copyCv}>
                           {cvCopyState === 'copied' ? (
-                            <ion-icon name="checkmark-outline" style={{ fontSize: 14 }} />
+                            <Icon name="checkmark-outline" style={{ fontSize: 14 }} />
                           ) : (
-                            <ion-icon name="copy-outline" style={{ fontSize: 14 }} />
+                            <Icon name="copy-outline" style={{ fontSize: 14 }} />
                           )}
                           {cvCopyState === 'copied' ? 'Copied' : 'Copy'}
                         </button>
@@ -677,7 +678,7 @@ export function ApplyDrawer({
                           onClick={() => downloadDoc('tailoredCv', 'cv')}
                           disabled={actionBusy}
                         >
-                          <ion-icon name="download-outline" />
+                          <Icon name="download-outline" />
                           {actionBusy ? 'Preparing…' : 'Download tailored CV (PDF)'}
                         </button>
                         <button
@@ -687,9 +688,9 @@ export function ApplyDrawer({
                           disabled={cvSaveState !== 'idle'}
                         >
                           {cvSaveState === 'saved' ? (
-                            <ion-icon name="checkmark-outline" />
+                            <Icon name="checkmark-outline" />
                           ) : (
-                            <ion-icon name="save-outline" />
+                            <Icon name="save-outline" />
                           )}
                           {cvSaveState === 'saving'
                             ? 'Saving…'
@@ -840,12 +841,12 @@ export function ApplyDrawer({
                   </p>
                   {applyUrl ? (
                     <a href={applyUrl} target="_blank" rel="noreferrer" className="btn btn-indigo">
-                      <ion-icon name="open-outline" />
+                      <Icon name="open-outline" />
                       Apply on site
                     </a>
                   ) : (
                     <button type="button" className="btn btn-indigo" disabled title="No application link on this job">
-                      <ion-icon name="open-outline" />
+                      <Icon name="open-outline" />
                       Apply on site
                     </button>
                   )}

@@ -147,6 +147,11 @@ export interface RankedJobsPage {
 // beyond this aren't paginated into, which is an acceptable bound for a best-match view.
 const MATCH_CANDIDATE_POOL = 500
 
+// "Best match" ranks jobs in two freshness tiers: everything discovered within this many
+// days sorts as a block above older postings, with match score ordering within each tier.
+// Keeps genuinely fresh roles at the top without discarding strong older matches.
+const FRESH_WINDOW_DAYS = 7
+
 // Powers the /jobs "Best match" sort: ranks jobs by similarity to queryVector server-side via
 // Atlas $vectorSearch, then applies `postFilter` (the filters $vectorSearch can't express —
 // keyword/salary/date/language/location) to the ranked pool and paginates. Keeps the heavy
@@ -159,6 +164,9 @@ export async function searchRankedJobsPage(
 ): Promise<RankedJobsPage> {
   const { postFilter, limit, offset } = opts
   const jobs = db.collection<Job>('jobs')
+  // ISO cutoff for the "fresh" tier; discoveredAt is an ISO string, so string comparison is chronological.
+  const freshCutoff = new Date(Date.now() - FRESH_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const isFreshJob = (job: Job) => job.discoveredAt >= freshCutoff
   const roundScore = (job: Job & { matchScore: number }) => ({
     ...job,
     matchScore: Math.round(job.matchScore * 10) / 10,
@@ -181,9 +189,17 @@ export async function searchRankedJobsPage(
               },
             },
           },
-          { $addFields: { matchScore: { $multiply: [{ $meta: 'vectorSearchScore' }, 100] } } },
+          {
+            $addFields: {
+              matchScore: { $multiply: [{ $meta: 'vectorSearchScore' }, 100] },
+              // Fresh-first tiering: jobs from the last FRESH_WINDOW_DAYS rank as a block
+              // above older ones; matchScore orders within each tier (see sort below).
+              isFresh: { $cond: [{ $gte: ['$discoveredAt', freshCutoff] }, 1, 0] },
+            },
+          },
           { $match: postFilter },
-          { $project: { embedding: 0 } },
+          { $sort: { isFresh: -1, matchScore: -1 } },
+          { $project: { embedding: 0, isFresh: 0 } },
           {
             $facet: {
               page: [{ $skip: offset }, { $limit: limit }],
@@ -211,6 +227,10 @@ export async function searchRankedJobsPage(
       const matchScore = cosineToUnitScore(cosineSimilarity(queryVector, embedding as number[])) * 100
       return roundScore({ ...(rest as Job), matchScore })
     })
-    .sort((a, b) => b.matchScore - a.matchScore)
+    // Mirror the Atlas path: fresh tier first, then match score within each tier.
+    .sort((a, b) => {
+      const freshDelta = Number(isFreshJob(b)) - Number(isFreshJob(a))
+      return freshDelta !== 0 ? freshDelta : b.matchScore - a.matchScore
+    })
   return { jobs: ranked.slice(offset, offset + limit), total: ranked.length }
 }

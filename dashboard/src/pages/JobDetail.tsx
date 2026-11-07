@@ -1,3 +1,4 @@
+import { Icon } from '../components/Icon'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom'
 import DOMPurify from 'dompurify'
@@ -227,24 +228,24 @@ export function JobDetailPage() {
                   title="View original posting"
                   aria-label="View original posting"
                 >
-                  <ion-icon name="open-outline" style={{ fontSize: 18 }} />
+                  <Icon name="open-outline" style={{ fontSize: 18 }} />
                 </a>
               </div>
               <div className="meta">
                 <span>
-                  <ion-icon name="business-outline" />
+                  <Icon name="business-outline" />
                   {job.company}
                 </span>
                 <span>
-                  <ion-icon name="location-outline" />
+                  <Icon name="location-outline" />
                   {job.location ?? 'Location unknown'}
                 </span>
                 <span>
-                  <ion-icon name="wallet-outline" />
+                  <Icon name="wallet-outline" />
                   {formatSalary(job)}
                 </span>
                 <span>
-                  <ion-icon name="calendar-outline" />
+                  <Icon name="calendar-outline" />
                   {formatDate(job.postedAt)}
                 </span>
               </div>
@@ -264,7 +265,7 @@ export function JobDetailPage() {
             <div className="verify-strip">
               <div className="vstep">
                 <span className="dot">
-                  <ion-icon name="briefcase-outline" />
+                  <Icon name="briefcase-outline" />
                 </span>
                 <div>
                   <b>Verification evidence</b>

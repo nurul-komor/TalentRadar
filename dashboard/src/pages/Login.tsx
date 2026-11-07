@@ -1,3 +1,4 @@
+import { Icon } from '../components/Icon'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import type { PublicJobsSummary } from '@job-hunter/shared'
@@ -92,7 +93,7 @@ export function LoginPage() {
             <div className="field">
               <label htmlFor="email">Email</label>
               <div className="in">
-                <ion-icon name="mail-outline" />
+                <Icon name="mail-outline" />
                 <input
                   id="email"
                   type="email"
@@ -109,7 +110,7 @@ export function LoginPage() {
             <div className="field">
               <label htmlFor="password">Password</label>
               <div className="in">
-                <ion-icon name="lock-closed-outline" />
+                <Icon name="lock-closed-outline" />
                 <input
                   id="password"
                   type="password"

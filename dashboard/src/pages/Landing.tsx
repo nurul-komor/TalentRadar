@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { Icon } from '../components/Icon'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import type { PublicJobsSummary, JobSourceId } from '@job-hunter/shared'
+import type { PublicJobsSummary, JobSourceId, Job } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { useCountUp } from '../hooks/useCountUp'
@@ -25,6 +26,7 @@ const SOURCE_LABELS: Record<JobSourceId, string> = {
   cefalo: 'Cefalo Bangladesh',
   vivasoft: 'Vivasoft Limited',
   dsinnovators: 'Dynamic Solution Innovators',
+  adzuna: 'Adzuna',
 }
 
 // Static illustrative cards for the hero's floating stack — not live data
@@ -34,6 +36,17 @@ const HERO_NOTICE_CARDS = [
   { seal: 'PV', sealColor: '#1FC9B7', role: 'Product Designer', company: 'Pavement', score: 74, sourceLabel: 'Himalayas' },
   { seal: 'NR', sealColor: '#6B78FF', role: 'DevRel Lead', company: 'Norther', score: 62, sourceLabel: 'WeWorkRemotely' },
 ] as const
+
+// Debounces a value so the typeahead fires a request only after typing settles,
+// mirroring the search box on the /jobs page.
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs)
+    return () => clearTimeout(timer)
+  }, [value, delayMs])
+  return debounced
+}
 
 function relativeTimeFromNow(dateString: string): string {
   const diffDays = Math.round((Date.now() - new Date(dateString).getTime()) / (24 * 60 * 60 * 1000))
@@ -51,6 +64,11 @@ export function LandingPage() {
   const [keyword, setKeyword] = useState('')
   const [location, setLocation] = useState('')
   const heroRef = useRef<HTMLDivElement | null>(null)
+  // Typeahead suggestions shown while typing in the hero search box — mirrors /jobs.
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const [suggestions, setSuggestions] = useState<Job[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [activeSuggestion, setActiveSuggestion] = useState(-1)
 
   useEffect(() => {
     apiFetch('/public/jobs-summary')
@@ -58,6 +76,32 @@ export function LandingPage() {
       .then(setSummary)
       .catch(() => setSummary(null))
   }, [])
+
+  // Short debounce keeps the dropdown feeling instant without a request per keystroke.
+  const suggestKeyword = useDebouncedValue(keyword, 160)
+
+  useEffect(() => {
+    const term = suggestKeyword.trim()
+    if (term.length < 2) {
+      setSuggestions([])
+      return
+    }
+    let cancelled = false
+    const params = new URLSearchParams({ q: term, limit: '6' })
+    apiFetch(`/jobs?${params.toString()}`)
+      .then((res) => (res.ok ? res.json() : { jobs: [] }))
+      .then((body: { jobs: Job[] }) => {
+        if (cancelled) return
+        setSuggestions(body.jobs ?? [])
+        setActiveSuggestion(-1)
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [suggestKeyword])
 
   useEffect(() => {
     const container = heroRef.current
@@ -86,6 +130,33 @@ export function LandingPage() {
   function goToJobs(params: Record<string, string>) {
     const search = new URLSearchParams(params).toString()
     navigate(search ? `/jobs?${search}` : '/jobs')
+  }
+
+  function commitSuggestion(job: Job) {
+    setShowSuggestions(false)
+    if (job._id) navigate(`/jobs/${job._id}`)
+  }
+
+  function onSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (!showSuggestions || suggestions.length === 0) {
+      if (event.key === 'Escape') setShowSuggestions(false)
+      return
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setActiveSuggestion((index) => (index + 1) % suggestions.length)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setActiveSuggestion((index) => (index <= 0 ? suggestions.length - 1 : index - 1))
+    } else if (event.key === 'Enter') {
+      if (activeSuggestion >= 0) {
+        event.preventDefault()
+        commitSuggestion(suggestions[activeSuggestion])
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      setShowSuggestions(false)
+    }
   }
 
   const totalJobsCount = useCountUp(summary ? summary.totalJobs : null)
@@ -118,7 +189,7 @@ export function LandingPage() {
             </p>
 
             <form
-              className="hero-reveal search-card"
+              className="hero-reveal search-card relative z-20"
               onSubmit={(e) => {
                 e.preventDefault()
                 const params: Record<string, string> = {}
@@ -128,17 +199,28 @@ export function LandingPage() {
               }}
             >
               <div className="search-field">
-                <ion-icon name="search-outline" style={{ fontSize: 17 }} />
+                <Icon name="search-outline" style={{ fontSize: 17 }} />
                 <input
+                  ref={searchInputRef}
                   type="text"
                   placeholder="Role or keyword"
                   aria-label="Role or keyword"
                   value={keyword}
-                  onChange={(e) => setKeyword(e.target.value)}
+                  onChange={(e) => {
+                    setKeyword(e.target.value)
+                    setShowSuggestions(true)
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => window.setTimeout(() => setShowSuggestions(false), 120)}
+                  onKeyDown={onSearchKeyDown}
+                  role="combobox"
+                  aria-expanded={showSuggestions && suggestions.length > 0}
+                  aria-controls="hero-search-suggestions"
+                  aria-autocomplete="list"
                 />
               </div>
               <div className="search-field">
-                <ion-icon name="location-outline" style={{ fontSize: 17 }} />
+                <Icon name="location-outline" style={{ fontSize: 17 }} />
                 <input
                   type="text"
                   placeholder="Anywhere / timezone"
@@ -150,6 +232,35 @@ export function LandingPage() {
               <button type="submit" className="btn btn-indigo">
                 Explore jobs
               </button>
+
+              {showSuggestions && suggestions.length > 0 && (
+                <ul
+                  id="hero-search-suggestions"
+                  role="listbox"
+                  className="absolute left-0 right-0 top-full z-30 mt-2 origin-top animate-in fade-in slide-in-from-top-1 overflow-hidden rounded-xl border border-input bg-popover p-1 shadow-lg duration-150"
+                >
+                  {suggestions.map((suggestion, index) => (
+                    <li key={suggestion._id} role="option" aria-selected={index === activeSuggestion}>
+                      <button
+                        type="button"
+                        // Prevent the input's blur from firing before the click lands.
+                        onMouseDown={(e) => e.preventDefault()}
+                        onMouseEnter={() => setActiveSuggestion(index)}
+                        onClick={() => commitSuggestion(suggestion)}
+                        className={`flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left transition-colors ${
+                          index === activeSuggestion ? 'bg-muted' : 'hover:bg-muted/60'
+                        }`}
+                      >
+                        <span className="line-clamp-1 text-sm font-medium text-foreground">{suggestion.title}</span>
+                        <span className="line-clamp-1 text-xs text-muted-foreground">
+                          {suggestion.company}
+                          {suggestion.location ? ` · ${suggestion.location}` : ''}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </form>
 
             <div className="hero-reveal hero-ctas">
@@ -249,7 +360,7 @@ export function LandingPage() {
                   <div>
                     <div className="role">{job.title}</div>
                     <div className="co">
-                      <ion-icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
+                      <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
                       {job.company}
                       {job.location ? ` · ${job.location}` : ''}
                     </div>
@@ -279,7 +390,7 @@ export function LandingPage() {
           <div ref={stepsRevealRef} className="steps">
             <div className="step reveal-step">
               <div className="step-icon">
-                <ion-icon name="search-outline" style={{ fontSize: 18 }} />
+                <Icon name="search-outline" style={{ fontSize: 18 }} />
               </div>
               <div className="idx">01 / DISCOVER</div>
               <h3>Discover</h3>
@@ -287,7 +398,7 @@ export function LandingPage() {
             </div>
             <div className="step reveal-step">
               <div className="step-icon">
-                <ion-icon name="briefcase-outline" style={{ fontSize: 18 }} />
+                <Icon name="briefcase-outline" style={{ fontSize: 18 }} />
               </div>
               <div className="idx">02 / VERIFY</div>
               <h3>Verify</h3>

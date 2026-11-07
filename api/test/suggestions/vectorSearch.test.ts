@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import type { Db, MongoClient } from 'mongodb'
 import { connectMongo } from '../../src/db'
-import { searchSimilarJobs, ensureVectorIndexes } from '../../src/suggestions/vectorSearch'
+import { searchSimilarJobs, searchRankedJobsPage, ensureVectorIndexes } from '../../src/suggestions/vectorSearch'
 
 function uniqueDbName(): string {
   return `test_${Date.now()}_${Math.random().toString(36).slice(2)}`
@@ -100,5 +100,48 @@ describe('searchSimilarJobs (in-memory fallback)', () => {
 
   it('ensureVectorIndexes is a no-op (does not throw) on non-Atlas Mongo', async () => {
     await expect(ensureVectorIndexes(db, 4)).resolves.toBeUndefined()
+  })
+})
+
+describe('searchRankedJobsPage fresh-first tiering (in-memory fallback)', () => {
+  let mongo: MongoMemoryServer
+  let client: MongoClient
+  let db: Db
+
+  const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString()
+
+  beforeAll(async () => {
+    mongo = await MongoMemoryServer.create()
+    const conn = await connectMongo(mongo.getUri(), uniqueDbName())
+    client = conn.client
+    db = conn.db
+  })
+
+  afterAll(async () => {
+    await client.close()
+    await mongo.stop()
+  })
+
+  beforeEach(async () => {
+    await db.collection('jobs').deleteMany({})
+  })
+
+  it('ranks jobs from the last week above older ones, by match score within each tier', async () => {
+    // Query aligned with [1,0,0,0]: [1,0,0,0] is a perfect match, [0,1,0,0] is a weak one.
+    await insertJob(db, 'fresh-high', [1, 0, 0, 0], { discoveredAt: daysAgo(1) })
+    await insertJob(db, 'fresh-low', [0, 1, 0, 0], { discoveredAt: daysAgo(2) })
+    // Strongest possible match, but discovered outside the 7-day fresh window.
+    await insertJob(db, 'old-high', [1, 0, 0, 0], { discoveredAt: daysAgo(10) })
+
+    const page = await searchRankedJobsPage(db, [1, 0, 0, 0], {
+      postFilter: {},
+      limit: 10,
+      offset: 0,
+    })
+
+    // Fresh tier first (match-ordered within it), then the older high match last —
+    // even though old-high has a higher score than fresh-low.
+    expect(page.jobs.map((j) => j.sourceJobId)).toEqual(['fresh-high', 'fresh-low', 'old-high'])
+    expect(page.total).toBe(3)
   })
 })

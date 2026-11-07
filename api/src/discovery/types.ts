@@ -15,6 +15,7 @@ export interface RawJobPosting {
     | 'cefalo'
     | 'vivasoft'
     | 'dsinnovators'
+    | 'adzuna'
   sourceJobId: string
   url: string
   title: string

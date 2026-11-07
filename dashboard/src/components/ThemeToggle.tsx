@@ -1,3 +1,4 @@
+import { Icon } from './Icon'
 import { useTheme } from '../theme/ThemeContext'
 
 export function ThemeToggle() {
@@ -10,7 +11,7 @@ export function ThemeToggle() {
       aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
       onClick={toggleTheme}
     >
-      {theme === 'dark' ? <ion-icon name="sunny-outline" /> : <ion-icon name="moon-outline" />}
+      {theme === 'dark' ? <Icon name="sunny-outline" /> : <Icon name="moon-outline" />}
     </button>
   )
 }

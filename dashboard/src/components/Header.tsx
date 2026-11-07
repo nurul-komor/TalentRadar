@@ -1,3 +1,4 @@
+import { Icon } from './Icon'
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
@@ -63,9 +64,9 @@ export function Header() {
             >
               <span className="sr-only">Open main menu</span>
               {mobileOpen ? (
-                <ion-icon name="close-outline" style={{ fontSize: 24 }} />
+                <Icon name="close-outline" style={{ fontSize: 24 }} />
               ) : (
-                <ion-icon name="menu-outline" style={{ fontSize: 24 }} />
+                <Icon name="menu-outline" style={{ fontSize: 24 }} />
               )}
             </button>
           </div>

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { Icon } from './Icon'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import type { Profile, TrackedJob } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -91,7 +92,7 @@ function AccountMenu({ variant, title, subtitle }: { variant: 'sidebar' | 'heade
       </div>
       {links.map(({ to, label, icon, badge }) => (
         <button key={to} type="button" role="menuitem" className="account-menu-item" onClick={() => go(to)}>
-          <ion-icon name={icon} style={{ fontSize: 18 }} />
+          <Icon name={icon} style={{ fontSize: 18 }} />
           {label}
           {badge > 0 && <span className="badge">{badge}</span>}
         </button>
@@ -109,7 +110,7 @@ function AccountMenu({ variant, title, subtitle }: { variant: 'sidebar' | 'heade
           logout()
         }}
       >
-        <ion-icon name="log-out-outline" style={{ fontSize: 18 }} />
+        <Icon name="log-out-outline" style={{ fontSize: 18 }} />
         Log out
       </button>
     </div>
@@ -152,7 +153,7 @@ function AccountMenu({ variant, title, subtitle }: { variant: 'sidebar' | 'heade
           <b>{title ?? email ?? 'Account'}</b>
           <span>{subtitle}</span>
         </span>
-        <ion-icon name={open ? 'chevron-down-outline' : 'chevron-up-outline'} class="chev" />
+        <Icon name={open ? 'chevron-down-outline' : 'chevron-up-outline'} className="chev" />
       </button>
       {menu}
     </div>
@@ -163,10 +164,19 @@ export function DashboardSidebar() {
   const { email } = useAuth()
   const { savedIds } = useSavedJobs()
   const navigate = useNavigate()
+  const location = useLocation()
   const searchRef = useRef<HTMLInputElement>(null)
+  const navRef = useRef<HTMLDivElement>(null)
   const [searchValue, setSearchValue] = useState('')
   const [profile, setProfile] = useState<Profile | null>(null)
   const [trackedJobs, setTrackedJobs] = useState<TrackedJob[]>([])
+  // The sliding "pill" behind the active nav link. We track the active link's
+  // position so a single indicator element can transition between items.
+  const [indicator, setIndicator] = useState<{ top: number; height: number; ready: boolean }>({
+    top: 0,
+    height: 0,
+    ready: false,
+  })
 
   useEffect(() => {
     apiFetch('/profile')
@@ -192,14 +202,33 @@ export function DashboardSidebar() {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  // Overdue follow-ups are the thing worth nudging the user toward on the tracker.
+  const overdueCount = trackedJobs.filter((job) => isFollowUpOverdue(job.followUpDate, job.status)).length
+
+  // Reposition the sliding indicator to the active link whenever the route
+  // changes or the nav's contents/size shift (badges, resize).
+  useLayoutEffect(() => {
+    const nav = navRef.current
+    if (!nav) return
+    function reposition() {
+      const current = nav!.querySelector<HTMLElement>('.app-sidebar-link.current')
+      if (!current) {
+        setIndicator((prev) => ({ ...prev, ready: false }))
+        return
+      }
+      setIndicator({ top: current.offsetTop, height: current.offsetHeight, ready: true })
+    }
+    reposition()
+    const observer = new ResizeObserver(reposition)
+    observer.observe(nav)
+    return () => observer.disconnect()
+  }, [location.pathname, location.search, savedIds.length, overdueCount, email])
+
   function submitSearch(event: React.FormEvent) {
     event.preventDefault()
     const trimmed = searchValue.trim()
     navigate(trimmed ? `/jobs?q=${encodeURIComponent(trimmed)}` : '/jobs')
   }
-
-  // Overdue follow-ups are the thing worth nudging the user toward on the tracker.
-  const overdueCount = trackedJobs.filter((job) => isFollowUpOverdue(job.followUpDate, job.status)).length
 
   return (
     <nav className="app-sidebar">
@@ -209,7 +238,7 @@ export function DashboardSidebar() {
       </NavLink>
 
       <form className="app-sidebar-search" onSubmit={submitSearch}>
-        <ion-icon name="search-outline" style={{ fontSize: 15 }} />
+        <Icon name="search-outline" style={{ fontSize: 15 }} />
         <input
           ref={searchRef}
           type="text"
@@ -220,10 +249,19 @@ export function DashboardSidebar() {
         <kbd>/</kbd>
       </form>
 
-      <div className="app-sidebar-nav">
+      <div className="app-sidebar-nav" ref={navRef}>
+        <span
+          className="app-sidebar-indicator"
+          aria-hidden="true"
+          style={{
+            transform: `translateY(${indicator.top}px)`,
+            height: indicator.height,
+            opacity: indicator.ready ? 1 : 0,
+          }}
+        />
         {SIDEBAR_LINKS.map(({ to, label, icon }) => (
           <NavLink key={to} to={to} className={sidebarLinkClass}>
-            <ion-icon name={icon} style={{ fontSize: 18 }} />
+            <Icon name={icon} style={{ fontSize: 18 }} />
             {label}
             {to === '/applications' && overdueCount > 0 && <span className="badge">{overdueCount}</span>}
           </NavLink>
@@ -231,21 +269,21 @@ export function DashboardSidebar() {
 
         <div className="app-sidebar-section-label">Shortcuts</div>
         <NavLink to="/jobs?saved=1" className="app-sidebar-link">
-          <ion-icon name="briefcase-outline" style={{ fontSize: 18 }} />
+          <Icon name="briefcase-outline" style={{ fontSize: 18 }} />
           Saved Jobs
           {savedIds.length > 0 && <span className="badge">{savedIds.length}</span>}
         </NavLink>
 
         {canSync(email) && (
           <NavLink to="/sync" className={sidebarLinkClass}>
-            <ion-icon name="refresh-outline" style={{ fontSize: 18 }} />
+            <Icon name="refresh-outline" style={{ fontSize: 18 }} />
             Job Sync
           </NavLink>
         )}
 
         {isAdmin(email) && (
           <NavLink to="/settings" className={sidebarLinkClass}>
-            <ion-icon name="settings-outline" style={{ fontSize: 18 }} />
+            <Icon name="settings-outline" style={{ fontSize: 18 }} />
             Settings
           </NavLink>
         )}
@@ -270,16 +308,86 @@ export function DashboardSidebar() {
   )
 }
 
-export function DashboardSidebarTopBar() {
+interface FabItem {
+  to: string
+  label: string
+  icon: string
+  badge?: number
+  // Saved Jobs points at /jobs?saved=1, which NavLink would otherwise mark active
+  // whenever the /jobs route is open — so it opts out of active styling, mirroring
+  // the sidebar.
+  matchActive?: boolean
+}
+
+// Mobile primary nav as a floating speed-dial at the bottom-right. The old
+// full-width bottom tab bar crammed every destination into one row, so on narrow
+// phones the labels clipped. A single round button that expands into a labelled,
+// staggered menu scales to any width and shows each destination's full label.
+// It mirrors the full desktop sidebar — primary destinations plus the Shortcuts
+// (Saved Jobs, and Job Sync / Settings when the account has access).
+export function DashboardMobileNav() {
+  const location = useLocation()
+  const { email } = useAuth()
+  const { savedIds } = useSavedJobs()
+  const [open, setOpen] = useState(false)
+
+  // Collapse on navigation.
+  useEffect(() => setOpen(false), [location.pathname])
+
+  // Collapse on Escape while open.
+  useEffect(() => {
+    if (!open) return
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open])
+
+  const items: FabItem[] = [
+    ...SIDEBAR_LINKS.map((link) => ({ ...link, matchActive: true })),
+    { to: '/jobs?saved=1', label: 'Saved Jobs', icon: 'briefcase-outline', badge: savedIds.length || undefined, matchActive: false },
+    ...(canSync(email) ? [{ to: '/sync', label: 'Job Sync', icon: 'refresh-outline', matchActive: true }] : []),
+    ...(isAdmin(email) ? [{ to: '/settings', label: 'Settings', icon: 'settings-outline', matchActive: true }] : []),
+  ]
+
   return (
-    <nav className="app-mobile-tabs" aria-label="Main">
-      {SIDEBAR_LINKS.map(({ to, label, icon }) => (
-        <NavLink key={to} to={to} className={sidebarLinkClass}>
-          <ion-icon name={icon} style={{ fontSize: 18 }} />
-          {label}
-        </NavLink>
-      ))}
-    </nav>
+    <div className={`app-fab${open ? ' open' : ''}`}>
+      {open && (
+        <button type="button" className="app-fab-scrim" aria-label="Close menu" onClick={() => setOpen(false)} />
+      )}
+      <nav className="app-fab-menu" aria-label="Main" aria-hidden={!open}>
+        {items.map((item, index) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.matchActive ? undefined : true}
+            className={({ isActive }) =>
+              item.matchActive && isActive ? 'app-fab-item current' : 'app-fab-item'
+            }
+            style={{ '--i': index } as CSSProperties}
+            tabIndex={open ? 0 : -1}
+          >
+            <span className="app-fab-item-label">
+              {item.label}
+              {item.badge ? <span className="app-fab-item-badge">{item.badge}</span> : null}
+            </span>
+            <span className="app-fab-item-icon">
+              <Icon name={item.icon} style={{ fontSize: 20 }} />
+            </span>
+          </NavLink>
+        ))}
+      </nav>
+      <button
+        type="button"
+        className="app-fab-button"
+        aria-expanded={open}
+        aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Icon name={open ? 'close-outline' : 'menu-outline'} style={{ fontSize: 24 }} />
+      </button>
+    </div>
   )
 }
 

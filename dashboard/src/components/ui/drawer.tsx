@@ -1,3 +1,4 @@
+import { Icon } from '../Icon'
 import type { ComponentProps, ReactNode } from "react"
 import { Drawer as DrawerPrimitive } from "@base-ui/react/drawer"
 import { cn } from "cn"
@@ -54,7 +55,7 @@ function DrawerClose({ className, children, ...props }: DrawerPrimitive.Close.Pr
       className={cn("rounded-md p-1 text-[var(--muted-text)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]", className)}
       {...props}
     >
-      {children ?? <ion-icon name="close-outline" style={{ fontSize: 18 }} />}
+      {children ?? <Icon name="close-outline" style={{ fontSize: 18 }} />}
     </DrawerPrimitive.Close>
   )
 }

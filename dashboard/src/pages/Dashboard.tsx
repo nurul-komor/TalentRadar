@@ -1,3 +1,4 @@
+import { Icon } from '../components/Icon'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Application, ApplicationStatus, Job, Profile, TrackedJob, UserJob } from '@job-hunter/shared'
@@ -324,7 +325,7 @@ export function DashboardPage() {
           <div className="kpis">
             <div className="kpi accent">
               <div className="kpi-ico">
-                <ion-icon name="briefcase-outline" />
+                <Icon name="briefcase-outline" />
               </div>
               <div className="kpi-body">
                 <div className="kpi-n">{totalTracked}</div>
@@ -333,7 +334,7 @@ export function DashboardPage() {
             </div>
             <div className="kpi teal">
               <div className="kpi-ico">
-                <ion-icon name="people-outline" />
+                <Icon name="people-outline" />
               </div>
               <div className="kpi-body">
                 <div className="kpi-n">{groupCounts.interviewing}</div>
@@ -342,7 +343,7 @@ export function DashboardPage() {
             </div>
             <div className="kpi">
               <div className="kpi-ico">
-                <ion-icon name="ribbon-outline" />
+                <Icon name="ribbon-outline" />
               </div>
               <div className="kpi-body">
                 <div className="kpi-n">{groupCounts.offer}</div>
@@ -351,7 +352,7 @@ export function DashboardPage() {
             </div>
             <Link to="/applications" className={`kpi${overdueCount > 0 ? ' warn' : ''}`}>
               <div className="kpi-ico">
-                <ion-icon name={overdueCount > 0 ? 'alert-circle-outline' : 'time-outline'} />
+                <Icon name={overdueCount > 0 ? 'alert-circle-outline' : 'time-outline'} />
               </div>
               <div className="kpi-body">
                 <div className="kpi-n">{overdueCount}</div>
@@ -420,7 +421,7 @@ export function DashboardPage() {
                         <div>
                           <div className="role">{job.title}</div>
                           <div className="co">
-                            <ion-icon
+                            <Icon
                               name="business-outline"
                               style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }}
                             />
@@ -538,7 +539,7 @@ export function DashboardPage() {
                           <ScoreRing score={job.score} size={36} />
                         ) : (
                           <span className="saved-badge" title="A job you added yourself">
-                            <ion-icon name="bookmark-outline" />
+                            <Icon name="bookmark-outline" />
                           </span>
                         )}
                         <span className="saved-info">
@@ -551,12 +552,12 @@ export function DashboardPage() {
                             {salary && <span className="saved-salary">{salary}</span>}
                             {job.savedAt && (
                               <span className="saved-time">
-                                <ion-icon name="time-outline" /> Saved {relativeTimeFromNow(job.savedAt)}
+                                <Icon name="time-outline" /> Saved {relativeTimeFromNow(job.savedAt)}
                               </span>
                             )}
                           </span>
                         </span>
-                        <ion-icon name="chevron-forward-outline" className="saved-chevron" />
+                        <Icon name="chevron-forward-outline" className="saved-chevron" />
                       </Link>
                     )
                   })}

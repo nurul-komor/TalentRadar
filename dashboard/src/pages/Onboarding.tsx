@@ -1,3 +1,4 @@
+import { Icon } from '../components/Icon'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { emptyResume } from '@job-hunter/shared'
@@ -355,7 +356,7 @@ export function OnboardingPage() {
                 </Button>
                 {cvText && !cvUploading && (
                   <span className="inline-flex items-center gap-1.5 text-sm font-medium text-primary">
-                    <ion-icon name="checkmark-circle-outline" /> CV on file ({cvText.length.toLocaleString()} chars)
+                    <Icon name="checkmark-circle-outline" /> CV on file ({cvText.length.toLocaleString()} chars)
                   </span>
                 )}
                 <input

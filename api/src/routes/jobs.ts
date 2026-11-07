@@ -112,8 +112,17 @@ function buildJobsFilter(query: {
   if (query.company) filter.company = { $regex: `^${escapeRegex(query.company)}$`, $options: 'i' }
   if (query.keyword) {
     const pattern = escapeRegex(query.keyword)
+    // Search the fields a user would expect a keyword to hit: the role title,
+    // the company, the posting body, and the extracted required skills — so a
+    // term like "kubernetes" or "react" matches jobs that only name it in the
+    // description, not just those with it in the title.
     andGroups.push({
-      $or: [{ title: { $regex: pattern, $options: 'i' } }, { company: { $regex: pattern, $options: 'i' } }],
+      $or: [
+        { title: { $regex: pattern, $options: 'i' } },
+        { company: { $regex: pattern, $options: 'i' } },
+        { rawDescription: { $regex: pattern, $options: 'i' } },
+        { 'extractedRequirements.requiredSkills': { $regex: pattern, $options: 'i' } },
+      ],
     })
   }
   if (query.languages && query.languages.length > 0) {

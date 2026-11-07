@@ -107,6 +107,13 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
     description:
       'A Dhaka software company recruiting through the hrythmic ATS. The openings page is server-rendered HTML, so we scrape the job list and each detail page for the description and posting date.',
   },
+  adzuna: {
+    label: 'Adzuna',
+    initials: 'AZ',
+    color: '#7A5CFF',
+    description:
+      'A job-search aggregator that indexes listings from across the web. We pull their public job API — title, company, location, salary estimates when available, and posting date.',
+  },
 }
 
 const SOURCE_ORDER: JobSourceId[] = [
@@ -123,6 +130,7 @@ const SOURCE_ORDER: JobSourceId[] = [
   'cefalo',
   'vivasoft',
   'dsinnovators',
+  'adzuna',
 ]
 
 export function SourcesPage() {

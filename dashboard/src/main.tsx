@@ -1,7 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
-import './lib/icons'
 import './index.css'
 
 // Take scroll position into our own hands. The browser's default 'auto'

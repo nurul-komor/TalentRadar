@@ -1,3 +1,4 @@
+import { Icon } from '../components/Icon'
 import { useEffect, useMemo, useState } from 'react'
 import type {
   TrackedJob,
@@ -262,7 +263,7 @@ export function ApplicationsPage() {
                 className={view === 'board' ? 'on' : ''}
                 onClick={() => setView('board')}
               >
-                <ion-icon name="grid-outline" /> Board
+                <Icon name="grid-outline" /> Board
               </button>
               <button
                 type="button"
@@ -271,12 +272,12 @@ export function ApplicationsPage() {
                 className={view === 'table' ? 'on' : ''}
                 onClick={() => setView('table')}
               >
-                <ion-icon name="list-outline" /> Table
+                <Icon name="list-outline" /> Table
               </button>
             </div>
 
             <div className="jt-search">
-              <ion-icon name="search-outline" />
+              <Icon name="search-outline" />
               <input
                 type="text"
                 placeholder="Search company, role, contact…"
@@ -287,10 +288,10 @@ export function ApplicationsPage() {
 
             <div className="jt-actions">
               <Button variant="ghost" onClick={() => setImportOpen(true)}>
-                <ion-icon name="enter-outline" /> Import
+                <Icon name="enter-outline" /> Import
               </Button>
               <Button variant="indigo" onClick={openAdd}>
-                <ion-icon name="add-outline" /> Add application
+                <Icon name="add-outline" /> Add application
               </Button>
             </div>
           </div>
@@ -330,10 +331,10 @@ export function ApplicationsPage() {
               Add an application manually, or import one from your saved jobs and applications.
               <span style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 16 }}>
                 <Button variant="ghost" onClick={() => setImportOpen(true)}>
-                  <ion-icon name="enter-outline" /> Import
+                  <Icon name="enter-outline" /> Import
                 </Button>
                 <Button variant="indigo" onClick={openAdd}>
-                  <ion-icon name="add-outline" /> Add your first application
+                  <Icon name="add-outline" /> Add your first application
                 </Button>
               </span>
             </p>
@@ -406,13 +407,13 @@ export function ApplicationsPage() {
                               {job.location && <span className="jt-tag muted">{job.location}</span>}
                               {job.materialsJobId && (
                                 <span className="jt-tag docs" title="Résumé & cover letter generated">
-                                  <ion-icon name="sparkles-outline" /> Docs
+                                  <Icon name="sparkles-outline" /> Docs
                                 </span>
                               )}
                             </div>
                             {job.followUpDate && (
                               <div className={`jt-followup${overdue ? ' overdue' : ''}`}>
-                                <ion-icon name="calendar-outline" />
+                                <Icon name="calendar-outline" />
                                 {overdue ? 'Overdue · ' : 'Follow up · '}
                                 {formatDate(job.followUpDate)}
                               </div>
@@ -453,7 +454,7 @@ export function ApplicationsPage() {
                               <b>{job.position}</b>
                               {job.jobUrl ? (
                                 <a href={job.jobUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-                                  {job.company} <ion-icon name="open-outline" />
+                                  {job.company} <Icon name="open-outline" />
                                 </a>
                               ) : (
                                 <small>{job.company}</small>
@@ -493,10 +494,10 @@ export function ApplicationsPage() {
                         <td>
                           <div className="jt-row-actions">
                             <button type="button" title="Edit" onClick={() => openEdit(job)}>
-                              <ion-icon name="create-outline" />
+                              <Icon name="create-outline" />
                             </button>
                             <button type="button" title="Remove" onClick={() => deleteJob(job)}>
-                              <ion-icon name="trash-outline" />
+                              <Icon name="trash-outline" />
                             </button>
                           </div>
                         </td>
@@ -609,7 +610,7 @@ function MaterialsPanel({ materialsJobId, company }: { materialsJobId: string; c
   return (
     <div className="jt-materials">
       <div className="jt-materials-h">
-        <ion-icon name="sparkles-outline" />
+        <Icon name="sparkles-outline" />
         Generated materials
       </div>
       {status === 'loading' && (
@@ -642,10 +643,10 @@ function MaterialsPanel({ materialsJobId, company }: { materialsJobId: string; c
               <p className="jt-doc-preview">{truncate(materials[key], 360)}</p>
               <div className="jt-doc-actions">
                 <Button variant="ghost" onClick={() => download(key, 'pdf')} disabled={downloading !== null}>
-                  <ion-icon name="download-outline" /> {downloading === `${key}-pdf` ? 'Preparing…' : 'PDF'}
+                  <Icon name="download-outline" /> {downloading === `${key}-pdf` ? 'Preparing…' : 'PDF'}
                 </Button>
                 <Button variant="ghost" onClick={() => download(key, 'docx')} disabled={downloading !== null}>
-                  <ion-icon name="download-outline" /> {downloading === `${key}-docx` ? 'Preparing…' : 'DOCX'}
+                  <Icon name="download-outline" /> {downloading === `${key}-docx` ? 'Preparing…' : 'DOCX'}
                 </Button>
               </div>
             </div>
@@ -688,7 +689,7 @@ function JobDrawer({ editing, form, set, error, saving, onClose, onSave, onDelet
         <div className="jt-drawer-h">
           <h2>{editing ? 'Edit application' : 'Add application'}</h2>
           <button type="button" className="jt-icon-btn" onClick={onClose} aria-label="Close">
-            <ion-icon name="close-outline" />
+            <Icon name="close-outline" />
           </button>
         </div>
 
@@ -771,7 +772,7 @@ function JobDrawer({ editing, form, set, error, saving, onClose, onSave, onDelet
         <div className="jt-drawer-foot">
           {onDelete && (
             <Button variant="ghost" onClick={onDelete} disabled={saving}>
-              <ion-icon name="trash-outline" /> Remove
+              <Icon name="trash-outline" /> Remove
             </Button>
           )}
           <div style={{ flex: 1 }} />
@@ -855,7 +856,7 @@ function ImportModal({ onClose, onImported }: { onClose: () => void; onImported:
         <div className="jt-drawer-h">
           <h2>Import an application</h2>
           <button type="button" className="jt-icon-btn" onClick={onClose} aria-label="Close">
-            <ion-icon name="close-outline" />
+            <Icon name="close-outline" />
           </button>
         </div>
         <div className="jt-modal-body">

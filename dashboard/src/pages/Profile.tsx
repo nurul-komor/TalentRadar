@@ -1,3 +1,4 @@
+import { Icon } from '../components/Icon'
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { emptyResume } from '@job-hunter/shared'
@@ -6,6 +7,7 @@ import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { FormError } from '../components/FormError'
 import { ScoreRing } from '../components/ScoreRing'
+import { profileRequiredChecks, type ProfileCheckKey } from '../lib/profileCompleteness'
 import {
   EducationEntryFields,
   ExperienceEntryFields,
@@ -47,28 +49,31 @@ const SECTION = {
   preferences: 'section-preferences',
 } as const
 
-// Mirrors the required-field set the onboarding wizard enforces. Used both for
-// the completeness checklist and to flip onboardingCompletedAt once satisfied.
-// `target` is where the checklist row scrolls (a section id) or links (the CV
-// upload lives on its own page).
+// Per-check UI metadata keyed off the canonical check set in
+// profileCompleteness. `label` is the checklist row text; `target` is where the
+// row scrolls (a section id) or links (the CV upload lives on its own page).
+const CHECK_META: Record<ProfileCheckKey, { label: string; target: string }> = {
+  fullName: { label: 'Full name', target: SECTION.personal },
+  phone: { label: 'Phone number', target: SECTION.personal },
+  country: { label: 'Country', target: SECTION.personal },
+  city: { label: 'City', target: SECTION.personal },
+  linkedin: { label: 'LinkedIn profile', target: SECTION.links },
+  github: { label: 'Portfolio / GitHub', target: SECTION.links },
+  cv: { label: 'CV uploaded', target: '/cv' },
+  experience: { label: 'Work experience', target: SECTION.experience },
+  education: { label: 'Education', target: SECTION.education },
+  skills: { label: 'Skills', target: SECTION.skills },
+}
+
+// Decorates the canonical required-field set (the single source of truth shared
+// with the Dashboard/sidebar ring) with this page's labels + scroll targets.
+// Also used to flip onboardingCompletedAt once every check is satisfied.
 function requiredChecks(resume: Resume, cvText: string | null) {
-  return [
-    { key: 'fullName', label: 'Full name', done: !!resume.fullName?.trim(), target: SECTION.personal },
-    { key: 'phone', label: 'Phone number', done: !!resume.phone?.trim(), target: SECTION.personal },
-    { key: 'country', label: 'Country', done: !!resume.location.country?.trim(), target: SECTION.personal },
-    { key: 'city', label: 'City', done: !!resume.location.city?.trim(), target: SECTION.personal },
-    { key: 'linkedin', label: 'LinkedIn profile', done: !!resume.linkedin?.trim(), target: SECTION.links },
-    { key: 'github', label: 'Portfolio / GitHub', done: !!resume.github?.trim(), target: SECTION.links },
-    { key: 'cv', label: 'CV uploaded', done: cvText != null, target: '/cv' as const },
-    { key: 'experience', label: 'Work experience', done: resume.experience.length > 0, target: SECTION.experience },
-    { key: 'education', label: 'Education', done: resume.education.length > 0, target: SECTION.education },
-    {
-      key: 'skills',
-      label: 'Skills',
-      done: resume.skillGroups.some((g) => g.skills.length > 0),
-      target: SECTION.skills,
-    },
-  ]
+  return profileRequiredChecks(resume, cvText).map((check) => ({
+    ...check,
+    label: CHECK_META[check.key].label,
+    target: CHECK_META[check.key].target,
+  }))
 }
 
 const SECTION_NAV: Array<{ id: string; label: string; icon: string }> = [
@@ -119,7 +124,7 @@ function Section({
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-foreground">
-            <ion-icon name={icon} style={{ fontSize: 18 }} />
+            <Icon name={icon} style={{ fontSize: 18 }} />
           </span>
           <div>
             <h2 className="text-lg font-semibold leading-tight text-foreground">{title}</h2>
@@ -133,7 +138,7 @@ function Section({
               complete ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
             )}
           >
-            <ion-icon name={complete ? 'checkmark-circle' : 'ellipse-outline'} style={{ fontSize: 13 }} />
+            <Icon name={complete ? 'checkmark-circle' : 'ellipse-outline'} style={{ fontSize: 13 }} />
             {complete ? 'Complete' : 'Needs info'}
           </span>
         )}
@@ -664,12 +669,12 @@ export function ProfilePage() {
                     </>
                   ) : saved ? (
                     <>
-                      <ion-icon name="checkmark-circle" style={{ color: 'var(--primary)', fontSize: 16 }} />
+                      <Icon name="checkmark-circle" style={{ color: 'var(--primary)', fontSize: 16 }} />
                       <span className="font-medium text-primary">All changes saved</span>
                     </>
                   ) : (
                     <>
-                      <ion-icon name="checkmark-circle-outline" style={{ color: 'var(--muted-foreground)', fontSize: 16 }} />
+                      <Icon name="checkmark-circle-outline" style={{ color: 'var(--muted-foreground)', fontSize: 16 }} />
                       <span className="text-muted-foreground">Up to date</span>
                     </>
                   )}
@@ -695,13 +700,13 @@ export function ProfilePage() {
                   {checks.map((item) => {
                     const row = (
                       <>
-                        <ion-icon
+                        <Icon
                           name={item.done ? 'checkmark-circle' : 'ellipse-outline'}
                           style={{ color: item.done ? 'var(--primary)' : 'var(--muted-foreground)', fontSize: 16 }}
                         />
                         <span className="flex-1 text-left">{item.label}</span>
                         {!item.done && (
-                          <ion-icon
+                          <Icon
                             name="chevron-forward-outline"
                             style={{ color: 'var(--muted-foreground)', fontSize: 13 }}
                           />
@@ -752,7 +757,7 @@ export function ProfilePage() {
                   to="/cv"
                   className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
                 >
-                  <ion-icon name="document-text-outline" /> {hasCv ? 'Manage CV' : 'Upload CV'}
+                  <Icon name="document-text-outline" /> {hasCv ? 'Manage CV' : 'Upload CV'}
                 </Link>
                 {cvExportError && <p className="mt-2 text-xs text-destructive">{cvExportError}</p>}
                 <Button
@@ -778,7 +783,7 @@ export function ProfilePage() {
                         onClick={() => scrollToSection(item.id)}
                         className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       >
-                        <ion-icon name={item.icon} style={{ fontSize: 15 }} />
+                        <Icon name={item.icon} style={{ fontSize: 15 }} />
                         {item.label}
                       </button>
                     </li>

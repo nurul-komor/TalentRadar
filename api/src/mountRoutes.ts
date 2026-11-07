@@ -27,6 +27,7 @@ import { bjitSource } from './discovery/sources/bjit.js'
 import { cefaloSource } from './discovery/sources/cefalo.js'
 import { vivasoftSource } from './discovery/sources/vivasoft.js'
 import { dsInnovatorsSource } from './discovery/sources/dsInnovators.js'
+import { createAdzunaSource } from './discovery/sources/adzuna.js'
 import { pageEvidenceVerifier } from './verification/pageEvidenceVerifier.js'
 import { createCloudinaryUploader } from './profile/cloudinaryStorage.js'
 import { createSuggestionsRoutes } from './routes/suggestions.js'
@@ -55,6 +56,8 @@ export function mountRoutes(
     cefaloSource,
     vivasoftSource,
     dsInnovatorsSource,
+    // Env-driven (ADZUNA_APP_ID/KEY); yields nothing until credentials are set.
+    createAdzunaSource(process.env),
   ]
   // The CV uploader is env-only (Cloudinary), unaffected by AI settings, so it's built once.
   const cvUploader = createCloudinaryUploader(process.env)

@@ -1,3 +1,4 @@
+import { Icon } from '../Icon'
 import { Accordion as AccordionPrimitive } from "@base-ui/react/accordion"
 import { cn } from "cn"
 
@@ -37,8 +38,8 @@ function AccordionTrigger({
         {...props}
       >
         {children}
-        <ion-icon name="chevron-down-outline" data-slot="accordion-trigger-icon" class="pointer-events-none shrink-0 group-aria-expanded/accordion-trigger:hidden" />
-        <ion-icon name="chevron-up-outline" data-slot="accordion-trigger-icon" class="pointer-events-none hidden shrink-0 group-aria-expanded/accordion-trigger:inline" />
+        <Icon name="chevron-down-outline" data-slot="accordion-trigger-icon" className="pointer-events-none shrink-0 group-aria-expanded/accordion-trigger:hidden" />
+        <Icon name="chevron-up-outline" data-slot="accordion-trigger-icon" className="pointer-events-none hidden shrink-0 group-aria-expanded/accordion-trigger:inline" />
       </AccordionPrimitive.Trigger>
     </AccordionPrimitive.Header>
   )

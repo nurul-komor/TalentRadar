@@ -14,7 +14,11 @@ async function waitForHostSlot(host: string): Promise<void> {
   lastRequestAtByHost.set(host, Date.now())
 }
 
-export async function fetchWithPolicy(url: string): Promise<Response> {
+// `init` lets a source issue non-GET requests (e.g. a GraphQL POST) or override
+// headers, while still going through the per-host throttle and request timeout.
+// Any caller-supplied header wins over the default User-Agent (some upstreams
+// reject the bot UA and need a browser-like one).
+export async function fetchWithPolicy(url: string, init: RequestInit = {}): Promise<Response> {
   const host = new URL(url).hostname
   await waitForHostSlot(host)
 
@@ -22,7 +26,8 @@ export async function fetchWithPolicy(url: string): Promise<Response> {
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
     return await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
+      ...init,
+      headers: { 'User-Agent': USER_AGENT, ...init.headers },
       signal: controller.signal,
     })
   } finally {

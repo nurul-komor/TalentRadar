@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Icon } from '../components/Icon'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { Job, JobSourceId, UserJob } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -57,11 +58,18 @@ const SOURCE_OPTIONS: Array<{ value: JobSourceId; label: string }> = [
   { value: 'cefalo', label: 'Cefalo Bangladesh' },
   { value: 'vivasoft', label: 'Vivasoft Limited' },
   { value: 'dsinnovators', label: 'Dynamic Solution Innovators' },
+  { value: 'adzuna', label: 'Adzuna' },
 ]
 
 const SOURCE_LABELS: Record<JobSourceId, string> = Object.fromEntries(
   SOURCE_OPTIONS.map((option) => [option.value, option.label]),
 ) as Record<JobSourceId, string>
+
+// Every tracked company in seed-companies-bd.json (Brain Station 23, BJIT, …) is
+// also a dedicated source above with the same display name, so it would appear
+// twice in the Source filter — once as a source, once as a company. Skip any
+// tracked company whose name already matches a source label.
+const SOURCE_LABEL_SET = new Set(SOURCE_OPTIONS.map((option) => option.label))
 
 // Programming-language filter. Values are the stable keys the API understands
 // (see LANGUAGE_PATTERNS in api/src/routes/jobs.ts); selecting several matches
@@ -110,6 +118,17 @@ function userJobMatchesLanguages(job: UserJob, languages: string[]): boolean {
   if (!pattern) return true
   const haystack = `${job.title}\n${job.description}\n${job.location ?? ''}`
   return new RegExp(pattern, 'i').test(haystack)
+}
+
+// Applies the keyword search to user-added jobs the same way the API does for the
+// discovery feed (title/company/description), so searching narrows "My jobs" and
+// saved jobs too — they're fetched client-side and bypass the server-side filter.
+// A plain case-insensitive substring match (not regex) keeps user input literal.
+function userJobMatchesKeyword(job: UserJob, keyword: string): boolean {
+  const needle = keyword.trim().toLowerCase()
+  if (!needle) return true
+  const haystack = `${job.title}\n${job.company}\n${job.description}\n${job.location ?? ''}`
+  return haystack.toLowerCase().includes(needle)
 }
 
 function parseSourceSelection(searchParams: URLSearchParams): SourceSelection {
@@ -218,6 +237,7 @@ function requirementsPreview(rawDescription: string): string | null {
 
 export function JobsPage() {
   const { isAuthenticated } = useAuth()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [jobs, setJobs] = useState<FeedJob[]>([])
   const [total, setTotal] = useState(0)
@@ -255,6 +275,11 @@ export function JobsPage() {
   const sortByMatch = canSortByMatch && searchParams.get('sort') === 'match'
 
   const [keyword, setKeyword] = useState(searchParams.get('q') ?? '')
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  // Typeahead suggestions shown while typing in the search box.
+  const [suggestions, setSuggestions] = useState<Job[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [activeSuggestion, setActiveSuggestion] = useState(-1)
   const [location, setLocation] = useState(searchParams.get('location') ?? '')
   const [salaryMin, setSalaryMin] = useState(searchParams.get('salaryMin') ?? '')
   const [salaryMax, setSalaryMax] = useState(searchParams.get('salaryMax') ?? '')
@@ -266,6 +291,21 @@ export function JobsPage() {
 
   useEffect(() => setKeyword(urlKeyword), [urlKeyword])
   useEffect(() => setLocation(urlLocation), [urlLocation])
+
+  // Press "/" anywhere (outside a text field) to jump to search — a common
+  // power-user shortcut that makes the feed feel keyboard-driven.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return
+      event.preventDefault()
+      searchInputRef.current?.focus()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
   useEffect(() => setSalaryMin(urlSalaryMin), [urlSalaryMin])
   useEffect(() => setSalaryMax(urlSalaryMax), [urlSalaryMax])
 
@@ -273,6 +313,70 @@ export function JobsPage() {
   const debouncedLocation = useDebouncedValue(location, DEBOUNCE_MS)
   const debouncedSalaryMin = useDebouncedValue(salaryMin, DEBOUNCE_MS)
   const debouncedSalaryMax = useDebouncedValue(salaryMax, DEBOUNCE_MS)
+
+  // Suggestions use a shorter debounce than the committed search so the dropdown
+  // feels instant while typing, without firing a request on every keystroke.
+  const suggestKeyword = useDebouncedValue(keyword, 160)
+  // True while the typed term hasn't yet been committed to the URL/feed — drives
+  // the little spinner in the search box.
+  const searchPending = keyword.trim() !== '' && keyword !== urlKeyword
+
+  useEffect(() => {
+    const term = suggestKeyword.trim()
+    if (term.length < 2) {
+      setSuggestions([])
+      return
+    }
+    let cancelled = false
+    const params = new URLSearchParams({ q: term, limit: '6' })
+    apiFetch(`/jobs?${params.toString()}`)
+      .then((res) => (res.ok ? res.json() : { jobs: [] }))
+      .then((body: { jobs: Job[] }) => {
+        if (cancelled) return
+        setSuggestions(body.jobs ?? [])
+        setActiveSuggestion(-1)
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [suggestKeyword])
+
+  function commitSuggestion(job: Job) {
+    setShowSuggestions(false)
+    if (job._id) navigate(`/jobs/${job._id}`)
+  }
+
+  function onSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (!showSuggestions || suggestions.length === 0) {
+      if (event.key === 'Escape') setShowSuggestions(false)
+      return
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setActiveSuggestion((index) => (index + 1) % suggestions.length)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setActiveSuggestion((index) => (index <= 0 ? suggestions.length - 1 : index - 1))
+    } else if (event.key === 'Enter') {
+      if (activeSuggestion >= 0) {
+        event.preventDefault()
+        commitSuggestion(suggestions[activeSuggestion])
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      setShowSuggestions(false)
+    }
+  }
+
+  function clearSearch() {
+    setKeyword('')
+    setSuggestions([])
+    setShowSuggestions(false)
+    searchInputRef.current?.focus()
+  }
 
   const activeFilterCount =
     Number(savedMode) +
@@ -436,15 +540,82 @@ export function JobsPage() {
 
   const filterControls = (
     <div className="filter-rail">
-      <div className="relative mt-4">
-        <ion-icon name="search-outline" style={{ fontSize: 16 }} class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Title or company"
-          className="w-full rounded-full border border-input bg-background py-2.5 pl-10 pr-3 text-sm text-foreground"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
+      <div className="group relative mt-4">
+        <Icon
+          name="search-outline"
+          style={{ fontSize: 16 }}
+          className="pointer-events-none absolute left-3.5 top-[21px] -translate-y-1/2 text-muted-foreground transition-colors duration-200 group-focus-within:text-indigo-500"
         />
+        <input
+          ref={searchInputRef}
+          type="text"
+          placeholder="Search title, company, skills…"
+          className="w-full rounded-full border border-input bg-background py-2.5 pl-10 pr-16 text-sm text-foreground shadow-sm outline-none transition-all duration-200 placeholder:text-muted-foreground focus:border-indigo-500 focus:shadow-[0_0_0_4px_rgba(99,102,241,0.15)]"
+          value={keyword}
+          onChange={(e) => {
+            setKeyword(e.target.value)
+            setShowSuggestions(true)
+          }}
+          onFocus={() => setShowSuggestions(true)}
+          onBlur={() => window.setTimeout(() => setShowSuggestions(false), 120)}
+          onKeyDown={onSearchKeyDown}
+          role="combobox"
+          aria-expanded={showSuggestions && suggestions.length > 0}
+          aria-controls="search-suggestions"
+          aria-autocomplete="list"
+        />
+        {/* Right-side affordance: spinner while the term settles, a clear button
+            when there's text, otherwise a subtle "/" shortcut hint. */}
+        <div className="absolute right-2 top-[21px] -translate-y-1/2">
+          {searchPending ? (
+            <span
+              aria-hidden="true"
+              className="block size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-indigo-500"
+            />
+          ) : keyword ? (
+            <button
+              type="button"
+              onClick={clearSearch}
+              aria-label="Clear search"
+              className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Icon name="close-outline" style={{ fontSize: 15 }} />
+            </button>
+          ) : (
+            <kbd className="pointer-events-none hidden rounded border border-input px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground lg:inline-block">
+              /
+            </kbd>
+          )}
+        </div>
+
+        {showSuggestions && suggestions.length > 0 && (
+          <ul
+            id="search-suggestions"
+            role="listbox"
+            className="absolute left-0 right-0 top-full z-30 mt-2 origin-top animate-in fade-in slide-in-from-top-1 overflow-hidden rounded-xl border border-input bg-popover p-1 shadow-lg duration-150"
+          >
+            {suggestions.map((suggestion, index) => (
+              <li key={suggestion._id} role="option" aria-selected={index === activeSuggestion}>
+                <button
+                  type="button"
+                  // Prevent the input's blur from firing before the click lands.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setActiveSuggestion(index)}
+                  onClick={() => commitSuggestion(suggestion)}
+                  className={`flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left transition-colors ${
+                    index === activeSuggestion ? 'bg-muted' : 'hover:bg-muted/60'
+                  }`}
+                >
+                  <span className="line-clamp-1 text-sm font-medium text-foreground">{suggestion.title}</span>
+                  <span className="line-clamp-1 text-xs text-muted-foreground">
+                    {suggestion.company}
+                    {suggestion.location ? ` · ${suggestion.location}` : ''}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <Accordion defaultValue={['date', 'language', 'source']}>
@@ -489,7 +660,7 @@ export function JobsPage() {
             <AccordionItem value="source">
               <AccordionTrigger>Source</AccordionTrigger>
               <AccordionContent>
-                <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+                <ul className="flex flex-col gap-2">
                   {SOURCE_OPTIONS.map((option) => (
                     <li key={option.value}>
                       <label className="check">
@@ -503,7 +674,9 @@ export function JobsPage() {
                       </label>
                     </li>
                   ))}
-                  {trackedCompanies.map((trackedCompany) => (
+                  {trackedCompanies
+                    .filter((trackedCompany) => !SOURCE_LABEL_SET.has(trackedCompany.name))
+                    .map((trackedCompany) => (
                     <li key={trackedCompany.name} className="flex items-center justify-between gap-2">
                       <label className="check">
                         <Checkbox
@@ -515,7 +688,7 @@ export function JobsPage() {
                         {trackedCompany.name}
                       </label>
                       {trackedCompany.verified && (
-                        <ion-icon name="checkmark-circle-outline" style={{ fontSize: 14 }} class="shrink-0 text-green-600" aria-label="Verified" />
+                        <Icon name="checkmark-circle-outline" style={{ fontSize: 14 }} className="shrink-0 text-green-600" aria-label="Verified" />
                       )}
                     </li>
                   ))}
@@ -571,7 +744,9 @@ export function JobsPage() {
   const visibleMyJobs = (savedMode
     ? myJobs.filter((job) => job._id && savedIds.includes(job._id))
     : myJobs
-  ).filter((job) => userJobMatchesLanguages(job, selectedLanguages))
+  )
+    .filter((job) => userJobMatchesLanguages(job, selectedLanguages))
+    .filter((job) => userJobMatchesKeyword(job, debouncedKeyword))
 
   // Added jobs render as ordinary rows in the list — on the "My jobs" tab, at
   // the top of the first page of "All jobs", and in saved mode — but never under
@@ -658,13 +833,13 @@ export function JobsPage() {
       </header>
       <section className="page-pad">
         <div className="wrap listing">
-          <aside className="hidden w-full shrink-0 lg:sticky lg:top-24 lg:block lg:w-72">
+          <aside className="hidden w-full shrink-0 lg:sticky lg:top-24 lg:block lg:w-72 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-2">
             <div className="flex items-center justify-between">
               <span className="count">
                 <b>{jobsCountLabel}</b>
               </span>
               <button type="button" onClick={clearFilters} disabled={!hasActiveFilters} className="clear-all">
-                <ion-icon name="close-outline" style={{ fontSize: 14, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
+                <Icon name="close-outline" style={{ fontSize: 14, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
                 Clear filters
               </button>
             </div>
@@ -678,7 +853,7 @@ export function JobsPage() {
               </span>
               <div className="flex items-center gap-3">
                 <DrawerTrigger className="btn btn-ghost">
-                  <ion-icon name="options-outline" style={{ fontSize: 14 }} />
+                  <Icon name="options-outline" style={{ fontSize: 14 }} />
                   Filters
                   {activeFilterCount > 0 && <span className="pill mono">{activeFilterCount}</span>}
                 </DrawerTrigger>
@@ -702,7 +877,7 @@ export function JobsPage() {
             </DrawerPortal>
           </Drawer>
 
-          <div className="results">
+          <div className="results lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
             {canSortByMatch && (
               <div className="segment" role="tablist" aria-label="Sort jobs" style={{ marginBottom: 16 }}>
                 <button
@@ -721,7 +896,7 @@ export function JobsPage() {
                   aria-selected={sortByMatch}
                   onClick={() => updateFilters({ sort: 'match' })}
                 >
-                  <ion-icon name="sparkles-outline" style={{ fontSize: 13, marginRight: 4, verticalAlign: 'middle' }} />
+                  <Icon name="sparkles-outline" style={{ fontSize: 13, marginRight: 4, verticalAlign: 'middle' }} />
                   Best match
                 </button>
               </div>
@@ -729,7 +904,7 @@ export function JobsPage() {
             {savedMode && (
               <div className="saved-banner">
                 <span>
-                  <ion-icon name="briefcase-outline" style={{ fontSize: 15 }} />
+                  <Icon name="briefcase-outline" style={{ fontSize: 15 }} />
                   Showing your saved jobs
                 </span>
                 <Link to="/jobs" className="btn btn-ghost btn-sm">
@@ -741,7 +916,7 @@ export function JobsPage() {
               <div className="my-jobs-head">
                 <h2>Your added jobs</h2>
                 <Link to="/add-job" className="btn btn-ghost">
-                  <ion-icon name="add-outline" style={{ fontSize: 14 }} />
+                  <Icon name="add-outline" style={{ fontSize: 14 }} />
                   Add a job
                 </Link>
               </div>
@@ -754,7 +929,7 @@ export function JobsPage() {
                     <Link to={`/my-jobs/${job._id}`}>{job.title}</Link>
                   </div>
                   <div className="sub">
-                    <ion-icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
+                    <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
                     {job.company}
                     {job.location ? ` · ${job.location}` : ''}
                   </div>
@@ -848,7 +1023,7 @@ export function JobsPage() {
                         <Link to={`/jobs/${job._id}`}>{job.title}</Link>
                       </div>
                       <div className="sub">
-                        <ion-icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
+                        <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
                         {job.company}
                         {job.location ? ` · ${job.location}` : ''}
                       </div>

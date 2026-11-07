@@ -1,3 +1,4 @@
+import { Icon } from './Icon'
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import type {
   Resume,
@@ -54,7 +55,7 @@ export function TagList({ items, placeholder, onAdd, onRemove }: TagListProps) {
             onClick={() => onRemove(index)}
             className="text-muted-foreground transition-colors hover:text-foreground"
           >
-            <ion-icon name="close-outline" style={{ fontSize: 12 }} />
+            <Icon name="close-outline" style={{ fontSize: 12 }} />
           </button>
         </span>
       ))}
@@ -74,7 +75,7 @@ export function TagList({ items, placeholder, onAdd, onRemove }: TagListProps) {
           onClick={() => setAdding(true)}
           className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-ring hover:text-foreground"
         >
-          <ion-icon name="add-outline" style={{ fontSize: 12 }} /> Add
+          <Icon name="add-outline" style={{ fontSize: 12 }} /> Add
         </button>
       )}
     </div>
@@ -171,7 +172,7 @@ export function EntryCard({ label, onRemove, children }: EntryCardProps) {
           onClick={onRemove}
           className="text-muted-foreground transition-colors hover:text-destructive"
         >
-          <ion-icon name="close-outline" style={{ fontSize: 14 }} />
+          <Icon name="close-outline" style={{ fontSize: 14 }} />
         </button>
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
@@ -378,7 +379,7 @@ export function RepeatableSection({
           className="flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-8 text-center transition-colors hover:border-ring hover:bg-muted/60"
         >
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <ion-icon name={emptyIcon} style={{ fontSize: 20 }} />
+            <Icon name={emptyIcon} style={{ fontSize: 20 }} />
           </span>
           <span className="text-sm font-medium text-foreground">{addLabel}</span>
           <span className="max-w-xs text-xs text-muted-foreground">{emptyHint}</span>
@@ -387,7 +388,7 @@ export function RepeatableSection({
         <>
           {children}
           <Button type="button" variant="ghost" className="mt-2" onClick={onAdd}>
-            <ion-icon name="add-outline" /> {addLabel}
+            <Icon name="add-outline" /> {addLabel}
           </Button>
         </>
       )}

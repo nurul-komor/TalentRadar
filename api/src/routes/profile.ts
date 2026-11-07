@@ -69,6 +69,21 @@ export function createProfileRoutes(
     if (!result) {
       return c.json({ error: 'profile not found' }, 404)
     }
+
+    // Refresh the resume embedding so /suggestions reflects edited résumé fields
+    // (headline/summary/skills) immediately, mirroring the CV-upload handler.
+    // Best-effort: embedProfile is hash-cached (recomputes only when the embedded
+    // text actually changed) and budget-gated, so a no-op edit costs nothing and a
+    // failure or exhausted budget never blocks the save — /suggestions recomputes lazily anyway.
+    const embedder = getEmbedder()
+    if (embedder) {
+      try {
+        await embedProfile(db, c.get('profileId'), embedder)
+      } catch (reason) {
+        console.error('failed to embed profile after update', reason)
+      }
+    }
+
     return c.json(result)
   })
 
