@@ -86,24 +86,26 @@ TYPOGRAPHY & GOOGLE DOCS FORMATTING:
 
 OUTPUT FORMAT — GitHub-flavored Markdown, single column, in this exact structure:
 - Line 1: the candidate's full name as a level-1 heading: \`# Full Name\`
-- Line 2: a professional headline matching the target position (no heading, plain text), e.g. \`Senior Backend Engineer\` — drawn from the candidate's real experience and the role.
-- Line 3: a single contact line (no heading), real values only, separated by " • ", e.g. \`email • phone • github/linkedin\`. Omit any contact detail not in the master CV.
+- Line 2: a professional headline (no heading, plain text) that uses the EXACT target job title verbatim, spelled and capitalized exactly as it appears after "Job:" above — e.g. for an "Android Developer" posting the headline must read \`Android Developer\` (a closely-matched seniority qualifier the candidate genuinely holds is fine, e.g. \`Senior Android Developer\`, but the exact posting title string must be present so a recruiter's title search matches). Never substitute a synonym or a self-styled title.
+- Line 3: a single contact line (no heading), real values only, separated by " • ", ordered \`email • phone • location • github/linkedin\` (location included only per the rule below). Treat the "Candidate contact details" block provided below as authoritative, and fall back to the master CV text only to fill anything it is missing. Omit any contact detail that is genuinely absent from BOTH the contact block and the master CV.
+- LOCATION RULE: Include the candidate's location as \`City, Country\` (or whichever of the two is available) ONLY when the hiring company is based in Bangladesh — local Bangladeshi recruiters/ATS use the address to validate the candidate's location for job matches. Decide this from the posting: treat it as Bangladeshi when the job location, office, or company is in Bangladesh (e.g. Dhaka, Chittagong/Chattogram, Sylhet), the salary is in BDT / Taka / ৳, or the posting is otherwise clearly for a Bangladesh-based employer. For any company outside Bangladesh (including remote/international roles), OMIT the location entirely from the header and do not treat a missing location as a gap.
 - Then these sections as level-2 Markdown headings, in this order, each omitted only if the master CV has nothing truthful for it:
   \`## Summary\`
   \`## Skills\`
-  \`## Experience\`
+  \`## Professional Experience\`
   \`## Projects\`
   \`## Education\`
-- Summary: 2–3 lines positioning the candidate for THIS specific role — communicate professional identity, relevant experience, and engineering strengths with keywords woven in naturally. No generic objective statements, no filler adjectives.
+- Summary: 2–3 lines positioning the candidate for THIS specific role — communicate professional identity, relevant experience, and engineering strengths with keywords woven in naturally. State the EXACT target job title verbatim at least once in the summary (e.g. "... seeking the Android Developer role ..." or "... with experience relevant to an Android Developer position ...") so the title is present even when the candidate has not formally held it before — frame it as the role being applied for, never as a past title the master CV doesn't support. No generic objective statements, no filler adjectives.
 - Skills: organize into these categories (omit any the candidate has nothing for), one \`- \` bullet line per category: \`- Programming Languages: ...\`, \`- Backend Technologies: ...\`, \`- Frontend Technologies: ...\`, \`- Databases: ...\`, \`- Cloud & DevOps: ...\`, \`- Tools & Platforms: ...\`. List skills the posting asks for first, then the candidate's other genuinely-held skills. Include EVERY required skill from the posting here — even when the master CV doesn't show it — so the résumé covers all of the role's requirements for ATS. Keep such additions to the Skills section only (never fabricate experience, metrics, or proficiency for them elsewhere), and still record each one in \`unmetRequirements\`.
-- Experience / Projects: for each item, a bold title line \`**Role — Company** (Mon YYYY – Mon YYYY)\` (preserve the master CV's exact titles, companies, and dates), followed by EXACTLY 3 \`- \` bullets for each company and each project — no more, no fewer — chosen as the strongest, most role-relevant, and most quantitative. Projects may use \`**Project Name** — one-line context\`, and include GitHub / live-demo links when the master CV provides them.
+- Professional Experience / Projects: use exactly the heading \`## Professional Experience\` for the work-history section (ATS recognizes "Professional Experience" / "Work History" but may miss a bare "Experience"). For each item, a bold title line \`**Role — Company** (Mon YYYY – Mon YYYY)\` (preserve the master CV's exact titles, companies, and dates), followed by EXACTLY 3 \`- \` bullets for each company and each project — no more, no fewer — chosen as the strongest, most role-relevant, and most quantitative. Projects may use \`**Project Name** — one-line context\`, and include GitHub / live-demo links when the master CV provides them.
 - Write every experience bullet with the formula: Action Verb + Technical Contribution + Business/Customer Impact + Measurable Result. Make bullets analytics-driven: lead with the outcome and quantify it (%, count, latency/time, throughput, scale, cost, revenue, users, error-rate, conversion…). Focus on measurable achievements and engineering ownership rather than responsibilities. Start EVERY bullet with a strong past-tense action verb (Engineered, Architected, Developed, Optimized, Automated, Integrated, Implemented, Delivered, Built, Led, Shipped, Migrated, Reduced…); fold in the role's key ATS keywords/tools naturally using the posting's wording. Use a quantified result ONLY where the master CV already states or clearly supports the number — never invent metrics; when no number is supported, express the concrete impact qualitatively (e.g. "eliminated manual deploys", "unblocked the mobile launch") rather than inventing a figure.
 - Use \`**bold**\` for role/project titles and company names.
 
 ATS KEYWORD MATCH:
-- Extract the required and preferred skills, tools, and role-specific phrases from the posting.
-- Weave the ones the candidate genuinely has into the Summary, Skills, and Experience bullets using the posting's own wording (e.g. if the posting says "CI/CD pipelines", use that phrase rather than a synonym) — but only where it is truthful, and without keyword stuffing.
-- Required keywords the master CV doesn't support must still be added to the \`## Skills\` section (see Skills above) so the résumé covers them, but never woven into the Summary, Experience, or Projects as if they were used — and must still be recorded in \`unmetRequirements\`.
+- Read the FULL posting text yourself and extract EVERY skill, technology, tool, methodology, concept, and role-specific phrase it mentions — do not rely only on the pre-extracted requirements list above, which may miss items. Capture short keywords and acronyms too (e.g. OOP, UI, UX, GPS, REST, API, SQL, Git, MVP, MVVM, CI/CD, SDLC, QA) exactly as the posting writes them, including concepts embedded in responsibility sentences (e.g. "memory-friendly applications" → Memory Management; "location-based services" → GPS / Location Services; "custom UI components" → UI, Custom UI Components).
+- For each extracted keyword, use the posting's own wording/acronym rather than a synonym (e.g. if the posting says "CI/CD pipelines", use that phrase; if it says "OOP", list "OOP", not "Object-Oriented Programming" alone — you may pair them: "OOP (Object-Oriented Programming)").
+- Weave the ones the candidate genuinely has into the Summary, Skills, and Experience bullets — but only where it is truthful, and without keyword stuffing.
+- Every extracted keyword the master CV doesn't support must STILL be added to the \`## Skills\` section (see Skills above) so the résumé covers it, but never woven into the Summary, Experience, or Projects as if it were used — and must still be recorded in \`unmetRequirements\`. When in doubt about whether a posting keyword appears in the résumé, include it in Skills.
 
 LENGTH:
 - Keep it recruiter-scannable and never exceed TWO pages; use the second page only when the candidate's experience genuinely fills it. There is no word target — let the content (every company and project at exactly 3 bullets) determine the length within the two-page cap.
@@ -128,14 +130,41 @@ export function buildMaterialsUserPrompt(input: {
   // to re-derive the gap (which it tends to resolve conservatively by omitting
   // them). These MUST appear in the résumé's `## Skills` section.
   missingSkills: string[]
+  // Authoritative structured contact details from the candidate's profile
+  // résumé. Passed explicitly so the header (esp. the location line, which the
+  // ATS checks for) is reliable even when the raw cvText is messy or omits it.
+  contact: {
+    fullName: string | null
+    email: string | null
+    phone: string | null
+    city: string | null
+    country: string | null
+    linkedin: string | null
+    github: string | null
+  }
 }): string {
   const missingSkillsBlock =
     input.missingSkills.length > 0
       ? `Required skills the master CV does NOT evidence — you MUST still list EVERY one of these in the \`## Skills\` section so the résumé covers the role (do NOT attach them to any Experience/Project bullet or claim of usage, and record each in \`unmetRequirements\`):\n${input.missingSkills.map((skill) => `- ${skill}`).join('\n')}`
       : 'Required skills the master CV does NOT evidence: none — the CV covers the role\'s listed skills.'
 
+  const location = [input.contact.city, input.contact.country].filter(Boolean).join(', ')
+  const contactLines = [
+    input.contact.fullName && `- Full name: ${input.contact.fullName}`,
+    input.contact.email && `- Email: ${input.contact.email}`,
+    input.contact.phone && `- Phone: ${input.contact.phone}`,
+    location && `- Location: ${location}`,
+    input.contact.linkedin && `- LinkedIn: ${input.contact.linkedin}`,
+    input.contact.github && `- GitHub: ${input.contact.github}`,
+  ].filter(Boolean)
+  const contactBlock =
+    contactLines.length > 0
+      ? `Candidate contact details (authoritative — use these for the header/contact line, and prefer them over anything parsed from the CV text; apply the header's LOCATION RULE when deciding whether to show the location):\n${contactLines.join('\n')}`
+      : 'Candidate contact details: none on file — build the contact line from the master CV text. If the role is Bangladesh-based (see the header LOCATION RULE) and no location can be found in either source, note the missing address in `unmetRequirements`; for roles outside Bangladesh, a missing location is not a gap.'
+
   return (
     `Candidate's master CV:\n${input.cvText ?? '(no CV on file)'}\n\n` +
+    `${contactBlock}\n\n` +
     `Job: ${input.jobTitle} at ${input.company}\n\n` +
     `Extracted requirements:\n${input.requirementsSummary}\n\n` +
     `${missingSkillsBlock}\n\n` +

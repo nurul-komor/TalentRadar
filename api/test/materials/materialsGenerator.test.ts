@@ -79,6 +79,31 @@ describe('createMaterialsGenerator', () => {
     expect(user).not.toContain('- JavaScript')
   })
 
+  it('passes authoritative contact details (incl. location) into the prompt for the header', async () => {
+    const { provider, complete } = fakeProvider(PARSED_CONTENT)
+    const generator = createMaterialsGenerator(provider, 'claude-opus-4-8', true)
+
+    await generator({
+      job: { title: 'Android Developer', company: 'Acme', rawDescription: 'Android role.' },
+      profile: {
+        ...PROFILE,
+        resume: {
+          ...emptyResume(),
+          fullName: 'Jane Doe',
+          phone: '+880 1700-000000',
+          location: { city: 'Dhaka', country: 'Bangladesh' },
+        },
+      },
+      requirements: null,
+    })
+
+    const user = complete.mock.calls[0][0].user as string
+    expect(user).toContain('Candidate contact details')
+    expect(user).toContain('- Location: Dhaka, Bangladesh')
+    expect(user).toContain('- Email: user@example.com')
+    expect(user).toContain('- Phone: +880 1700-000000')
+  })
+
   it('passes the reasoning flag through (off for non-reasoning models like gpt-4o-mini)', async () => {
     const { provider, complete } = fakeProvider(PARSED_CONTENT)
     const generator = createMaterialsGenerator(provider, 'gpt-4o-mini', false)

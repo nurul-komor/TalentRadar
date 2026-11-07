@@ -133,9 +133,54 @@ export function JobDetailPage() {
     return (
       <div>
         <PublicNav />
-        <p className="wrap" style={{ marginTop: 24, color: 'var(--muted-text)' }}>
-          Loading…
-        </p>
+        <div className="wrap crumbs" aria-hidden="true">
+          <div className="sk" style={{ width: 40 }} />
+          <span>/</span>
+          <div className="sk" style={{ width: 140 }} />
+        </div>
+
+        <div className="wrap job-layout" aria-hidden="true" aria-busy="true">
+          <div>
+            <div className="job-head">
+              <div className="sk" style={{ width: 56, height: 56, borderRadius: 14, flex: '0 0 auto' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
+                <div className="sk" style={{ width: '60%', height: 26 }} />
+                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                  <div className="sk" style={{ width: 110 }} />
+                  <div className="sk" style={{ width: 90 }} />
+                  <div className="sk" style={{ width: 120 }} />
+                  <div className="sk" style={{ width: 100 }} />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div className="sk" style={{ width: 90, height: 22, borderRadius: 999 }} />
+                  <div className="sk" style={{ width: 70, height: 22, borderRadius: 999 }} />
+                </div>
+              </div>
+            </div>
+
+            <div className="prose" style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 24 }}>
+              <div className="sk" style={{ width: 140, height: 20 }} />
+              <div className="sk" style={{ width: '100%' }} />
+              <div className="sk" style={{ width: '96%' }} />
+              <div className="sk" style={{ width: '90%' }} />
+              <div className="sk" style={{ width: '98%' }} />
+              <div className="sk" style={{ width: '70%' }} />
+            </div>
+          </div>
+
+          <aside className="evidence">
+            <div className="ev-card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="sk" style={{ width: '50%', height: 18 }} />
+              <div className="sk" style={{ width: '100%' }} />
+              <div className="sk" style={{ width: '100%' }} />
+              <div className="sk" style={{ width: '100%' }} />
+            </div>
+            <div className="ev-card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="sk" style={{ width: '60%' }} />
+              <div className="sk" style={{ width: '40%' }} />
+            </div>
+          </aside>
+        </div>
       </div>
     )
   }

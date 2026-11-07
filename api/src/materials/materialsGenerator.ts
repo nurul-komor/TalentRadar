@@ -42,6 +42,20 @@ export function createMaterialsGenerator(
 
     const missingSkills = computeMissingSkills(profile, requirements?.requiredSkills ?? [])
 
+    // Authoritative contact details from the structured résumé — passed so the
+    // header (especially the location, which the ATS checks for) is reliable even
+    // when the parsed cvText is messy or omits it.
+    const resume = profile.resume
+    const contact = {
+      fullName: resume?.fullName ?? null,
+      email: profile.email ?? null,
+      phone: resume?.phone ?? null,
+      city: resume?.location?.city ?? null,
+      country: resume?.location?.country ?? null,
+      linkedin: resume?.linkedin ?? null,
+      github: resume?.github ?? null,
+    }
+
     const { output, usage } = await provider.complete<GeneratedContent>({
       model,
       maxOutputTokens: 12000,
@@ -54,6 +68,7 @@ export function createMaterialsGenerator(
         requirementsSummary,
         rawDescription: job.rawDescription,
         missingSkills,
+        contact,
       }),
       schemaName: 'generated_content',
       jsonSchema: GENERATED_CONTENT_JSON_SCHEMA,
