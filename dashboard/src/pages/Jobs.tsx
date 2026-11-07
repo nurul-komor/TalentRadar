@@ -748,15 +748,33 @@ export function JobsPage() {
     .filter((job) => userJobMatchesLanguages(job, selectedLanguages))
     .filter((job) => userJobMatchesKeyword(job, debouncedKeyword))
 
-  // Added jobs render as ordinary rows in the list — on the "My jobs" tab, at
-  // the top of the first page of "All jobs", and in saved mode — but never under
-  // Government / Other jobs, which are discovery-only categories. In "Best match"
-  // mode the list is a pure relevance ranking, so we don't pin added jobs on top.
+  // Added jobs appear as ordinary rows in the list — on the "My jobs" tab, on the
+  // first page of "All jobs", and in saved mode — but never under Government /
+  // Other jobs, which are discovery-only categories. In "Best match" mode the list
+  // is a pure relevance ranking that added jobs (which have no score) can't join,
+  // so they're left out there.
   const myJobRows = savedMode
     ? visibleMyJobs
     : !sortByMatch && (category === 'mine' || (category === 'all' && offset === 0))
       ? visibleMyJobs
       : []
+
+  // Merge added jobs into the discovery feed inline, newest-first, instead of
+  // pinning them above it. Each row keeps its own renderer (added jobs link to
+  // /my-jobs and show an "Added by you" pill). We only re-sort by date when there
+  // are added jobs to interleave AND we're not in "Best match" mode — otherwise
+  // the feed's server-side ordering (relevance, or newest-first) is preserved.
+  const rowTimestamp = (value?: string | null) => (value ? new Date(value).getTime() : 0)
+  type MergedRow =
+    | { kind: 'mine'; job: UserJob; ts: number }
+    | { kind: 'feed'; job: FeedJob; ts: number }
+  const mergedRows: MergedRow[] =
+    myJobRows.length > 0
+      ? [
+          ...jobs.map((job): MergedRow => ({ kind: 'feed', job, ts: rowTimestamp(job.discoveredAt) })),
+          ...myJobRows.map((job): MergedRow => ({ kind: 'mine', job, ts: rowTimestamp(job.createdAt) })),
+        ].sort((a, b) => b.ts - a.ts)
+      : jobs.map((job): MergedRow => ({ kind: 'feed', job, ts: rowTimestamp(job.discoveredAt) }))
 
   const jobsCountLabel = loading
     ? 'Searching…'
@@ -922,56 +940,6 @@ export function JobsPage() {
               </div>
             )}
 
-            {myJobRows.map((job) => (
-              <article key={`myjob-${job._id}`} className="jrow">
-                <div className="main">
-                  <div className="title">
-                    <Link to={`/my-jobs/${job._id}`}>{job.title}</Link>
-                  </div>
-                  <div className="sub">
-                    <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
-                    {job.company}
-                    {job.location ? ` · ${job.location}` : ''}
-                  </div>
-                  <div className="tags">
-                    <Pill tone={job.visibility === 'public' ? 'verified' : 'mono'}>
-                      {job.visibility === 'public' ? 'Public' : 'Private'}
-                    </Pill>
-                    <Pill tone="mono">{formatSalary(job)}</Pill>
-                    <Pill tone="mono">Added by you</Pill>
-                  </div>
-                  {job.description && (
-                    <p style={{ marginTop: 10, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
-                      {descriptionPreview(job.description)}
-                    </p>
-                  )}
-                  <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <Link to={`/my-jobs/${job._id}`} className="btn btn-ghost">
-                      View details
-                    </Link>
-                    {job.url && (
-                      <a href={job.url} target="_blank" rel="noreferrer" className="btn btn-indigo">
-                        Apply
-                      </a>
-                    )}
-                  </div>
-                </div>
-                <div className="side">
-                  <button
-                    type="button"
-                    className={`save-btn${job._id && isSaved(job._id) ? ' saved' : ''}`}
-                    aria-pressed={!!job._id && isSaved(job._id)}
-                    aria-label={job._id && isSaved(job._id) ? 'Remove from saved' : 'Save job'}
-                    onClick={() => job._id && handleToggleSaved(job._id)}
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-                      <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
-                    </svg>
-                  </button>
-                </div>
-              </article>
-            ))}
-
             {error && (
               <div className="mb-4">
                 <FormError message={error} />
@@ -986,7 +954,7 @@ export function JobsPage() {
                   <div className="sk" style={{ width: '30%' }} />
                 </div>
               </div>
-            ) : jobs.length === 0 && myJobRows.length === 0 ? (
+            ) : mergedRows.length === 0 ? (
               <p className="saved-empty">
                 {savedMode ? (
                   <>
@@ -1013,7 +981,60 @@ export function JobsPage() {
                 )}
               </p>
             ) : (
-              jobs.map((job) => {
+              mergedRows.map((row) => {
+                if (row.kind === 'mine') {
+                  const job = row.job
+                  return (
+                    <article key={`myjob-${job._id}`} className="jrow">
+                      <div className="main">
+                        <div className="title">
+                          <Link to={`/my-jobs/${job._id}`}>{job.title}</Link>
+                        </div>
+                        <div className="sub">
+                          <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
+                          {job.company}
+                          {job.location ? ` · ${job.location}` : ''}
+                        </div>
+                        <div className="tags">
+                          <Pill tone={job.visibility === 'public' ? 'verified' : 'mono'}>
+                            {job.visibility === 'public' ? 'Public' : 'Private'}
+                          </Pill>
+                          <Pill tone="mono">{formatSalary(job)}</Pill>
+                          <Pill tone="mono">Added by you</Pill>
+                        </div>
+                        {job.description && (
+                          <p style={{ marginTop: 10, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
+                            {descriptionPreview(job.description)}
+                          </p>
+                        )}
+                        <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <Link to={`/my-jobs/${job._id}`} className="btn btn-ghost">
+                            View details
+                          </Link>
+                          {job.url && (
+                            <a href={job.url} target="_blank" rel="noreferrer" className="btn btn-indigo">
+                              Apply
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      <div className="side">
+                        <button
+                          type="button"
+                          className={`save-btn${job._id && isSaved(job._id) ? ' saved' : ''}`}
+                          aria-pressed={!!job._id && isSaved(job._id)}
+                          aria-label={job._id && isSaved(job._id) ? 'Remove from saved' : 'Save job'}
+                          onClick={() => job._id && handleToggleSaved(job._id)}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+                            <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
+                          </svg>
+                        </button>
+                      </div>
+                    </article>
+                  )
+                }
+                const job = row.job
                 const requirements = requirementsPreview(job.rawDescription)
                 return (
                   <article key={job._id} className="jrow">

@@ -1139,9 +1139,17 @@ a.kpi:hover{transform:translateY(-3px);border-color:var(--line-strong);box-shado
   padding:8px 10px;font-size:13px;font-weight:600;color:var(--fg);
 }
 .app-main{flex:1;min-width:0;margin-left:304px;padding:0 max(20px, env(safe-area-inset-right,0px)) 48px;}
-/* Route change cross-fade: outgoing page blurs/fades out, incoming blurs/fades in. */
-.page-transition{will-change:opacity,filter,transform;}
-.page-transition.is-entering{animation:pageIn .3s cubic-bezier(.3,.8,.3,1) both;}
+/* Route change cross-fade: outgoing page blurs/fades out, incoming blurs/fades in.
+   The incoming page uses fill-mode `backwards` (NOT `both`) so that once the entry
+   animation finishes it reverts to a clean base with no transform/filter/will-change.
+   This matters because the wrapper always keeps its `is-entering` class: a retained
+   `filter:blur(0)` (from `both`) or a persistent `will-change:transform/filter` would
+   leave it a permanent containing block + compositing layer, which offsets native
+   HTML5 drag hit-testing on descendants (e.g. the Applications kanban cards) and
+   silently breaks drag-and-drop. The end keyframe already equals the base state, so
+   dropping `both` is visually identical. `is-leaving` is transient (swapped out when
+   its animation ends) so `both` there is fine. */
+.page-transition.is-entering{animation:pageIn .3s cubic-bezier(.3,.8,.3,1) backwards;}
 .page-transition.is-leaving{animation:pageOut .17s ease both;}
 @keyframes pageIn{from{opacity:0;filter:blur(10px);transform:translateY(8px);}to{opacity:1;filter:blur(0);transform:none;}}
 @keyframes pageOut{from{opacity:1;filter:blur(0);transform:none;}to{opacity:0;filter:blur(10px);transform:translateY(-6px);}}

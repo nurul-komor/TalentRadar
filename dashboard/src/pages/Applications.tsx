@@ -1,5 +1,16 @@
 import { Icon } from '../components/Icon'
 import { useEffect, useMemo, useState } from 'react'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core'
 import type {
   TrackedJob,
   TrackedJobInput,
@@ -112,8 +123,13 @@ export function ApplicationsPage() {
   const [saving, setSaving] = useState(false)
 
   const [importOpen, setImportOpen] = useState(false)
-  const [dragId, setDragId] = useState<string | null>(null)
-  const [dragOverStatus, setDragOverStatus] = useState<TrackedJobStatus | null>(null)
+  // Id of the card currently being dragged (drives the DragOverlay). dnd-kit owns
+  // the rest of the drag state; we only track this to render the floating card.
+  const [activeId, setActiveId] = useState<string | null>(null)
+
+  // A small activation distance lets a plain click still open the edit drawer —
+  // the drag only begins once the pointer actually moves.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
   function loadJobs() {
     setListError(null)
@@ -221,15 +237,21 @@ export function ApplicationsPage() {
 
   const hasJobs = (jobs?.length ?? 0) > 0
 
-  // Board drop: move the dragged job into `status` at the top of that column.
-  function handleDrop(status: TrackedJobStatus) {
-    const job = (jobs ?? []).find((j) => j._id === dragId)
-    setDragId(null)
-    setDragOverStatus(null)
-    if (!job) return
+  // Board drop: move the dragged job into the column it was released over, at the
+  // top of that column. `over.id` is the destination column's status (columns are
+  // the droppables); `active.id` is the dragged card's job id.
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveId(null)
+    const { active, over } = event
+    if (!over) return
+    const status = over.id as TrackedJobStatus
+    const job = (jobs ?? []).find((j) => j._id === active.id)
+    if (!job || job.status === status) return
     const columnMin = Math.min(0, ...(jobs ?? []).filter((j) => j.status === status).map((j) => j.order))
     changeStatus(job, status, columnMin - 1)
   }
+
+  const activeJob = activeId ? (jobs ?? []).find((j) => j._id === activeId) ?? null : null
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }))
@@ -339,94 +361,30 @@ export function ApplicationsPage() {
               </span>
             </p>
           ) : view === 'board' ? (
-            <div className="jt-board">
-              {STATUS_META.map((meta) => {
-                const columnJobs = filtered
-                  .filter((job) => job.status === meta.status)
-                  .sort((a, b) => a.order - b.order)
-                return (
-                  <div
-                    key={meta.status}
-                    className={`jt-col${dragOverStatus === meta.status ? ' drop' : ''}`}
-                    onDragOver={(event) => {
-                      event.preventDefault()
-                      if (dragOverStatus !== meta.status) setDragOverStatus(meta.status)
-                    }}
-                    onDragLeave={(event) => {
-                      // Only clear when leaving the column entirely, not a child.
-                      if (!event.currentTarget.contains(event.relatedTarget as Node)) {
-                        setDragOverStatus((cur) => (cur === meta.status ? null : cur))
-                      }
-                    }}
-                    onDrop={() => handleDrop(meta.status)}
-                  >
-                    <div className="jt-col-h">
-                      <span className={`jt-dot ${meta.tone}`} aria-hidden="true" />
-                      <span className="t">{meta.label}</span>
-                      <span className="n">{columnJobs.length}</span>
-                    </div>
-                    <div className="jt-col-body">
-                      {columnJobs.map((job) => {
-                        const overdue = isFollowUpOverdue(job.followUpDate, job.status)
-                        return (
-                          <div
-                            key={job._id}
-                            role="button"
-                            tabIndex={0}
-                            className={`jt-card${dragId === job._id ? ' dragging' : ''}`}
-                            draggable
-                            onDragStart={(event) => {
-                              // Some browsers need data set on the transfer for the drag to initiate.
-                              event.dataTransfer.effectAllowed = 'move'
-                              event.dataTransfer.setData('text/plain', job._id ?? '')
-                              setDragId(job._id ?? null)
-                            }}
-                            onDragEnd={() => {
-                              setDragId(null)
-                              setDragOverStatus(null)
-                            }}
-                            onClick={() => openEdit(job)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault()
-                                openEdit(job)
-                              }
-                            }}
-                          >
-                            <div className="r">
-                              <LogoChip name={job.company} size={30} />
-                              <div className="min0">
-                                <b>{job.position}</b>
-                                <small>{job.company}</small>
-                              </div>
-                            </div>
-                            <div className="jt-card-meta">
-                              {job.locationType && (
-                                <span className="jt-tag">{LOCATION_TYPE_LABELS[job.locationType]}</span>
-                              )}
-                              {job.location && <span className="jt-tag muted">{job.location}</span>}
-                              {job.materialsJobId && (
-                                <span className="jt-tag docs" title="Résumé & cover letter generated">
-                                  <Icon name="sparkles-outline" /> Docs
-                                </span>
-                              )}
-                            </div>
-                            {job.followUpDate && (
-                              <div className={`jt-followup${overdue ? ' overdue' : ''}`}>
-                                <Icon name="calendar-outline" />
-                                {overdue ? 'Overdue · ' : 'Follow up · '}
-                                {formatDate(job.followUpDate)}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                      {columnJobs.length === 0 && <div className="jt-col-empty">Drop here</div>}
-                    </div>
+            <DndContext
+              sensors={sensors}
+              onDragStart={(event: DragStartEvent) => setActiveId(String(event.active.id))}
+              onDragEnd={handleDragEnd}
+              onDragCancel={() => setActiveId(null)}
+            >
+              <div className="jt-board">
+                {STATUS_META.map((meta) => {
+                  const columnJobs = filtered
+                    .filter((job) => job.status === meta.status)
+                    .sort((a, b) => a.order - b.order)
+                  return (
+                    <BoardColumn key={meta.status} meta={meta} columnJobs={columnJobs} onOpen={openEdit} />
+                  )
+                })}
+              </div>
+              <DragOverlay dropAnimation={null}>
+                {activeJob ? (
+                  <div className="jt-card dragging">
+                    <BoardCardBody job={activeJob} />
                   </div>
-                )
-              })}
-            </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           ) : (
             <div className="jt-table-wrap">
               <table className="jt-table">
@@ -535,6 +493,97 @@ export function ApplicationsPage() {
             loadJobs()
           }}
         />
+      )}
+    </>
+  )
+}
+
+// --- Board (drag-and-drop kanban) ------------------------------------------
+
+type StatusMeta = (typeof STATUS_META)[number]
+
+// A droppable status column. Highlights (`drop` class) while a card hovers over
+// it; `over.id` on drop end is this column's `meta.status`.
+function BoardColumn({
+  meta,
+  columnJobs,
+  onOpen,
+}: {
+  meta: StatusMeta
+  columnJobs: TrackedJob[]
+  onOpen: (job: TrackedJob) => void
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: meta.status })
+  return (
+    <div ref={setNodeRef} className={`jt-col${isOver ? ' drop' : ''}`}>
+      <div className="jt-col-h">
+        <span className={`jt-dot ${meta.tone}`} aria-hidden="true" />
+        <span className="t">{meta.label}</span>
+        <span className="n">{columnJobs.length}</span>
+      </div>
+      <div className="jt-col-body">
+        {columnJobs.map((job) => (
+          <BoardCard key={job._id} job={job} onOpen={onOpen} />
+        ))}
+        {columnJobs.length === 0 && <div className="jt-col-empty">Drop here</div>}
+      </div>
+    </div>
+  )
+}
+
+// A draggable application card. The pointer sensor's activation distance means a
+// plain click still fires `onOpen` (edit); a drag only starts once the pointer
+// moves. While dragging, the live clone is rendered by the DragOverlay, so we
+// just dim the original via the `dragging` class.
+function BoardCard({ job, onOpen }: { job: TrackedJob; onOpen: (job: TrackedJob) => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: job._id ?? '' })
+  return (
+    <div
+      ref={setNodeRef}
+      className={`jt-card${isDragging ? ' dragging' : ''}`}
+      onClick={() => onOpen(job)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen(job)
+        }
+      }}
+      {...listeners}
+      {...attributes}
+    >
+      <BoardCardBody job={job} />
+    </div>
+  )
+}
+
+// The inner contents of a board card, shared by the in-column card and the
+// floating DragOverlay clone.
+function BoardCardBody({ job }: { job: TrackedJob }) {
+  const overdue = isFollowUpOverdue(job.followUpDate, job.status)
+  return (
+    <>
+      <div className="r">
+        <LogoChip name={job.company} size={30} />
+        <div className="min0">
+          <b>{job.position}</b>
+          <small>{job.company}</small>
+        </div>
+      </div>
+      <div className="jt-card-meta">
+        {job.locationType && <span className="jt-tag">{LOCATION_TYPE_LABELS[job.locationType]}</span>}
+        {job.location && <span className="jt-tag muted">{job.location}</span>}
+        {job.materialsJobId && (
+          <span className="jt-tag docs" title="Résumé & cover letter generated">
+            <Icon name="sparkles-outline" /> Docs
+          </span>
+        )}
+      </div>
+      {job.followUpDate && (
+        <div className={`jt-followup${overdue ? ' overdue' : ''}`}>
+          <Icon name="calendar-outline" />
+          {overdue ? 'Overdue · ' : 'Follow up · '}
+          {formatDate(job.followUpDate)}
+        </div>
       )}
     </>
   )

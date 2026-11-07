@@ -7,7 +7,7 @@ import {
   buildUserJobExtractionUserPrompt,
 } from '../llm/prompts.js'
 import { fetchWithPolicy } from '../discovery/fetchWithPolicy.js'
-import { decodeEntities } from '../discovery/sources/htmlUtils.js'
+import { decodeEntities, stripTags } from '../discovery/sources/htmlUtils.js'
 
 // Fields an extractor pulls out of a pasted job page. Mirrors the saved shape
 // minus the URL (the caller already knows that) and ownership fields.
@@ -91,6 +91,142 @@ function heuristicExtract(url: string, html: string, pageText: string): Extracte
   }
 }
 
+// Pulls scalar/nested names out of schema.org shapes that may be a plain string,
+// an object with a `name`, or an array of either.
+function readName(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim() || null
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const name = readName(entry)
+      if (name) return name
+    }
+    return null
+  }
+  if (value && typeof value === 'object') {
+    const name = (value as Record<string, unknown>).name
+    return typeof name === 'string' ? name.trim() || null : null
+  }
+  return null
+}
+
+// Flattens a schema.org PostalAddress (or array of jobLocations) into a readable
+// "City, Region, Country" string.
+function readLocation(value: unknown): string | null {
+  if (!value) return null
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const loc = readLocation(entry)
+      if (loc) return loc
+    }
+    return null
+  }
+  if (typeof value === 'string') return value.trim() || null
+  const obj = value as Record<string, unknown>
+  const address = (obj.address ?? obj) as Record<string, unknown>
+  const parts = [address.addressLocality, address.addressRegion, address.addressCountry]
+    .map((p) => (typeof p === 'string' ? p.trim() : readName(p)))
+    .filter((p): p is string => Boolean(p))
+  return parts.length ? [...new Set(parts)].join(', ') : null
+}
+
+// Reads min/max out of a schema.org MonetaryAmount `baseSalary`.
+function readSalary(value: unknown): { salaryMin: number | null; salaryMax: number | null } {
+  const result = { salaryMin: null as number | null, salaryMax: null as number | null }
+  if (!value || typeof value !== 'object') return result
+  const amount = ((value as Record<string, unknown>).value ?? value) as Record<string, unknown>
+  const toNum = (v: unknown): number | null => {
+    const n = typeof v === 'string' ? Number(v.replace(/[^0-9.]/g, '')) : typeof v === 'number' ? v : NaN
+    return Number.isFinite(n) ? n : null
+  }
+  const min = toNum(amount.minValue)
+  const max = toNum(amount.maxValue)
+  const single = toNum(amount.value)
+  result.salaryMin = min ?? single
+  result.salaryMax = max ?? single
+  return result
+}
+
+// Walks arbitrarily-nested JSON-LD (objects, arrays, @graph) for a JobPosting node.
+function findJobPostingNode(node: unknown): Record<string, unknown> | null {
+  if (!node || typeof node !== 'object') return null
+  if (Array.isArray(node)) {
+    for (const entry of node) {
+      const found = findJobPostingNode(entry)
+      if (found) return found
+    }
+    return null
+  }
+  const obj = node as Record<string, unknown>
+  const type = obj['@type']
+  const types = Array.isArray(type) ? type : [type]
+  if (types.some((t) => typeof t === 'string' && t.toLowerCase() === 'jobposting')) return obj
+  if (obj['@graph']) return findJobPostingNode(obj['@graph'])
+  return null
+}
+
+// Best-effort extraction from schema.org JobPosting JSON-LD, which many sites
+// (including JS-rendered ones) embed in the server HTML even when the visible
+// body is client-rendered. Returns only the fields it can confidently read.
+function extractJsonLdJobPosting(html: string): Partial<ExtractedJobFields> | null {
+  const blocks = html.matchAll(
+    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  )
+  for (const block of blocks) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(block[1].trim())
+    } catch {
+      continue
+    }
+    const node = findJobPostingNode(parsed)
+    if (!node) continue
+
+    const fields: Partial<ExtractedJobFields> = {}
+    const title = readName(node.title)
+    if (title) fields.title = title.slice(0, 300)
+    const company = readName(node.hiringOrganization)
+    if (company) fields.company = company.slice(0, 200)
+    if (typeof node.description === 'string') {
+      const description = stripTags(node.description).trim()
+      if (description) fields.description = description.slice(0, 20_000)
+    }
+    const location = readLocation(node.jobLocation)
+    if (location) fields.location = location
+    const { salaryMin, salaryMax } = readSalary(node.baseSalary)
+    if (salaryMin !== null) fields.salaryMin = salaryMin
+    if (salaryMax !== null) fields.salaryMax = salaryMax
+    return fields
+  }
+  return null
+}
+
+// A client-rendered SPA serves an empty shell (often a "Loading…" placeholder),
+// so there's almost no readable body text. Below this length we treat the page
+// as a shell and skip the LLM call — there's nothing worth extracting, so we
+// fall back to JSON-LD / og-tag heuristics for a best-effort, editable preview.
+const MIN_READABLE_TEXT = 200
+
+// Merges partial field sources in priority order (earlier wins), skipping empty
+// strings and nulls so a later source can fill a gap an earlier one left. Used
+// to layer LLM / JSON-LD / heuristic results into one complete preview.
+function coalesceFields(...sources: Array<Partial<ExtractedJobFields> | null>): ExtractedJobFields {
+  const pick = (key: keyof ExtractedJobFields): unknown => {
+    for (const source of sources) {
+      const value = source?.[key]
+      if (value !== undefined && value !== null && value !== '') return value
+    }
+    return null
+  }
+  return {
+    title: (pick('title') as string | null) ?? '',
+    company: (pick('company') as string | null) ?? '',
+    description: (pick('description') as string | null) ?? '',
+    location: pick('location') as string | null,
+    salaryMin: pick('salaryMin') as number | null,
+    salaryMax: pick('salaryMax') as number | null,
+  }
+}
+
 // Wires an LLM provider into a page extractor. Returned only when a provider is
 // configured; otherwise the route falls back to heuristicExtract.
 export function createJobPageExtractor(provider: LlmProvider, model: string): JobPageExtractor {
@@ -131,20 +267,34 @@ export async function previewJobFromUrl(
 
   const html = await response.text()
   const pageText = htmlToVisibleText(html)
+  const jsonLd = extractJsonLdJobPosting(html)
+
+  // A JS-rendered SPA returns an empty shell: no structured data and almost no
+  // readable text. We don't block on that — the user can still add the job and
+  // fill in the details by hand — so we skip the (pointless) LLM call and return
+  // whatever the og-tag/title heuristic and any JSON-LD could recover.
 
   // Try the LLM extractor first; any failure (network, budget, or an output
   // shape that doesn't validate) degrades to heuristic extraction rather than
-  // failing the whole sync.
-  if (extractor) {
+  // failing the whole sync. Only worth calling when there's readable text to
+  // extract from — a shell with JSON-LD is better served by that structured data.
+  if (extractor && pageText.length >= MIN_READABLE_TEXT) {
     try {
       const fields = await extractor({ url, pageText: pageText.slice(0, 30_000) })
-      return UserJobPreviewSchema.parse({ ...fields, url })
-    } catch {
-      // fall through to heuristics
+      // LLM wins; JSON-LD fills any gaps the model left null/empty.
+      return UserJobPreviewSchema.parse({ ...coalesceFields(fields, jsonLd), url })
+    } catch (reason) {
+      console.warn('user job LLM extraction failed; falling back to heuristic', reason)
     }
   }
 
-  return UserJobPreviewSchema.parse({ ...heuristicExtract(url, html, pageText), url })
+  // No usable LLM output: JSON-LD (most reliable) wins, with the title/og-tag
+  // heuristic filling whatever structured data didn't cover. For a shell page
+  // the "body text" is just nav/footer chrome, so we don't pre-fill the
+  // description with it — leave it blank for the user to enter by hand.
+  const bodyText = pageText.length >= MIN_READABLE_TEXT ? pageText : ''
+  const heuristic = heuristicExtract(url, html, bodyText)
+  return UserJobPreviewSchema.parse({ ...coalesceFields(jsonLd, heuristic), url })
 }
 
 export async function createUserJob(
