@@ -8,9 +8,7 @@ export function Footer() {
           <div className="foot-brand">
             <div className="brand">
               <span className="brand-mark">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 12l5 5L20 6" />
-                </svg>
+                <img src="/logo.png" alt="Hunter" />
               </span>
               Hunter
             </div>

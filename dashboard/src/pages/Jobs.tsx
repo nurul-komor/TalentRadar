@@ -768,13 +768,22 @@ export function JobsPage() {
   type MergedRow =
     | { kind: 'mine'; job: UserJob; ts: number }
     | { kind: 'feed'; job: FeedJob; ts: number }
+  const mineAsRows = (): MergedRow[] =>
+    myJobRows
+      .map((job): MergedRow => ({ kind: 'mine', job, ts: rowTimestamp(job.createdAt) }))
+      .sort((a, b) => b.ts - a.ts)
   const mergedRows: MergedRow[] =
-    myJobRows.length > 0
-      ? [
-          ...jobs.map((job): MergedRow => ({ kind: 'feed', job, ts: rowTimestamp(job.discoveredAt) })),
-          ...myJobRows.map((job): MergedRow => ({ kind: 'mine', job, ts: rowTimestamp(job.createdAt) })),
-        ].sort((a, b) => b.ts - a.ts)
-      : jobs.map((job): MergedRow => ({ kind: 'feed', job, ts: rowTimestamp(job.discoveredAt) }))
+    // The "My jobs" tab is strictly the user's own added jobs — never the
+    // discovery feed — so we ignore `jobs` here entirely (it also avoids a
+    // stale-feed flash while the fetch effect clears it on the tab switch).
+    category === 'mine'
+      ? mineAsRows()
+      : myJobRows.length > 0
+        ? [
+            ...jobs.map((job): MergedRow => ({ kind: 'feed', job, ts: rowTimestamp(job.discoveredAt) })),
+            ...mineAsRows(),
+          ].sort((a, b) => b.ts - a.ts)
+        : jobs.map((job): MergedRow => ({ kind: 'feed', job, ts: rowTimestamp(job.discoveredAt) }))
 
   const jobsCountLabel = loading
     ? 'Searching…'

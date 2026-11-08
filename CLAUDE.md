@@ -18,3 +18,29 @@ All new UI development in this project MUST use Tailwind CSS for styling.
 - **shadcn/ui** is available (`shadcn/tailwind.css`, `tw-animate-css`). Prefer composing existing shadcn components over hand-rolling new ones.
 - Use the `@/` path alias for imports (maps to `dashboard/src`).
 - Exceptions (e.g. a one-off global style, a third-party integration that needs raw CSS) are allowed only when a utility approach genuinely doesn't fit — call it out when you do.
+
+
+## Motion & animation (global rule)
+
+New and updated UI in the `dashboard/` app MUST feel modern and animated. When a surface includes any of the elements below, implement the corresponding motion — don't ship static versions:
+
+- **Page transitions** — smooth entrance (and exit where the router allows) on route changes.
+- **Hero / headline sections** — staggered text reveals.
+- **Backgrounds** — premium animated gradients on hero/CTA surfaces.
+- **Cards** — subtle hover and interaction effects (lift, sheen, arrow nudge).
+- **Bookmark / save buttons** — animated toggle (pop/fill).
+- **Lists & grids** — smooth filtering and sorting transitions (re-stagger on change).
+- **Matching / scoring** — AI job-matching progress animations.
+- **Resume / CV** — scanning animations while parsing.
+- **Statistics** — animated count-up counters.
+- **Loading** — skeleton loading states (never a blank/spinner-only wait where content has shape).
+- **Empty states** — animated empty search/filter results.
+- **Applications** — success animations on completion.
+- **Overlays** — smooth modal, dropdown, and sidebar transitions.
+- **Sections** — scroll-triggered reveals.
+
+Implementation conventions:
+- Use the existing **GSAP** setup (`dashboard/src/lib/gsap.ts`, with `ScrollTrigger`) and the shared hooks `useScrollReveal`, `useCountUp`. Reuse the design-system motion primitives in `index.css` (`.skeleton`/`.sk`, `scan`, `shimmer` keyframes, the landing "modern motion layer") rather than reinventing them.
+- **Every animation MUST be disabled under `prefers-reduced-motion: reduce`** (the hooks already guard this; CSS animations need an explicit guard — see the reduced-motion block at the end of `index.css`).
+- Keep motion subtle and performant: animate `transform`/`opacity`/`filter`, favor short durations and eased curves, and never block interaction or content on an animation.
+- The Landing page (`dashboard/src/pages/Landing.tsx`) is the reference implementation for all of the above.

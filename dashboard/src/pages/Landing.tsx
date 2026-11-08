@@ -1,5 +1,13 @@
 import { Icon } from '../components/Icon'
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { PublicJobsSummary, JobSourceId, Job } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
@@ -37,6 +45,31 @@ const HERO_NOTICE_CARDS = [
   { seal: 'NR', sealColor: '#6B78FF', role: 'DevRel Lead', company: 'Norther', score: 62, sourceLabel: 'WeWorkRemotely' },
 ] as const
 
+// Filter chips for the "Freshly discovered" grid. Each maps to a predicate so the
+// grid can re-stagger into place when the active filter changes.
+type JobFilter = 'all' | 'remote' | 'govt' | 'recent'
+const JOB_FILTERS: { id: JobFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'remote', label: 'Remote' },
+  { id: 'govt', label: 'Government' },
+  { id: 'recent', label: 'This week' },
+]
+
+type FeaturedJob = PublicJobsSummary['featuredJobs'][number]
+
+function matchesFilter(job: FeaturedJob, filter: JobFilter): boolean {
+  if (filter === 'all') return true
+  if (filter === 'govt') return job.sourceId === 'teletalk-govt'
+  if (filter === 'remote') return job.sourceId !== 'teletalk-govt'
+  // recent: discovered within the last 7 days
+  const ageDays = (Date.now() - new Date(job.discoveredAt).getTime()) / (24 * 60 * 60 * 1000)
+  return ageDays <= 7
+}
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
 // Debounces a value so the typeahead fires a request only after typing settles,
 // mirroring the search box on the /jobs page.
 function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -69,6 +102,10 @@ export function LandingPage() {
   const [suggestions, setSuggestions] = useState<Job[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [activeSuggestion, setActiveSuggestion] = useState(-1)
+  // Landing-only interactive demos: a live filter on the featured grid and a
+  // bookmark toggle on each card (local-only — the public page has no account).
+  const [jobFilter, setJobFilter] = useState<JobFilter>('all')
+  const [savedJobs, setSavedJobs] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     apiFetch('/public/jobs-summary')
@@ -106,16 +143,20 @@ export function LandingPage() {
   useEffect(() => {
     const container = heroRef.current
     if (!container) return
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (prefersReducedMotion()) return
 
     const ctx = gsap.context(() => {
+      // Staggered hero entrance — headline, lead, search and CTAs rise into place
+      // with a soft focus-in for a more premium feel than a plain fade.
       gsap.from('.hero-reveal', {
         opacity: 0,
-        y: 24,
-        duration: 0.7,
-        stagger: 0.12,
-        ease: 'power2.out',
-        delay: 0.1,
+        y: 28,
+        filter: 'blur(8px)',
+        duration: 0.8,
+        stagger: 0.1,
+        ease: 'power3.out',
+        delay: 0.08,
+        clearProps: 'filter',
       })
     }, container)
 
@@ -123,9 +164,11 @@ export function LandingPage() {
   }, [])
 
   const statsRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-stat' })
-  const jobsRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-job-card' })
   const stepsRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-step' })
   const sourcesRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-source-chip' })
+  const recheckRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.rc', stagger: 0.12 })
+  // Application-success strip: nodes light up in sequence as the row scrolls in.
+  const trackRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.tnode', stagger: 0.14 })
 
   function goToJobs(params: Record<string, string>) {
     const search = new URLSearchParams(params).toString()
@@ -135,6 +178,18 @@ export function LandingPage() {
   function commitSuggestion(job: Job) {
     setShowSuggestions(false)
     if (job._id) navigate(`/jobs/${job._id}`)
+  }
+
+  function toggleSaved(id: string, event: ReactMouseEvent) {
+    // The card itself is a <Link>; don't navigate when the bookmark is clicked.
+    event.preventDefault()
+    event.stopPropagation()
+    setSavedJobs((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   }
 
   function onSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
@@ -163,12 +218,19 @@ export function LandingPage() {
   const sourceCount = summary?.bySource.length ?? null
   const sourcesCount = useCountUp(sourceCount)
 
+  const featuredJobs = summary?.featuredJobs ?? []
+  const filteredJobs = useMemo(
+    () => featuredJobs.filter((job) => matchesFilter(job, jobFilter)),
+    [featuredJobs, jobFilter],
+  )
+
   return (
-    <div>
+    <div className="page-enter">
       <PublicNav />
 
-      <section ref={heroRef} className="hero">
+      <section ref={heroRef} className="hero hero-bleed">
         <div className="hero-bg" />
+        <div className="hero-aurora" aria-hidden="true" />
         <div className="hero-glow" />
         <div className="wrap hero-grid">
           <div>
@@ -297,6 +359,13 @@ export function LandingPage() {
                   </div>
                   <ScoreRing score={card.score} size={40} strokeWidth={4} />
                 </div>
+                {/* AI match-score progress — fills on mount to visualise scoring. */}
+                <div className="fcard-match">
+                  <span className="fcard-match-label">AI match</span>
+                  <span className="fcard-match-track">
+                    <i style={{ '--match-w': `${card.score}%`, animationDelay: `${0.5 + index * 0.18}s` } as CSSProperties} />
+                  </span>
+                </div>
                 <div className="fcard-meta">
                   <Pill tone="verified">Verified open</Pill>
                   <Pill tone="mono">{card.sourceLabel}</Pill>
@@ -309,28 +378,41 @@ export function LandingPage() {
 
       <section className="band band-alt">
         <div className="wrap">
-          <div ref={statsRevealRef} className="stat-grid">
-            <div className="stat reveal-stat">
-              <div className="k">Discovery</div>
-              <div className="n mono">{totalJobsCount.toLocaleString()}</div>
-              <div className="l">Jobs discovered in total</div>
+          {summary ? (
+            <div ref={statsRevealRef} className="stat-grid">
+              <div className="stat reveal-stat">
+                <div className="k">Discovery</div>
+                <div className="n mono">{totalJobsCount.toLocaleString()}</div>
+                <div className="l">Jobs discovered in total</div>
+              </div>
+              <div className="stat reveal-stat">
+                <div className="k">Coverage</div>
+                <div className="n mono">{sourcesCount}</div>
+                <div className="l">Active sources</div>
+              </div>
+              <div className="stat reveal-stat">
+                <div className="k">Verification</div>
+                <div className="n mono">0</div>
+                <div className="l">Verified open rate</div>
+              </div>
+              <div className="stat reveal-stat">
+                <div className="k">Matching</div>
+                <div className="n mono">0</div>
+                <div className="l">Avg. match score of applied jobs</div>
+              </div>
             </div>
-            <div className="stat reveal-stat">
-              <div className="k">Coverage</div>
-              <div className="n mono">{sourcesCount}</div>
-              <div className="l">Active sources</div>
+          ) : (
+            // Skeleton while the live summary loads.
+            <div className="stat-grid" aria-hidden="true">
+              {[0, 1, 2, 3].map((i) => (
+                <div className="stat" key={i}>
+                  <div className="sk sk-line" style={{ width: '40%' }} />
+                  <div className="sk sk-stat-n" />
+                  <div className="sk sk-line" style={{ width: '70%' }} />
+                </div>
+              ))}
             </div>
-            <div className="stat reveal-stat">
-              <div className="k">Verification</div>
-              <div className="n mono">0</div>
-              <div className="l">Verified open rate</div>
-            </div>
-            <div className="stat reveal-stat">
-              <div className="k">Matching</div>
-              <div className="n mono">0</div>
-              <div className="l">Avg. match score of applied jobs</div>
-            </div>
-          </div>
+          )}
           <div className="placeholder-note">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="9" />
@@ -349,34 +431,101 @@ export function LandingPage() {
             <p>What's landed in the feed. Each one is re-checked against its source page before it ever reaches a score.</p>
           </div>
 
-          {summary && summary.featuredJobs.length === 0 && (
-            <p className="placeholder-note">No verified jobs yet — check back soon.</p>
+          {/* Live filter — re-staggers the grid as the active chip changes. */}
+          {summary && featuredJobs.length > 0 && (
+            <div className="lp-filters" role="tablist" aria-label="Filter featured jobs">
+              {JOB_FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={jobFilter === f.id}
+                  className={`lp-chip ${jobFilter === f.id ? 'on' : ''}`}
+                  onClick={() => setJobFilter(f.id)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
           )}
 
-          <div ref={jobsRevealRef} className="jobs-grid">
-            {(summary?.featuredJobs ?? []).map((job) => (
-              <Link to="/jobs" key={job._id} className="jobcard reveal-job-card">
-                <div className="top">
-                  <div>
-                    <div className="role">{job.title}</div>
-                    <div className="co">
-                      <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
-                      {job.company}
-                      {job.location ? ` · ${job.location}` : ''}
+          {!summary ? (
+            // Skeleton cards while loading.
+            <div className="jobs-grid" aria-hidden="true">
+              {[0, 1, 2].map((i) => (
+                <div className="jobcard lp-skel-card" key={i}>
+                  <div className="sk sk-line" style={{ width: '70%', height: 16 }} />
+                  <div className="sk sk-line" style={{ width: '45%' }} />
+                  <div className="sk sk-pills" />
+                  <div className="sk sk-line" style={{ width: '100%', marginTop: 18 }} />
+                </div>
+              ))}
+            </div>
+          ) : featuredJobs.length === 0 ? (
+            <div className="lp-empty">
+              <div className="lp-empty-icon">
+                <Icon name="briefcase-outline" style={{ fontSize: 26 }} />
+              </div>
+              <b>No verified jobs yet</b>
+              <span>Fresh roles land here as soon as they clear verification — check back soon.</span>
+            </div>
+          ) : filteredJobs.length === 0 ? (
+            <div className="lp-empty">
+              <div className="lp-empty-icon">
+                <Icon name="search-outline" style={{ fontSize: 26 }} />
+              </div>
+              <b>Nothing in this slice</b>
+              <span>No freshly discovered roles match “{JOB_FILTERS.find((f) => f.id === jobFilter)?.label}” right now.</span>
+              <button type="button" className="lp-chip on lp-empty-reset" onClick={() => setJobFilter('all')}>
+                Show all
+              </button>
+            </div>
+          ) : (
+            // key on the filter so the grid remounts and re-runs its stagger-in.
+            <div className="jobs-grid" key={jobFilter}>
+              {filteredJobs.map((job, index) => {
+                const isSaved = savedJobs.has(job._id)
+                return (
+                  <Link
+                    to="/jobs"
+                    key={job._id}
+                    className="jobcard lp-jobcard"
+                    style={{ '--i': index } as CSSProperties}
+                  >
+                    <div className="top">
+                      <div>
+                        <div className="role">{job.title}</div>
+                        <div className="co">
+                          <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
+                          {job.company}
+                          {job.location ? ` · ${job.location}` : ''}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className={`lp-save ${isSaved ? 'on' : ''}`}
+                        aria-pressed={isSaved}
+                        aria-label={isSaved ? 'Remove bookmark' : 'Save job'}
+                        onClick={(e) => toggleSaved(job._id, e)}
+                      >
+                        <svg viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                        </svg>
+                      </button>
                     </div>
-                  </div>
-                </div>
-                <div className="tags">
-                  <Pill tone="verified">Verified</Pill>
-                  <Pill tone="mono">{SOURCE_LABELS[job.sourceId]}</Pill>
-                </div>
-                <div className="foot">
-                  <span className="src">{relativeTimeFromNow(job.discoveredAt)}</span>
-                  <span className="apply">View role →</span>
-                </div>
-              </Link>
-            ))}
-          </div>
+                    <div className="tags">
+                      <Pill tone="verified">Verified</Pill>
+                      <Pill tone="mono">{SOURCE_LABELS[job.sourceId]}</Pill>
+                    </div>
+                    <div className="foot">
+                      <span className="src">{relativeTimeFromNow(job.discoveredAt)}</span>
+                      <span className="apply">View role <span className="apply-arrow">→</span></span>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          )}
         </div>
       </section>
 
@@ -470,7 +619,7 @@ export function LandingPage() {
             <h2>Every listing is re-checked before it reaches you.</h2>
             <p>We re-fetch the source page and confirm the application form is still live before a job counts as verified.</p>
           </div>
-          <div className="recheck-card">
+          <div ref={recheckRevealRef} className="recheck-card">
             <div className="rc">
               <div className="t">Source page</div>
               <div className="line">GET remoteok.com/l/...<br />200 OK · 1.2s</div>
@@ -509,7 +658,7 @@ export function LandingPage() {
             <h2>See exactly where every application stands.</h2>
             <p>From drafted materials to a submitted application, nothing moves without your confirmation.</p>
           </div>
-          <div className="track-strip">
+          <div ref={trackRevealRef} className="track-strip">
             <div className="tnode done">
               <div className="dot">1</div>
               <b>Draft</b>
@@ -530,8 +679,12 @@ export function LandingPage() {
               <b>Submitted</b>
               <span>Tracked to the source</span>
             </div>
-            <div className="tnode">
-              <div className="dot">5</div>
+            <div className="tnode success">
+              <div className="dot">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+              </div>
               <b>Outcome</b>
               <span>Logged for your records</span>
             </div>
@@ -552,6 +705,7 @@ export function LandingPage() {
             </div>
             <div className="cvdemo">
               <div className="thumb">
+                <span className="scan" aria-hidden="true" />
                 <i />
                 <i />
                 <i />
