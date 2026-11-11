@@ -9,6 +9,7 @@ import type { Embedder } from '../embeddings/embeddingProvider.js'
 import { embedProfile } from '../suggestions/embeddingService.js'
 import { searchRankedJobsPage } from '../suggestions/vectorSearch.js'
 import { isAdmin } from '../lib/admins.js'
+import { listPublicUserJobs, getPublicUserJob } from '../userJobs/userJobsService.js'
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
@@ -205,6 +206,24 @@ export function createJobsRoutes(
     ])
 
     return c.json({ jobs: results, total })
+  })
+
+  // Public jobs members added themselves and chose to share. They live in a
+  // separate `userJobs` collection, so the discovery feed above never includes
+  // them — these two routes surface the shared ones to everyone. Registered
+  // before `/:id` so the static `community` segment wins the route match. The
+  // caller's own public jobs are excluded from the list (they already see them
+  // via /user-jobs and the "My jobs" tab), inferred from an optional Bearer token.
+  jobsRoutes.get('/community', async (c) => {
+    const profileId = await optionalProfileId(c.req.header('Authorization'), jwtSecret)
+    const jobs = await listPublicUserJobs(db, { excludeProfileId: profileId })
+    return c.json({ jobs })
+  })
+
+  jobsRoutes.get('/community/:id', async (c) => {
+    const job = await getPublicUserJob(db, c.req.param('id'))
+    if (!job) return c.json({ error: 'job not found' }, 404)
+    return c.json(job)
   })
 
   jobsRoutes.get('/:id', async (c) => {

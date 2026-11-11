@@ -22,6 +22,7 @@ import { JobsPage } from './pages/Jobs'
 import { SuggestionsPage } from './pages/Suggestions'
 import { JobDetailPage } from './pages/JobDetail'
 import { MyJobDetailPage } from './pages/MyJobDetail'
+import { CommunityJobDetailPage } from './pages/CommunityJobDetail'
 import { ApplicationsPage } from './pages/Applications'
 import { AdminPage } from './pages/Admin'
 import { SettingsPage } from './pages/Settings'
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="/sources" element={<SourcesPage />} />
             <Route path="/jobs" element={<JobsPage />} />
             <Route path="/jobs/:id" element={<JobDetailPage />} />
+            <Route path="/community-jobs/:id" element={<CommunityJobDetailPage />} />
             <Route element={<ProtectedRoute />}>
               <Route path="/onboarding" element={<OnboardingPage />} />
               <Route element={<OnboardingGate />}>

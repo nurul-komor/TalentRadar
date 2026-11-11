@@ -1,4 +1,4 @@
-import { ObjectId, type Db } from 'mongodb'
+import { ObjectId, type Db, type Filter } from 'mongodb'
 import type { UserJob, UserJobPreview } from '@job-hunter/shared'
 import { UserJobPreviewSchema } from '@job-hunter/shared'
 import type { LlmProvider } from '../llm/types.js'
@@ -38,6 +38,8 @@ const USER_JOB_JSON_SCHEMA = {
 
 export async function ensureUserJobsIndexes(db: Db): Promise<void> {
   await db.collection('userJobs').createIndex({ profileId: 1, createdAt: -1 })
+  // Backs the shared-feed query for public jobs added by members (listPublicUserJobs).
+  await db.collection('userJobs').createIndex({ visibility: 1, createdAt: -1 })
 }
 
 // Strips a full HTML document down to readable visible text: drops <script> and
@@ -345,6 +347,38 @@ export async function getUserJob(db: Db, profileId: string, id: string): Promise
   // Query by ObjectId `_id` via the untyped collection handle (the shared schema
   // types `_id` as a string), matching the pattern in the route handlers.
   const doc = await db.collection('userJobs').findOne({ _id: new ObjectId(id), profileId })
+  return doc ? (doc as unknown as UserJob) : null
+}
+
+// How many shared member jobs the public feed will surface at once. Kept small
+// because they're merged into the feed client-side, not server-paginated.
+const PUBLIC_USER_JOBS_LIMIT = 100
+
+// Public jobs that members added themselves and chose to share. These live in the
+// `userJobs` collection, so the discovery `jobs` feed never includes them — this
+// is what surfaces the shared ones to everyone. The caller's own are excluded
+// (they already see those via listUserJobs / the "My jobs" tab); pass the viewer's
+// profileId, or null/undefined for a logged-out visitor (who then sees them all).
+export async function listPublicUserJobs(
+  db: Db,
+  opts: { excludeProfileId?: string | null } = {}
+): Promise<UserJob[]> {
+  const filter: Filter<UserJob> = { visibility: 'public' }
+  if (opts.excludeProfileId) filter.profileId = { $ne: opts.excludeProfileId }
+  return db
+    .collection<UserJob>('userJobs')
+    .find(filter)
+    .sort({ createdAt: -1 })
+    .limit(PUBLIC_USER_JOBS_LIMIT)
+    .toArray()
+}
+
+// Fetch a single shared member job by id, for any viewer. Unlike getUserJob this
+// is NOT owner-scoped — but it only ever returns jobs whose owner marked them
+// public, so private jobs stay unreachable to non-owners.
+export async function getPublicUserJob(db: Db, id: string): Promise<UserJob | null> {
+  if (!ObjectId.isValid(id)) return null
+  const doc = await db.collection('userJobs').findOne({ _id: new ObjectId(id), visibility: 'public' })
   return doc ? (doc as unknown as UserJob) : null
 }
 

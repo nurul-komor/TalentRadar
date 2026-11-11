@@ -245,6 +245,8 @@ export function JobsPage() {
   const [error, setError] = useState<string | null>(null)
   const [trackedCompanies, setTrackedCompanies] = useState<TrackedCompany[]>([])
   const [myJobs, setMyJobs] = useState<UserJob[]>([])
+  // Public jobs other members added and shared — surfaced in the shared feed.
+  const [communityJobs, setCommunityJobs] = useState<UserJob[]>([])
   // Whether the signed-in user has a resume to match against — gates the "Best match" sort.
   const [hasResume, setHasResume] = useState(false)
 
@@ -442,6 +444,17 @@ export function JobsPage() {
         setHasResume(hasCv || hasSkills)
       })
       .catch(() => setHasResume(false))
+  }, [isAuthenticated])
+
+  // Public jobs other members added and chose to share. Unlike `myJobs`, these
+  // are public, so we fetch them for logged-out visitors too; the API excludes
+  // the signed-in user's own (those already appear under "My jobs"), which is why
+  // this re-runs when auth changes.
+  useEffect(() => {
+    apiFetch('/jobs/community')
+      .then((res) => (res.ok ? res.json() : { jobs: [] }))
+      .then((body: { jobs: UserJob[] }) => setCommunityJobs(body.jobs))
+      .catch(() => setCommunityJobs([]))
   }, [isAuthenticated])
 
   useEffect(() => {
@@ -759,6 +772,17 @@ export function JobsPage() {
       ? visibleMyJobs
       : []
 
+  // Public jobs shared by other members. They live in another user's space, so
+  // they aren't bookmarkable and never appear in saved mode; otherwise they honor
+  // the same language/keyword filters as added jobs. Shown only on the first page
+  // of "All jobs" (not under Government/Other, which are discovery-only), and not
+  // in "Best match" mode, where the list is a pure score ranking they can't join.
+  const visibleCommunityJobs = communityJobs
+    .filter((job) => userJobMatchesLanguages(job, selectedLanguages))
+    .filter((job) => userJobMatchesKeyword(job, debouncedKeyword))
+  const communityJobRows =
+    !savedMode && !sortByMatch && category === 'all' && offset === 0 ? visibleCommunityJobs : []
+
   // Merge added jobs into the discovery feed inline, newest-first, instead of
   // pinning them above it. Each row keeps its own renderer (added jobs link to
   // /my-jobs and show an "Added by you" pill). We only re-sort by date when there
@@ -767,23 +791,29 @@ export function JobsPage() {
   const rowTimestamp = (value?: string | null) => (value ? new Date(value).getTime() : 0)
   type MergedRow =
     | { kind: 'mine'; job: UserJob; ts: number }
+    | { kind: 'community'; job: UserJob; ts: number }
     | { kind: 'feed'; job: FeedJob; ts: number }
   const mineAsRows = (): MergedRow[] =>
-    myJobRows
-      .map((job): MergedRow => ({ kind: 'mine', job, ts: rowTimestamp(job.createdAt) }))
-      .sort((a, b) => b.ts - a.ts)
+    myJobRows.map((job): MergedRow => ({ kind: 'mine', job, ts: rowTimestamp(job.createdAt) }))
+  const communityAsRows = (): MergedRow[] =>
+    communityJobRows.map((job): MergedRow => ({ kind: 'community', job, ts: rowTimestamp(job.createdAt) }))
   const mergedRows: MergedRow[] =
     // The "My jobs" tab is strictly the user's own added jobs — never the
-    // discovery feed — so we ignore `jobs` here entirely (it also avoids a
-    // stale-feed flash while the fetch effect clears it on the tab switch).
+    // discovery feed or others' shared jobs — so we ignore `jobs` here entirely
+    // (it also avoids a stale-feed flash while the fetch effect clears it on the
+    // tab switch).
     category === 'mine'
-      ? mineAsRows()
-      : myJobRows.length > 0
-        ? [
-            ...jobs.map((job): MergedRow => ({ kind: 'feed', job, ts: rowTimestamp(job.discoveredAt) })),
-            ...mineAsRows(),
-          ].sort((a, b) => b.ts - a.ts)
-        : jobs.map((job): MergedRow => ({ kind: 'feed', job, ts: rowTimestamp(job.discoveredAt) }))
+      ? mineAsRows().sort((a, b) => b.ts - a.ts)
+      : (() => {
+          // Added jobs and shared community jobs are interleaved into the feed
+          // newest-first; we only re-sort when there are extras to weave in, so an
+          // extras-free feed keeps the server's ordering (relevance / newest-first).
+          const feedRows = jobs.map(
+            (job): MergedRow => ({ kind: 'feed', job, ts: rowTimestamp(job.discoveredAt) }),
+          )
+          const extras = [...mineAsRows(), ...communityAsRows()]
+          return extras.length > 0 ? [...feedRows, ...extras].sort((a, b) => b.ts - a.ts) : feedRows
+        })()
 
   const jobsCountLabel = loading
     ? 'Searching…'
@@ -1039,6 +1069,46 @@ export function JobsPage() {
                             <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
                           </svg>
                         </button>
+                      </div>
+                    </article>
+                  )
+                }
+                if (row.kind === 'community') {
+                  const job = row.job
+                  return (
+                    <article key={`community-${job._id}`} className="jrow">
+                      <div className="main">
+                        <div className="title">
+                          <Link to={`/community-jobs/${job._id}`}>{job.title}</Link>
+                        </div>
+                        <div className="sub">
+                          <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
+                          {job.company}
+                          {job.location ? ` · ${job.location}` : ''}
+                        </div>
+                        <div className="tags">
+                          <Pill tone="verified">Community</Pill>
+                          <Pill tone="mono">{formatSalary(job)}</Pill>
+                          <Pill tone="mono">Shared by a member</Pill>
+                        </div>
+                        {job.description && (
+                          <p style={{ marginTop: 10, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
+                            {descriptionPreview(job.description)}
+                          </p>
+                        )}
+                        <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <Link to={`/community-jobs/${job._id}`} className="btn btn-ghost">
+                            View details
+                          </Link>
+                          {job.url && (
+                            <a href={job.url} target="_blank" rel="noreferrer" className="btn btn-indigo">
+                              Apply
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      <div className="side">
+                        <span className="when">{relativeTimeFromNow(job.createdAt)}</span>
                       </div>
                     </article>
                   )
