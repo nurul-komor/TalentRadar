@@ -285,4 +285,77 @@ describe('jobs routes', () => {
     expect(body.jobs).toHaveLength(1)
     expect(body.jobs[0].sourceId).toBe('remoteok')
   })
+
+  describe('community (shared member) jobs', () => {
+    interface CommunityListBody {
+      jobs: Array<{ _id: string; title: string; visibility: string; profileId: string }>
+    }
+
+    async function insertUserJob(overrides: {
+      profileId: string
+      title: string
+      visibility: 'public' | 'private'
+    }): Promise<string> {
+      const now = '2026-02-01T00:00:00.000Z'
+      const result = await db.collection('userJobs').insertOne({
+        profileId: overrides.profileId,
+        title: overrides.title,
+        company: 'Member Co',
+        description: 'Shared role',
+        location: null,
+        salaryMin: null,
+        salaryMax: null,
+        url: null,
+        visibility: overrides.visibility,
+        createdAt: now,
+        updatedAt: now,
+      })
+      return result.insertedId.toString()
+    }
+
+    it('lists only public member jobs, newest first', async () => {
+      await insertUserJob({ profileId: 'alice', title: 'Public A', visibility: 'public' })
+      await insertUserJob({ profileId: 'bob', title: 'Private B', visibility: 'private' })
+
+      const res = await app.request('/jobs/community')
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as CommunityListBody
+      expect(body.jobs).toHaveLength(1)
+      expect(body.jobs[0].title).toBe('Public A')
+    })
+
+    it("excludes the caller's own public jobs from the shared feed", async () => {
+      const token = await registerAndGetToken(app)
+      const profile = await db.collection('profiles').findOne({ email: 'jobs-user@example.com' })
+      const callerId = profile!._id.toString()
+
+      await insertUserJob({ profileId: callerId, title: 'Mine', visibility: 'public' })
+      await insertUserJob({ profileId: 'someone-else', title: 'Theirs', visibility: 'public' })
+
+      const res = await app.request('/jobs/community', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const body = (await res.json()) as CommunityListBody
+      expect(body.jobs.map((j) => j.title)).toEqual(['Theirs'])
+    })
+
+    it('fetches a single public member job by id, for any viewer', async () => {
+      const id = await insertUserJob({ profileId: 'alice', title: 'Public A', visibility: 'public' })
+      const res = await app.request(`/jobs/community/${id}`)
+      expect(res.status).toBe(200)
+      const job = (await res.json()) as { _id: string; title: string }
+      expect(job.title).toBe('Public A')
+    })
+
+    it('does not expose a private member job by id', async () => {
+      const id = await insertUserJob({ profileId: 'alice', title: 'Private A', visibility: 'private' })
+      const res = await app.request(`/jobs/community/${id}`)
+      expect(res.status).toBe(404)
+    })
+
+    it('returns 404 for an invalid community job id (not shadowed by /:id)', async () => {
+      const res = await app.request('/jobs/community/not-an-object-id')
+      expect(res.status).toBe(404)
+    })
+  })
 })
