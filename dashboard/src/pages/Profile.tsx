@@ -355,7 +355,28 @@ export function ProfilePage() {
         )}
 
         {!profile ? (
-          <p className="mt-8 text-muted-foreground">Loading…</p>
+          <div
+            className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]"
+            aria-hidden="true"
+            aria-busy="true"
+          >
+            <div className="flex flex-col gap-6">
+              {[0, 1, 2].map((card) => (
+                <div key={card} className="flex flex-col gap-4 rounded-2xl border border-border p-6">
+                  <div className="sk" style={{ width: '40%', height: 18 }} />
+                  <div className="sk" style={{ width: '70%' }} />
+                  <div className="sk" style={{ width: '100%', height: 40, borderRadius: 10 }} />
+                  <div className="sk" style={{ width: '100%', height: 40, borderRadius: 10 }} />
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-col gap-4 rounded-2xl border border-border p-6">
+              <div className="sk" style={{ width: '55%', height: 18 }} />
+              <div className="sk" style={{ width: '100%' }} />
+              <div className="sk" style={{ width: '80%' }} />
+              <div className="sk" style={{ width: '100%', height: 40, borderRadius: 10 }} />
+            </div>
+          </div>
         ) : (
           <form onSubmit={handleSubmit} className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
             <div className="flex flex-col gap-6">

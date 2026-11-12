@@ -59,13 +59,16 @@ export function AddJobPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [jobs, setJobs] = useState<UserJob[]>([])
+  const [jobsLoading, setJobsLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
 
   useEffect(() => {
+    setJobsLoading(true)
     apiFetch('/user-jobs')
       .then((res) => (res.ok ? res.json() : { jobs: [] }))
       .then((body: { jobs: UserJob[] }) => setJobs(body.jobs))
       .catch(() => setJobs([]))
+      .finally(() => setJobsLoading(false))
   }, [])
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -341,7 +344,18 @@ export function AddJobPage() {
 
         <section className="psec" style={{ marginTop: 36 }}>
           <h2>My jobs {jobs.length > 0 && <span className="add-job-count">({jobs.length})</span>}</h2>
-          {jobs.length === 0 ? (
+          {jobsLoading ? (
+            <div className="add-job-list" aria-hidden="true">
+              {[0, 1, 2].map((i) => (
+                <div className="skeleton" key={i} style={{ gridTemplateColumns: '1fr' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div className="sk" style={{ width: '42%', height: 16 }} />
+                    <div className="sk" style={{ width: '64%' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : jobs.length === 0 ? (
             <p style={{ color: 'var(--muted-text)' }}>No jobs added yet. Sync a link or add one manually above.</p>
           ) : (
             <div className="add-job-list">

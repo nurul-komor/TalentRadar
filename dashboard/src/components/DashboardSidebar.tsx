@@ -5,7 +5,6 @@ import type { Profile, TrackedJob } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { canSync, isAdmin } from '../lib/syncAccess'
-import { useSavedJobs } from '../hooks/useSavedJobs'
 import { profileCompletenessPercent } from '../lib/profileCompleteness'
 import { isFollowUpOverdue } from '../lib/jobTracking'
 import { ThemeToggle } from './ThemeToggle'
@@ -41,11 +40,9 @@ function initialsFromEmail(email: string | null): string {
 
 // Shared account popover. Opens from the sidebar foot (desktop) or the mobile
 // top-header avatar (tablet/phone) and surfaces the account's important links +
-// log out. Saved Jobs and Job Sync live here too because they are not in the
-// mobile tab bar.
+// log out. Job Sync lives here too because it is not in the mobile tab bar.
 function AccountMenu({ variant, title, subtitle }: { variant: 'sidebar' | 'header'; title?: string; subtitle?: string }) {
   const { email, logout } = useAuth()
-  const { savedIds } = useSavedJobs()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const anchorRef = useRef<HTMLDivElement>(null)
@@ -70,7 +67,6 @@ function AccountMenu({ variant, title, subtitle }: { variant: 'sidebar' | 'heade
   const links = [
     { to: '/profile', label: 'Profile', icon: 'person-outline', badge: 0 },
     { to: '/cv', label: 'Resume', icon: 'document-text-outline', badge: 0 },
-    { to: '/jobs?saved=1', label: 'Saved Jobs', icon: 'briefcase-outline', badge: savedIds.length },
     ...(canSync(email) ? [{ to: '/sync', label: 'Job Sync', icon: 'refresh-outline', badge: 0 }] : []),
     ...(isAdmin(email) ? [{ to: '/settings', label: 'Settings', icon: 'settings-outline', badge: 0 }] : []),
   ]
@@ -160,7 +156,6 @@ function AccountMenu({ variant, title, subtitle }: { variant: 'sidebar' | 'heade
 
 export function DashboardSidebar() {
   const { email } = useAuth()
-  const { savedIds } = useSavedJobs()
   const navigate = useNavigate()
   const location = useLocation()
   const searchRef = useRef<HTMLInputElement>(null)
@@ -220,7 +215,7 @@ export function DashboardSidebar() {
     const observer = new ResizeObserver(reposition)
     observer.observe(nav)
     return () => observer.disconnect()
-  }, [location.pathname, location.search, savedIds.length, overdueCount, email])
+  }, [location.pathname, location.search, overdueCount, email])
 
   function submitSearch(event: React.FormEvent) {
     event.preventDefault()
@@ -265,13 +260,6 @@ export function DashboardSidebar() {
           </NavLink>
         ))}
 
-        <div className="app-sidebar-section-label">Shortcuts</div>
-        <NavLink to="/jobs?saved=1" className="app-sidebar-link">
-          <Icon name="briefcase-outline" style={{ fontSize: 18 }} />
-          Saved Jobs
-          {savedIds.length > 0 && <span className="badge">{savedIds.length}</span>}
-        </NavLink>
-
         {canSync(email) && (
           <NavLink to="/sync" className={sidebarLinkClass}>
             <Icon name="refresh-outline" style={{ fontSize: 18 }} />
@@ -311,9 +299,8 @@ interface FabItem {
   label: string
   icon: string
   badge?: number
-  // Saved Jobs points at /jobs?saved=1, which NavLink would otherwise mark active
-  // whenever the /jobs route is open — so it opts out of active styling, mirroring
-  // the sidebar.
+  // Items pointing at a query-string route (e.g. /jobs?...) can opt out of active
+  // styling so NavLink doesn't mark them active whenever the base route is open.
   matchActive?: boolean
 }
 
@@ -322,11 +309,10 @@ interface FabItem {
 // phones the labels clipped. A single round button that expands into a labelled,
 // staggered menu scales to any width and shows each destination's full label.
 // It mirrors the full desktop sidebar — primary destinations plus the Shortcuts
-// (Saved Jobs, and Job Sync / Settings when the account has access).
+// (Job Sync / Settings when the account has access).
 export function DashboardMobileNav() {
   const location = useLocation()
   const { email } = useAuth()
-  const { savedIds } = useSavedJobs()
   const [open, setOpen] = useState(false)
 
   // Collapse on navigation.
@@ -344,7 +330,6 @@ export function DashboardMobileNav() {
 
   const items: FabItem[] = [
     ...SIDEBAR_LINKS.map((link) => ({ ...link, matchActive: true })),
-    { to: '/jobs?saved=1', label: 'Saved Jobs', icon: 'briefcase-outline', badge: savedIds.length || undefined, matchActive: false },
     ...(canSync(email) ? [{ to: '/sync', label: 'Job Sync', icon: 'refresh-outline', matchActive: true }] : []),
     ...(isAdmin(email) ? [{ to: '/settings', label: 'Settings', icon: 'settings-outline', matchActive: true }] : []),
   ]
