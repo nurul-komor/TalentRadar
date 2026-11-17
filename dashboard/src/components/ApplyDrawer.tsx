@@ -31,8 +31,22 @@ type ApplicationState =
   | { phase: 'loading' }
   | {
       phase: 'loaded'
-      application: { jobId: string; status: string }
-      latestRun: { runNumber: number; status: string; blockReason: string | null; manualApplyUrl: string | null } | null
+      application: {
+        jobId: string
+        status: string
+        // Questions the automation couldn't infer (unlabeled fields, option
+        // groups); surfaced in the Automated tab so the user sees what's pending.
+        requiredAnswers?: { question: string; answer: string | null }[]
+      }
+      latestRun: {
+        runNumber: number
+        status: string
+        blockReason: string | null
+        manualApplyUrl: string | null
+        // What the headless run auto-filled on the employer form, shown as a
+        // reviewable preview before the user approves/submits.
+        filledFields?: Record<string, string> | null
+      } | null
     }
   | { phase: 'error'; message: string }
 
@@ -757,26 +771,52 @@ export function ApplyDrawer({
               ) : ""}
 
               {activeTab === 'automated' && IS_LOCALHOST ? (
-                <>
-                  <div className="doc-preview">
-                    <div className="dp-h">
-                      <span>Status</span>
-                      <span>{appState.application.status}</span>
+                <div className="flex flex-col gap-3">
+                  {/* Submission result — the payoff view after Submit succeeds or fails. */}
+                  {(appState.latestRun?.status === 'submitted' || appState.application.status === 'submitted') && (
+                    <div className="auto-reveal relative overflow-hidden rounded-xl border border-cyan/30 bg-cyan/5 p-5 text-center">
+                      <div className="auto-result-icon ok relative mx-auto grid h-12 w-12 place-items-center rounded-full bg-cyan/15 text-cyan">
+                        <Icon name="checkmark-outline" style={{ fontSize: 26 }} />
+                      </div>
+                      <h4 className="mt-3 text-base font-semibold text-foreground">Application submitted</h4>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Your application to <b className="text-foreground">{company}</b> was sent successfully.
+                      </p>
+                    </div>
+                  )}
+                  {(appState.latestRun?.status === 'failed' || appState.application.status === 'failed') && (
+                    <div className="auto-reveal rounded-xl border border-destructive/30 bg-destructive/5 p-5 text-center">
+                      <div className="auto-result-icon mx-auto grid h-12 w-12 place-items-center rounded-full bg-destructive/15 text-destructive">
+                        <Icon name="alert-circle-outline" style={{ fontSize: 26 }} />
+                      </div>
+                      <h4 className="mt-3 text-base font-semibold text-foreground">Submission didn't go through</h4>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {appState.latestRun?.blockReason ?? 'The employer form rejected the submission. Try again or apply manually.'}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Status + automation run */}
+                  <div className="auto-reveal rounded-xl border border-border bg-card p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">Status</span>
+                      <Pill tone="mono">{appState.application.status}</Pill>
                     </div>
                     {appState.latestRun ? (
-                      <div className="run-status">
-                        <div className="run-line">
-                          <span>Automation run #{appState.latestRun.runNumber}</span>
+                      <div className="mt-3 flex flex-col gap-3 border-t border-border pt-3">
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                            <Icon name="hardware-chip-outline" style={{ fontSize: 16 }} />
+                            Automation run #{appState.latestRun.runNumber}
+                          </span>
                           <Pill tone={appState.latestRun.status === 'blocked' ? 'govt' : 'mono'}>
                             {appState.latestRun.status.replace(/_/g, ' ')}
                           </Pill>
                         </div>
-                        {appState.latestRun.blockReason && (
-                          <div className="run-reason">
-                            <div className="dp-h">
-                              <span>Reason</span>
-                            </div>
-                            <p style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
+                        {appState.latestRun.blockReason && appState.latestRun.status !== 'failed' && (
+                          <div className="rounded-lg border border-border bg-muted/40 p-3">
+                            <span className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">Reason</span>
+                            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">
                               {appState.latestRun.blockReason}
                             </p>
                           </div>
@@ -786,51 +826,174 @@ export function ApplyDrawer({
                             href={appState.latestRun.manualApplyUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="btn btn-ghost"
+                            className="inline-flex w-fit items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-all hover:-translate-y-0.5 hover:bg-muted"
                           >
-                            Apply manually →
+                            <Icon name="open-outline" style={{ fontSize: 15 }} />
+                            Apply manually
                           </a>
                         )}
                       </div>
                     ) : (
-                      <p>No automation run yet.</p>
+                      <p className="mt-2 text-sm text-muted-foreground">No automation run yet.</p>
                     )}
                   </div>
 
-                  {appState.application.status === 'draft' && !appState.latestRun && (
-                    <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={generateMaterials}>
-                      Generate materials
-                    </button>
+                  {/* What the automation auto-filled on the employer form */}
+                  {appState.latestRun?.filledFields && Object.keys(appState.latestRun.filledFields).length > 0 && (
+                    <div className="auto-reveal rounded-xl border border-border bg-card p-4">
+                      <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <Icon name="list-outline" style={{ fontSize: 15 }} />
+                        Auto-filled fields
+                        <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                          {Object.keys(appState.latestRun.filledFields).length}
+                        </span>
+                      </div>
+                      <dl className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+                        {Object.entries(appState.latestRun.filledFields).map(([field, value]) => (
+                          <div key={field} className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.6fr)] gap-3 text-sm">
+                            <dt className="truncate font-medium text-muted-foreground" title={field}>{field}</dt>
+                            <dd className="break-words text-foreground">{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </div>
                   )}
 
-                  {appState.application.status === 'draft' && (
-                    <button type="button" className="btn btn-ghost" disabled={actionBusy} onClick={runAutomation}>
-                      Run automation
-                    </button>
+                  {/* Questions the automation couldn't infer — the user's to fill in */}
+                  {appState.application.requiredAnswers && appState.application.requiredAnswers.length > 0 && (
+                    <div className="auto-reveal rounded-xl border border-border bg-card p-4">
+                      <div className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <Icon name="clipboard-outline" style={{ fontSize: 15 }} />
+                        Application questions
+                      </div>
+                      <ul className="mt-3 flex flex-col gap-3">
+                        {appState.application.requiredAnswers.map((qa, index) => (
+                          <li key={index} className="rounded-lg border border-border bg-muted/30 p-3">
+                            <p className="text-sm font-medium text-foreground">{qa.question}</p>
+                            {qa.answer ? (
+                              <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{qa.answer}</p>
+                            ) : (
+                              <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2 py-0.5 text-[12px] font-medium text-amber-600 dark:text-amber-400">
+                                <Icon name="alert-circle-outline" style={{ fontSize: 13 }} />
+                                Needs your input
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
 
-                  {appState.latestRun?.status === 'ready_for_approval' && (
-                    <button
-                      type="button"
-                      className="btn-confirm"
-                      disabled={actionBusy}
-                      onClick={() => approveRun(appState.latestRun!.runNumber)}
-                    >
-                      Review and confirm
-                    </button>
+                  {/* Generated materials used for this application */}
+                  {materialsPreview && (
+                    <div className="auto-reveal rounded-xl border border-border bg-card p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          <Icon name="sparkles-outline" style={{ fontSize: 15 }} />
+                          Cover letter
+                        </span>
+                        <button
+                          type="button"
+                          className={`inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[12px] font-medium transition-colors ${copyState === 'copied' ? 'text-cyan' : 'text-muted-foreground hover:text-foreground'}`}
+                          onClick={copyCoverLetter}
+                        >
+                          <Icon name={copyState === 'copied' ? 'checkmark-outline' : 'copy-outline'} style={{ fontSize: 13 }} />
+                          {copyState === 'copied' ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
+                      <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap text-sm text-foreground">{materialsPreview}</p>
+                    </div>
+                  )}
+                  {cvPreview && (
+                    <div className="auto-reveal rounded-xl border border-border bg-card p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          <Icon name="document-text-outline" style={{ fontSize: 15 }} />
+                          Tailored CV (ATS)
+                        </span>
+                        <button
+                          type="button"
+                          className={`inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[12px] font-medium transition-colors ${cvCopyState === 'copied' ? 'text-cyan' : 'text-muted-foreground hover:text-foreground'}`}
+                          onClick={copyCv}
+                        >
+                          <Icon name={cvCopyState === 'copied' ? 'checkmark-outline' : 'copy-outline'} style={{ fontSize: 13 }} />
+                          {cvCopyState === 'copied' ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
+                      <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap text-sm text-foreground">{cvPreview}</p>
+                      {unmetRequirements.length > 0 && (
+                        <div className="mt-3 border-t border-border pt-3">
+                          <span className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">Unmet requirements</span>
+                          <ul className="mt-1.5 list-disc space-y-1 pl-5 text-[13.5px] text-foreground">
+                            {unmetRequirements.map((requirement, index) => (
+                              <li key={index}>{requirement}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {reviewMissingSkills.length > 0 && (
+                    <div className="auto-reveal rounded-xl border border-border bg-card p-4">
+                      <span className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">Missing skills for this role</span>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {reviewMissingSkills.map((skill) => (
+                          <span key={skill} className="rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[12.5px] font-medium text-foreground">
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   )}
 
-                  {appState.latestRun?.status === 'approved' && (
-                    <button
-                      type="button"
-                      className="btn-confirm"
-                      disabled={actionBusy}
-                      onClick={() => submitRun(appState.latestRun!.runNumber)}
-                    >
-                      Submit application
-                    </button>
-                  )}
-                </>
+                  {/* Stage actions */}
+                  <div className="auto-reveal flex flex-wrap gap-2">
+                    {appState.application.status === 'draft' && !appState.latestRun && (
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-all hover:-translate-y-0.5 hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+                        disabled={actionBusy}
+                        onClick={generateMaterials}
+                      >
+                        <Icon name="sparkles-outline" style={{ fontSize: 15 }} />
+                        {actionBusy ? 'Generating…' : 'Generate materials'}
+                      </button>
+                    )}
+                    {appState.application.status === 'draft' && (
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:-translate-y-0.5 hover:brightness-110 active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
+                        disabled={actionBusy}
+                        onClick={runAutomation}
+                      >
+                        <Icon name="hardware-chip-outline" style={{ fontSize: 15 }} />
+                        {actionBusy ? 'Running…' : 'Run automation'}
+                      </button>
+                    )}
+                    {appState.latestRun?.status === 'ready_for_approval' && (
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:-translate-y-0.5 hover:brightness-110 active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
+                        disabled={actionBusy}
+                        onClick={() => approveRun(appState.latestRun!.runNumber)}
+                      >
+                        <Icon name="shield-checkmark-outline" style={{ fontSize: 15 }} />
+                        {actionBusy ? 'Confirming…' : 'Review and confirm'}
+                      </button>
+                    )}
+                    {appState.latestRun?.status === 'approved' && (
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:-translate-y-0.5 hover:brightness-110 active:translate-y-0 disabled:pointer-events-none disabled:opacity-50"
+                        disabled={actionBusy}
+                        onClick={() => submitRun(appState.latestRun!.runNumber)}
+                      >
+                        <Icon name="checkmark-outline" style={{ fontSize: 15 }} />
+                        {actionBusy ? 'Submitting…' : 'Submit application'}
+                      </button>
+                    )}
+                  </div>
+                </div>
               ) : ""}
 
               {activeTab === 'onsite' && (

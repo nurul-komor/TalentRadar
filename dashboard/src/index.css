@@ -1720,11 +1720,27 @@ a.kpi:hover{transform:translateY(-3px);border-color:var(--line-strong);box-shado
 @keyframes successPop{0%{transform:scale(.4);}60%{transform:scale(1.18);}100%{transform:scale(1);}}
 @keyframes successRing{0%{transform:scale(.8);opacity:.6;}100%{transform:scale(1.9);opacity:0;}}
 
+/* --- Automated apply tab: staggered section reveals + submission result --- */
+.auto-reveal{animation:autoReveal .5s cubic-bezier(.22,.8,.3,1) both;}
+.auto-reveal:nth-child(1){animation-delay:.02s;}
+.auto-reveal:nth-child(2){animation-delay:.08s;}
+.auto-reveal:nth-child(3){animation-delay:.14s;}
+.auto-reveal:nth-child(4){animation-delay:.20s;}
+.auto-reveal:nth-child(5){animation-delay:.26s;}
+.auto-reveal:nth-child(6){animation-delay:.32s;}
+.auto-reveal:nth-child(7){animation-delay:.38s;}
+@keyframes autoReveal{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+/* Submission success: the check pops, then a ring pulses outward. */
+.auto-result-icon{animation:successPop .6s cubic-bezier(.3,1.5,.4,1) both;}
+.auto-result-icon.ok::after{content:"";position:absolute;inset:-5px;border-radius:50%;
+  border:2px solid var(--cyan);opacity:0;animation:successRing 1.8s ease-out .4s infinite;}
+
 /* --- Reduced-motion: disable the landing motion layer --- */
 @media (prefers-reduced-motion: reduce){
   .page-enter,.lp-jobcard,.lp-empty,.fcard-match-track i,
   .lp-save.on svg,.cvdemo .thumb .scan,.cvdemo .thumb i,
   .hero-aurora,.lp-empty-icon,
+  .auto-reveal,.auto-result-icon,.auto-result-icon.ok::after,
   .track-strip .tnode.success .dot,.track-strip .tnode.success .dot::after{animation:none;}
   .fcard-match-track i{width:var(--match-w);}
   .lp-jobcard:hover::after{animation:none;}
