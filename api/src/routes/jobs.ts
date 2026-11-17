@@ -169,11 +169,15 @@ export function createJobsRoutes(
   jobsRoutes.get('/', async (c) => {
     const limit = parseLimit(c.req.query('limit'))
     const offset = parseOffset(c.req.query('offset'))
-    const sortByMatch = c.req.query('sort') === 'match'
+    const category = parseCategory(c.req.query('category'))
+    // Government jobs are unscored (never embedded), and the vector-ranked path excludes
+    // UNSCORED_JOB_SOURCE_IDS — so match-sort over the government category would always come
+    // back empty. Fall back to the default newest-first ordering for it.
+    const sortByMatch = c.req.query('sort') === 'match' && category !== 'government'
     const filter = buildJobsFilter({
       status: parseStatus(c.req.query('status')),
       sourceId: parseSourceId(c.req.query('sourceId')),
-      category: parseCategory(c.req.query('category')),
+      category,
       keyword: parseText(c.req.query('q')),
       location: parseText(c.req.query('location')),
       company: parseText(c.req.query('company')),

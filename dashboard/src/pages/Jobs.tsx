@@ -271,9 +271,12 @@ export function JobsPage() {
   const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
 
   // "Best match" semantic sort is only meaningful for a signed-in user with a resume, and not
-  // in the saved / "my jobs" views (which aren't the discovery feed). The server falls back to
+  // in the saved / "my jobs" views (which aren't the discovery feed). Government jobs are
+  // unscored and never embedded, so the vector-ranked path excludes them — match-sort would
+  // return an empty Government tab, so disable it there too. The server falls back to
   // newest-first if it can't match, but we only surface the control when it will actually work.
-  const canSortByMatch = isAuthenticated && hasResume && !savedMode && category !== 'mine'
+  const canSortByMatch =
+    isAuthenticated && hasResume && !savedMode && category !== 'mine' && category !== 'government'
   const sortByMatch = canSortByMatch && searchParams.get('sort') === 'match'
 
   const [keyword, setKeyword] = useState(searchParams.get('q') ?? '')
