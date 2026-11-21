@@ -6,6 +6,7 @@ import { OnboardingGate } from './auth/OnboardingGate'
 import { AdminRoute } from './auth/AdminRoute'
 import { DashboardLayout } from './components/DashboardLayout'
 import { ScrollToTop } from './components/ScrollToTop'
+import { ImpersonationBanner } from './components/ImpersonationBanner'
 import { LandingPage } from './pages/Landing'
 import { LoginPage } from './pages/Login'
 import { RegisterPage } from './pages/Register'
@@ -33,6 +34,7 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <ScrollToTop />
+          <ImpersonationBanner />
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />

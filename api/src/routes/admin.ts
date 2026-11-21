@@ -4,6 +4,7 @@ import type { Job } from '@job-hunter/shared'
 import { AiSettingsUpdateSchema } from '@job-hunter/shared'
 import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
 import { createRequireAdmin } from '../middleware/admin.js'
+import { createAuthToken } from '../lib/jwt.js'
 import type { AiRuntime } from '../ai/aiRuntime.js'
 import { updateAiSettings } from '../settings/settingsService.js'
 import { embedJobs } from '../suggestions/embeddingService.js'
@@ -22,6 +23,21 @@ export function createAdminRoutes(db: Db, jwtSecret: string, aiRuntime: AiRuntim
       .sort({ createdAt: -1 })
       .toArray()
     return c.json({ users })
+  })
+
+  // Mint a session token for another user ("login as user"). The token carries an `act` claim
+  // recording the acting admin so the session is reversible (see POST /auth/stop-impersonate).
+  adminRoutes.post('/users/:id/impersonate', async (c) => {
+    const targetId = c.req.param('id')
+    if (!ObjectId.isValid(targetId)) return c.json({ error: 'invalid id' }, 400)
+    const adminId = c.get('profileId')
+    if (targetId === adminId) return c.json({ error: 'cannot impersonate yourself' }, 400)
+    const target = await db
+      .collection('profiles')
+      .findOne({ _id: new ObjectId(targetId) }, { projection: { email: 1 } })
+    if (!target) return c.json({ error: 'user not found' }, 404)
+    const token = await createAuthToken(targetId, jwtSecret, { impersonatedBy: adminId })
+    return c.json({ token, email: target.email })
   })
 
   adminRoutes.get('/discovery/status', async (c) => {

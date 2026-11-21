@@ -117,19 +117,18 @@ export function OnboardingPage() {
         if (!resume.location.city?.trim()) return 'City is required.'
         return null
       case 'Links':
-        if (!resume.linkedin?.trim()) return 'LinkedIn profile is required.'
-        if (!resume.github?.trim()) return 'A portfolio or GitHub profile is required.'
+        // Optional — social/portfolio links are not required.
         return null
       case 'CV':
-        if (!cvText) return 'Please upload your CV to continue.'
+        // Optional — users can continue without uploading a CV.
         return null
       case 'Experience':
-        if (resume.experience.length === 0) return 'Add at least one work experience.'
+        // Work experience is optional — but any entry that's added must be complete.
         if (resume.experience.some((e) => !e.company.trim() || !e.role.trim()))
           return 'Each experience needs a company and role.'
         return null
       case 'Education':
-        if (resume.education.length === 0) return 'Add at least one education entry.'
+        // Education is optional — but any entry that's added must be complete.
         if (resume.education.some((e) => !e.institution.trim() || !e.credential.trim()))
           return 'Each education entry needs an institution and credential.'
         return null

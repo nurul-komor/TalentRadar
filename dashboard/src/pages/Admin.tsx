@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { Profile } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import { Header } from '../components/Header'
 import { Button } from '../components/Button'
 import { FormError } from '../components/FormError'
+import { Icon } from '../components/Icon'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 
 interface DiscoveryStatus {
@@ -112,8 +115,11 @@ function JobSyncTab() {
 }
 
 function UsersTab() {
+  const { email: currentEmail, login } = useAuth()
+  const navigate = useNavigate()
   const [users, setUsers] = useState<Profile[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [impersonatingId, setImpersonatingId] = useState<string | null>(null)
 
   useEffect(() => {
     apiFetch('/admin/users')
@@ -128,27 +134,66 @@ function UsersTab() {
       .catch(() => setError('Failed to load users.'))
   }, [])
 
-  if (error) return <FormError message={error} />
+  async function handleImpersonate(userId: string) {
+    setError(null)
+    setImpersonatingId(userId)
+    try {
+      const res = await apiFetch(`/admin/users/${userId}/impersonate`, { method: 'POST' })
+      if (!res.ok) {
+        setError('Could not log in as that user.')
+        return
+      }
+      const { token } = (await res.json()) as { token: string }
+      login(token)
+      navigate('/dashboard')
+    } catch {
+      setError('Could not reach the server.')
+    } finally {
+      setImpersonatingId(null)
+    }
+  }
+
+  if (error && !users) return <FormError message={error} />
   if (!users) return <p className="text-sm text-slate-500">Loading…</p>
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-      <table className="min-w-full divide-y divide-slate-200 text-sm">
-        <thead>
-          <tr className="text-left text-slate-500">
-            <th className="px-4 py-3 font-medium">Email</th>
-            <th className="px-4 py-3 font-medium">Registered</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {users.map((user) => (
-            <tr key={user._id}>
-              <td className="px-4 py-3 text-slate-900">{user.email}</td>
-              <td className="px-4 py-3 text-slate-600">{formatDateTime(user.createdAt ?? null)}</td>
+    <div className="flex flex-col gap-3">
+      {error && <FormError message={error} />}
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead>
+            <tr className="text-left text-slate-500">
+              <th className="px-4 py-3 font-medium">Email</th>
+              <th className="px-4 py-3 font-medium">Registered</th>
+              <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {users.map((user) => {
+              const isSelf = user.email === currentEmail
+              const busy = impersonatingId === user._id
+              return (
+                <tr key={user._id}>
+                  <td className="px-4 py-3 text-slate-900">{user.email}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatDateTime(user.createdAt ?? null)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <Button
+                      variant="ghost"
+                      className="ml-auto inline-flex items-center gap-1.5"
+                      disabled={isSelf || busy || impersonatingId !== null || !user._id}
+                      onClick={() => user._id && handleImpersonate(user._id)}
+                      title={isSelf ? "That's you" : 'Log in as this user'}
+                    >
+                      <Icon name="enter-outline" size={16} />
+                      {busy ? 'Logging in…' : 'Login as user'}
+                    </Button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

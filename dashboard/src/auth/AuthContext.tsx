@@ -15,6 +15,22 @@ function readSkip(): boolean {
   }
 }
 
+// Read the `act` (impersonated-by) claim straight off the JWT. We only decode — never verify —
+// the payload here; it's purely to drive the "Return to admin" banner. The API is the source of
+// truth and re-checks the claim on every request.
+function readImpersonatedBy(token: string | null): string | null {
+  if (!token) return null
+  try {
+    const part = token.split('.')[1]
+    if (!part) return null
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'))
+    const payload = JSON.parse(json) as { act?: unknown }
+    return typeof payload.act === 'string' ? payload.act : null
+  } catch {
+    return null
+  }
+}
+
 interface AuthContextValue {
   isAuthenticated: boolean
   isAdmin: boolean
@@ -22,10 +38,14 @@ interface AuthContextValue {
   onboardingCompleted: boolean
   onboardingSkipped: boolean
   profileLoading: boolean
+  /** True while the session is an admin "login as user" impersonation. */
+  impersonating: boolean
   login: (token: string) => void
   logout: () => void
   refreshProfile: () => Promise<void>
   skipOnboarding: () => void
+  /** End an impersonation session and restore the admin's own account. */
+  stopImpersonating: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -53,6 +73,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmail(null)
     setOnboardingCompleted(false)
     setOnboardingSkipped(false)
+  }, [])
+
+  const stopImpersonating = useCallback(async () => {
+    const res = await apiFetch('/auth/stop-impersonate', { method: 'POST' })
+    if (!res.ok) return
+    const { token: adminToken } = (await res.json()) as { token: string }
+    setToken(adminToken)
+    setTokenState(adminToken)
   }, [])
 
   const skipOnboarding = useCallback(() => {
@@ -95,12 +123,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       onboardingCompleted,
       onboardingSkipped,
       profileLoading,
+      impersonating: readImpersonatedBy(token) !== null,
       login,
       logout,
       refreshProfile: loadProfile,
       skipOnboarding,
+      stopImpersonating,
     }),
-    [token, email, onboardingCompleted, onboardingSkipped, profileLoading, login, logout, loadProfile, skipOnboarding]
+    [
+      token,
+      email,
+      onboardingCompleted,
+      onboardingSkipped,
+      profileLoading,
+      login,
+      logout,
+      loadProfile,
+      skipOnboarding,
+      stopImpersonating,
+    ]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
