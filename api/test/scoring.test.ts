@@ -18,6 +18,7 @@ const fakeExtractor: JobRequirementsExtractor = async () => ({
   requirements: {
     requiredSkills: [],
     niceToHaveSkills: [],
+    softSkills: [],
     minExperienceYears: null,
     workAuthRequirement: 'any',
     remoteType: 'fully_remote',

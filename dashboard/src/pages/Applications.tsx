@@ -24,6 +24,8 @@ import { apiFetch } from '../api/client'
 import { LogoChip } from '../components/LogoChip'
 import { Button } from '../components/Button'
 import { FormError } from '../components/FormError'
+import { DownloadMenu } from '../components/DownloadMenu'
+import { materialFileName } from '../lib/filename'
 import {
   STATUS_META,
   statusLabel,
@@ -639,9 +641,13 @@ function MaterialsPanel({ materialsJobId, company }: { materialsJobId: string; c
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
-      const safeCompany = company.replace(/[^a-z0-9]+/gi, '-').toLowerCase()
       link.href = url
-      link.download = `${safeCompany}-${doc === 'tailoredCv' ? 'resume' : 'cover-letter'}.${format}`
+      // Same ATS-safe, company-scoped naming as the apply drawer.
+      link.download = materialFileName({
+        company,
+        kind: doc === 'tailoredCv' ? 'cv' : 'cover',
+        ext: format,
+      })
       document.body.appendChild(link)
       link.click()
       link.remove()
@@ -691,12 +697,13 @@ function MaterialsPanel({ materialsJobId, company }: { materialsJobId: string; c
               </div>
               <p className="jt-doc-preview">{truncate(materials[key], 360)}</p>
               <div className="jt-doc-actions">
-                <Button variant="ghost" onClick={() => download(key, 'pdf')} disabled={downloading !== null}>
-                  <Icon name="download-outline" /> {downloading === `${key}-pdf` ? 'Preparing…' : 'PDF'}
-                </Button>
-                <Button variant="ghost" onClick={() => download(key, 'docx')} disabled={downloading !== null}>
-                  <Icon name="download-outline" /> {downloading === `${key}-docx` ? 'Preparing…' : 'DOCX'}
-                </Button>
+                <DownloadMenu
+                  label="Download"
+                  variant="ghost"
+                  busy={downloading?.startsWith(key) ?? false}
+                  disabled={downloading !== null}
+                  onSelect={(format) => download(key, format)}
+                />
               </div>
             </div>
           ))}

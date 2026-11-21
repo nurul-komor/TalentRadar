@@ -90,7 +90,14 @@ export async function createAiRuntime(db: Db, baseEnv: Env = process.env): Promi
         ? createRequirementsExtractor(llm.provider, llm.requirements.model)
         : null
       runtime.materialsGenerator = llm
-        ? createMaterialsGenerator(llm.provider, llm.materials.model, llm.materials.reasoning)
+        ? // The keyword-coverage audit runs on the cheap `requirements` model —
+          // it compares two texts rather than authoring one.
+          createMaterialsGenerator(
+            llm.provider,
+            llm.materials.model,
+            llm.materials.reasoning,
+            llm.requirements.model
+          )
         : null
       runtime.jobPageExtractor = llm
         ? createJobPageExtractor(llm.provider, llm.requirements.model)

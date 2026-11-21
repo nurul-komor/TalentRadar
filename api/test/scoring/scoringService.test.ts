@@ -55,6 +55,7 @@ async function insertVerifiedJob(db: Db, overrides: Partial<Record<string, unkno
 const FIXED_REQUIREMENTS = {
   requiredSkills: [],
   niceToHaveSkills: [],
+  softSkills: [],
   minExperienceYears: null,
   workAuthRequirement: 'any' as const,
   remoteType: 'fully_remote' as const,

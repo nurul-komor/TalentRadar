@@ -6,6 +6,7 @@ import { apiFetch } from '../api/client'
 import { FormError } from './FormError'
 import { Pill } from './Pill'
 import { materialFileName } from '../lib/filename'
+import { DownloadMenu, type DownloadFormat } from './DownloadMenu'
 
 // The generated materials are only as good as the profile behind them, so when
 // key resume inputs are thin we nudge (never block) the user to fill them in.
@@ -25,6 +26,16 @@ function isProfileThin(profile: Profile | null): boolean {
 // show a "coming soon" placeholder instead of a non-functional tab.
 const IS_LOCALHOST =
   typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)
+
+// Where to send the user for the application that conflicted with this one. A
+// user-added job has its own detail page; anything else (a discovered job, or an
+// unknown id) falls back to the applications list, which always resolves.
+function existingApplicationHref(existingJobId: string | null): string {
+  if (existingJobId?.startsWith('userJob:')) {
+    return `/my-jobs/${existingJobId.slice('userJob:'.length)}`
+  }
+  return '/applications'
+}
 
 type ApplicationState =
   | { phase: 'none' }
@@ -49,6 +60,10 @@ type ApplicationState =
       } | null
     }
   | { phase: 'error'; message: string }
+  // The job duplicates a role the user already has an application for (same
+  // company/title within the dedupe window). Not an error — a clean dead-end
+  // state that points them at the existing application instead of hanging.
+  | { phase: 'duplicate'; message: string; existingJobId: string | null }
 
 export interface ApplyDrawerProps {
   open: boolean
@@ -265,12 +280,35 @@ export function ApplyDrawer({
         method: 'POST',
         body: JSON.stringify({ sourceId, sourceJobId }),
       })
-      if (!res.ok) {
-        const body = await res.json().catch(() => null)
-        setActionError(body?.error ?? 'Failed to start application.')
+      if (res.ok) {
+        refreshApplication()
         return
       }
-      refreshApplication()
+      // A 409 means an application for this job already exists. Two cases:
+      //  1. A benign double-start (React StrictMode double-invokes effects in
+      //     dev, or a rapid reopen) racing the create — re-check for THIS job
+      //     and, if it now exists, just load it.
+      //  2. A same company/title duplicate under a DIFFERENT jobId (the user
+      //     added the same role twice). There's no application for this jobId to
+      //     load, so surface a clean "already applied" state (not a stuck
+      //     spinner) that links back to the existing application.
+      if (res.status === 409) {
+        const check = await apiFetch(`/applications/${encodeURIComponent(jobId)}`)
+        if (check.ok) {
+          const body = await check.json()
+          setAppState({ phase: 'loaded', application: body.application, latestRun: body.latestRun })
+          return
+        }
+        const body = await res.json().catch(() => null)
+        setAppState({
+          phase: 'duplicate',
+          message: body?.error ?? 'You already have an application for this role.',
+          existingJobId: body?.existingJobId ?? null,
+        })
+        return
+      }
+      const body = await res.json().catch(() => null)
+      setAppState({ phase: 'error', message: body?.error ?? 'Failed to start application.' })
     } finally {
       setActionBusy(false)
     }
@@ -369,14 +407,19 @@ export function ApplyDrawer({
     }
   }
 
-  // Downloads a generated document (tailored CV or cover letter) for THIS job as a
-  // PDF, named with the logged-in user's name + email. Generates once if missing.
-  async function downloadDoc(docType: 'tailoredCv' | 'coverLetter', kind: 'cv' | 'cover') {
+  // Downloads a generated document (tailored CV or cover letter) for THIS job in the
+  // format the user picked, named with the logged-in user's name + email. Generates
+  // once if missing.
+  async function downloadDoc(
+    docType: 'tailoredCv' | 'coverLetter',
+    kind: 'cv' | 'cover',
+    format: DownloadFormat
+  ) {
     setActionBusy(true)
     setActionError(null)
     try {
       // Cache-bust so a regenerated document isn't masked by a stale cached download.
-      const path = `/materials/${encodeURIComponent(jobId)}/export?doc=${docType}&format=pdf&t=${Date.now()}`
+      const path = `/materials/${encodeURIComponent(jobId)}/export?doc=${docType}&format=${format}&t=${Date.now()}`
       let res = await apiFetch(path)
       if (res.status === 404) {
         // No materials yet — generate them, then retry the export once.
@@ -393,9 +436,9 @@ export function ApplyDrawer({
       link.href = url
       link.download = materialFileName({
         fullName: profile?.resume?.fullName,
-        email: profile?.email,
+        company,
         kind,
-        ext: 'pdf',
+        ext: format,
       })
       document.body.appendChild(link)
       link.click()
@@ -481,6 +524,30 @@ export function ApplyDrawer({
           {actionError && <FormError message={actionError} />}
 
           {appState.phase === 'loading' && <p style={{ color: 'var(--muted-text)' }}>Loading…</p>}
+
+          {appState.phase === 'duplicate' && (
+            <div className="auto-reveal rounded-xl border border-border bg-card p-6 text-center">
+              <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-cyan/15 text-cyan">
+                <Icon name="checkmark-outline" style={{ fontSize: 24 }} />
+              </div>
+              <h4 className="mt-3 text-base font-semibold text-foreground">You've already applied to this role</h4>
+              <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
+                There's already an application for <b className="text-foreground">{company}</b> — {title}. To
+                avoid duplicate applications we didn't start a new one. You can manage the existing
+                application below.
+              </p>
+              <Link
+                to={existingApplicationHref(appState.existingJobId)}
+                onClick={onClose}
+                className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:-translate-y-0.5 hover:brightness-110 active:translate-y-0"
+              >
+                <Icon name="briefcase-outline" style={{ fontSize: 15 }} />
+                {appState.existingJobId?.startsWith('userJob:')
+                  ? 'Go to the existing job'
+                  : 'View your applications'}
+              </Link>
+            </div>
+          )}
 
           {appState.phase === 'none' && (
             <>
@@ -622,15 +689,11 @@ export function ApplyDrawer({
                       </div>
                       <p style={{ whiteSpace: 'pre-wrap' }}>{materialsPreview}</p>
                       <div className="doc-actions" style={{ marginTop: 14 }}>
-                        <button
-                          type="button"
-                          className="btn btn-indigo"
-                          onClick={() => downloadDoc('coverLetter', 'cover')}
-                          disabled={actionBusy}
-                        >
-                          <Icon name="download-outline" />
-                          {actionBusy ? 'Preparing…' : 'Download cover letter (PDF)'}
-                        </button>
+                        <DownloadMenu
+                          label="Download cover letter"
+                          busy={actionBusy}
+                          onSelect={(format) => downloadDoc('coverLetter', 'cover', format)}
+                        />
                         <button
                           type="button"
                           className={`btn btn-ghost${coverSaveState === 'saved' ? ' ok' : ''}`}
@@ -686,15 +749,11 @@ export function ApplyDrawer({
                       </div>
                       <p style={{ whiteSpace: 'pre-wrap', maxHeight: 360, overflowY: 'auto' }}>{cvPreview}</p>
                       <div className="doc-actions" style={{ marginTop: 14 }}>
-                        <button
-                          type="button"
-                          className="btn btn-indigo"
-                          onClick={() => downloadDoc('tailoredCv', 'cv')}
-                          disabled={actionBusy}
-                        >
-                          <Icon name="download-outline" />
-                          {actionBusy ? 'Preparing…' : 'Download tailored CV (PDF)'}
-                        </button>
+                        <DownloadMenu
+                          label="Download tailored CV"
+                          busy={actionBusy}
+                          onSelect={(format) => downloadDoc('tailoredCv', 'cv', format)}
+                        />
                         <button
                           type="button"
                           className={`btn btn-ghost${cvSaveState === 'saved' ? ' ok' : ''}`}

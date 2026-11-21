@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { Logo } from './Logo'
 
 export function Footer() {
   return (
@@ -7,10 +8,7 @@ export function Footer() {
         <div className="foot-row">
           <div className="foot-brand">
             <div className="brand">
-              <span className="brand-mark">
-                <img src="/logo.png" alt="Hunter" />
-              </span>
-              Hunter
+              <Logo />
             </div>
             <p>A verified, scored remote-job feed, with a human approval gate before anything is ever submitted.</p>
           </div>

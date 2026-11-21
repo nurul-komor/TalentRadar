@@ -2,6 +2,7 @@ import type { Db } from 'mongodb'
 import type { Application } from '@job-hunter/shared'
 import { writeAuditLog } from './auditLog.js'
 import { resolveJobForApply } from '../jobs/resolveJobForApply.js'
+import { ConflictError, NotFoundError } from '../lib/errors.js'
 
 const DUPLICATE_WINDOW_DAYS = 60
 
@@ -29,12 +30,12 @@ export async function createApplication(
 
   const existingForJob = await applications.findOne({ jobId, profileId: actorProfileId })
   if (existingForJob) {
-    throw new Error(`an application already exists for job ${jobId}`)
+    throw new ConflictError(`an application already exists for job ${jobId}`, jobId)
   }
 
   const job = await resolveJobForApply(db, jobKey.sourceId, jobKey.sourceJobId, actorProfileId)
   if (!job) {
-    throw new Error(`job not found: ${jobId}`)
+    throw new NotFoundError(`job not found: ${jobId}`)
   }
 
   const cutoff = new Date(Date.now() - DUPLICATE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString()
@@ -45,8 +46,9 @@ export async function createApplication(
     createdAt: { $gte: cutoff },
   })
   if (existingForCompanyTitle) {
-    throw new Error(
-      `an application for ${job.company} / ${job.title} already exists within the last ${DUPLICATE_WINDOW_DAYS} days`
+    throw new ConflictError(
+      `an application for ${job.company} / ${job.title} already exists within the last ${DUPLICATE_WINDOW_DAYS} days`,
+      existingForCompanyTitle.jobId
     )
   }
 

@@ -89,7 +89,15 @@ export function mountRoutes(
   app.route('/user-jobs', createUserJobsRoutes(db, jwtSecret, () => ai.jobPageExtractor))
   app.route('/suggestions', createSuggestionsRoutes(db, jwtSecret, () => ai.embedder))
   app.route('/scoring', createScoringRoutes(db, jwtSecret, () => ai.requirementsExtractor))
-  app.route('/materials', createMaterialsRoutes(db, jwtSecret, () => ai.materialsGenerator))
+  app.route(
+    '/materials',
+    createMaterialsRoutes(
+      db,
+      jwtSecret,
+      () => ai.materialsGenerator,
+      () => ai.requirementsExtractor
+    )
+  )
 
   return app
 }

@@ -105,7 +105,8 @@ describe('generateMaterials', () => {
       { sourceId: 'remoteok', sourceJobId: '1' },
       baseProfile(),
       'profile-1',
-      generator
+      generator,
+      null
     )
 
     expect(result.status).toBe('generated')
@@ -123,14 +124,16 @@ describe('generateMaterials', () => {
       { sourceId: 'remoteok', sourceJobId: '1' },
       baseProfile(),
       'profile-1',
-      generator
+      generator,
+      null
     )
     const second = await generateMaterials(
       db,
       { sourceId: 'remoteok', sourceJobId: '1' },
       baseProfile(),
       'profile-1',
-      generator
+      generator,
+      null
     )
 
     expect(second.materials?.version).toBe(2)
@@ -146,7 +149,8 @@ describe('generateMaterials', () => {
         { sourceId: 'remoteok', sourceJobId: 'missing' },
         baseProfile(),
         'profile-1',
-        generator
+        generator,
+        null
       )
     ).rejects.toThrow()
   })
@@ -186,7 +190,8 @@ describe('generateMaterials', () => {
       { sourceId: 'remoteok', sourceJobId: '1' },
       profile,
       profileId.toHexString(),
-      generator
+      generator,
+      null
     )
 
     // The gap snapshot excludes the already-held skill and is stored on the record.
@@ -207,7 +212,8 @@ describe('generateMaterials', () => {
       { sourceId: 'remoteok', sourceJobId: '1' },
       baseProfile(),
       'profile-1',
-      generator
+      generator,
+      null
     )
 
     expect(result).toEqual({ status: 'deferred', materials: null, reason: 'AI budget exceeded' })

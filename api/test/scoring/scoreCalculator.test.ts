@@ -6,6 +6,7 @@ import { emptyResume } from '@job-hunter/shared'
 const BASE_REQUIREMENTS: JobRequirements = {
   requiredSkills: [],
   niceToHaveSkills: [],
+  softSkills: [],
   minExperienceYears: null,
   workAuthRequirement: 'any',
   remoteType: 'fully_remote',

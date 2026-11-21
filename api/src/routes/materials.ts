@@ -8,6 +8,7 @@ import { exportToPdf, exportToDocx } from '../materials/exporters.js'
 import { DOCX_MIME_TYPE } from '../profile/cvParser.js'
 import { NotFoundError } from '../lib/errors.js'
 import type { MaterialsGenerator } from '../materials/types.js'
+import type { JobRequirementsExtractor } from '../scoring/types.js'
 
 const EXPORTABLE_DOCS = ['tailoredCv', 'coverLetter', 'outreachMessage'] as const
 type ExportableDoc = (typeof EXPORTABLE_DOCS)[number]
@@ -18,7 +19,10 @@ type ExportableDoc = (typeof EXPORTABLE_DOCS)[number]
 export function createMaterialsRoutes(
   db: Db,
   jwtSecret: string,
-  getGenerator: () => MaterialsGenerator | null
+  getGenerator: () => MaterialsGenerator | null,
+  // Read per request (like getGenerator) so runtime-saved AI credentials apply
+  // immediately. Used to extract requirements on demand for user-added jobs.
+  getRequirementsExtractor: () => JobRequirementsExtractor | null
 ) {
   const materialsRoutes = new Hono<{ Variables: AuthVariables }>()
   materialsRoutes.use('*', createRequireAuth(jwtSecret))
@@ -48,7 +52,8 @@ export function createMaterialsRoutes(
         { sourceId, sourceJobId },
         profile,
         c.get('profileId'),
-        generator
+        generator,
+        getRequirementsExtractor()
       )
       return c.json(result)
     } catch (reason) {

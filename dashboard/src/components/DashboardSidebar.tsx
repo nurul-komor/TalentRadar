@@ -8,14 +8,8 @@ import { canSync, isAdmin } from '../lib/syncAccess'
 import { profileCompletenessPercent } from '../lib/profileCompleteness'
 import { isFollowUpOverdue } from '../lib/jobTracking'
 import { ThemeToggle } from './ThemeToggle'
+import { Logo } from './Logo'
 
-function BrandMark() {
-  return (
-    <span className="brand-mark">
-      <img src="/logo.png" alt="Hunter" />
-    </span>
-  )
-}
 
 function sidebarLinkClass({ isActive }: { isActive: boolean }): string {
   return isActive ? 'app-sidebar-link current' : 'app-sidebar-link'
@@ -226,8 +220,7 @@ export function DashboardSidebar() {
   return (
     <nav className="app-sidebar">
       <NavLink to="/" className="brand app-sidebar-brand">
-        <BrandMark />
-        Hunter
+        <Logo />
       </NavLink>
 
       <form className="app-sidebar-search" onSubmit={submitSearch}>
@@ -381,8 +374,7 @@ export function DashboardMobileHeader() {
   return (
     <header className="app-mobile-header">
       <NavLink to="/" className="brand app-mobile-header-brand">
-        <BrandMark />
-        Hunter
+        <Logo />
       </NavLink>
       <AccountMenu variant="header" />
     </header>

@@ -42,11 +42,12 @@ export async function resolveJobForApply(
       company: userJob.company,
       title: userJob.title,
       // User jobs store free-form text in `description`; discovered jobs call the
-      // same field `rawDescription`. No structured requirements are extracted for
-      // user jobs, so the generator falls back to the posting text.
+      // same field `rawDescription`.
       rawDescription: userJob.description,
       normalizedUrl: userJob.url ?? '',
-      extractedRequirements: null,
+      // Populated lazily the first time materials are generated (see
+      // generateMaterials); null until then — the generator extracts on demand.
+      extractedRequirements: userJob.extractedRequirements ?? null,
     }
   }
 

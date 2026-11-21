@@ -9,18 +9,21 @@ import { Pill } from '../components/Pill'
 import { LogoChip } from '../components/LogoChip'
 import { ApplyDrawer } from '../components/ApplyDrawer'
 import { Footer } from '../components/Footer'
+import { absoluteLocalTime, relativeTimeFromNow } from '../lib/relativeTime'
 
 function formatSalary(job: Pick<UserJob, 'salaryMin' | 'salaryMax'>): string {
-  if (job.salaryMin == null && job.salaryMax == null) return '—'
+  if (job.salaryMin == null && job.salaryMax == null) return 'N/A'
   if (job.salaryMin != null && job.salaryMax != null) {
     return `$${job.salaryMin.toLocaleString()} – $${job.salaryMax.toLocaleString()}`
   }
   return `$${(job.salaryMin ?? job.salaryMax)?.toLocaleString()}`
 }
 
-function formatDate(value: string | null | undefined): string {
-  if (!value) return '—'
-  return new Date(value).toLocaleString()
+// Posted/added dates read as "2 hours ago" against the browser clock, with the
+// exact local timestamp kept in the tooltip.
+function PostedAt({ value }: { value: string | null | undefined }) {
+  if (!value) return <>N/A</>
+  return <span title={absoluteLocalTime(value)}>{relativeTimeFromNow(value)}</span>
 }
 
 function hostFromUrl(url: string | null): string | null {
@@ -221,7 +224,7 @@ export function MyJobDetailPage() {
                 </span>
                 <span>
                   <Icon name="calendar-outline" />
-                  {formatDate(job.createdAt)}
+                  <PostedAt value={job.createdAt} />
                 </span>
               </div>
               <div className="fcard-meta" style={{ marginTop: 12 }}>

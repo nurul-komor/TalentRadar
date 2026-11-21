@@ -154,6 +154,33 @@ describe('user jobs routes', () => {
     expect(body.jobs).toHaveLength(0)
   })
 
+  it('cascades the delete to the job\'s application, materials and runs', async () => {
+    const token = await registerAndGetToken(app)
+    const createRes = await app.request('/user-jobs', {
+      method: 'POST',
+      headers: auth(token),
+      body: JSON.stringify({ title: 'X', company: 'Y' }),
+    })
+    const { _id } = (await createRes.json()) as { _id: string }
+    const jobId = `userJob:${_id}`
+
+    // Seed records that point at this user-job the way the apply flows would.
+    await db.collection('applications').insertOne({ jobId, profileId: 'anyone', company: 'Y', title: 'X' })
+    await db.collection('materials').insertOne({ jobId, profileId: 'anyone', coverLetter: 'hi' })
+    await db.collection('automationRuns').insertOne({ jobId, runNumber: 1 })
+    await db.collection('approvals').insertOne({ jobId, runNumber: 1 })
+
+    const delRes = await app.request(`/user-jobs/${_id}`, { method: 'DELETE', headers: auth(token) })
+    expect(delRes.status).toBe(204)
+
+    // Nothing keyed to the deleted job should survive — a leftover application
+    // would otherwise trip the duplicate-application guard on re-adding the role.
+    expect(await db.collection('applications').countDocuments({ jobId })).toBe(0)
+    expect(await db.collection('materials').countDocuments({ jobId })).toBe(0)
+    expect(await db.collection('automationRuns').countDocuments({ jobId })).toBe(0)
+    expect(await db.collection('approvals').countDocuments({ jobId })).toBe(0)
+  })
+
   it('fetches a single job the caller owns by id', async () => {
     const token = await registerAndGetToken(app)
     const createRes = await app.request('/user-jobs', {

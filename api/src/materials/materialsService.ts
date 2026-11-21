@@ -1,10 +1,11 @@
-import type { Db } from 'mongodb'
+import { ObjectId, type Db } from 'mongodb'
 import type { Materials, Profile, SavedMaterials } from '@job-hunter/shared'
 import { emptyResume } from '@job-hunter/shared'
 import { isWithinBudget, recordUsage } from '../scoring/aiUsageService.js'
 import { NotFoundError } from '../lib/errors.js'
 import { upsertTrackedJobForMaterials } from '../jobTracking/jobTrackingService.js'
-import { resolveJobForApply } from '../jobs/resolveJobForApply.js'
+import { resolveJobForApply, USER_JOB_SOURCE_ID } from '../jobs/resolveJobForApply.js'
+import type { JobRequirementsExtractor } from '../scoring/types.js'
 import type { MaterialsGenerator } from './types'
 
 export interface GenerateMaterialsResult {
@@ -89,7 +90,11 @@ export async function generateMaterials(
   jobKey: { sourceId: string; sourceJobId: string },
   profile: Profile,
   profileId: string,
-  generator: MaterialsGenerator
+  generator: MaterialsGenerator,
+  // Lazily extracts structured requirements for jobs that have none yet (user-added
+  // jobs never get a scoring pass, so their requirements — which drive the résumé's
+  // keyword/skill coverage — would otherwise be null). Null when no LLM is configured.
+  requirementsExtractor: JobRequirementsExtractor | null
 ): Promise<GenerateMaterialsResult> {
   // Resolves a discovered job (shared `jobs` collection) or a user-added job
   // (`userJobs`, scoped to this profile via the `userJob:<id>` jobId scheme) into
@@ -103,14 +108,35 @@ export async function generateMaterials(
     return { status: 'deferred', materials: null, reason: 'AI budget exceeded' }
   }
 
-  const generation = await generator({ job, profile, requirements: job.extractedRequirements })
+  // Ensure structured requirements exist before generating — the force-add of
+  // missing skills (and now soft skills) into the tailored CV depends on them.
+  // Discovery jobs already have these from scoring; user jobs don't, so extract
+  // on demand and cache the result back onto the userJob to avoid re-paying later.
+  let requirements = job.extractedRequirements
+  if (!requirements && requirementsExtractor) {
+    const extraction = await requirementsExtractor({
+      title: job.title,
+      company: job.company,
+      rawDescription: job.rawDescription,
+    })
+    requirements = extraction.requirements
+    await recordUsage(db, extraction.usage, extraction.model)
+    if (job.sourceId === USER_JOB_SOURCE_ID && ObjectId.isValid(job.sourceJobId)) {
+      await db.collection('userJobs').updateOne(
+        { _id: new ObjectId(job.sourceJobId), profileId },
+        { $set: { extractedRequirements: requirements, extractedAt: new Date().toISOString() } }
+      )
+    }
+  }
+
+  const generation = await generator({ job, profile, requirements })
   await recordUsage(db, generation.usage, generation.model)
 
   // Snapshot the role's skill gap so it can be reviewed later, saved per job on
   // the materials record below. This is a read-only diff: generating materials
   // never mutates the candidate's master profile résumé — the missing skills
   // surface only in the per-job tailored CV (via the prompt) and this snapshot.
-  const missingSkills = computeMissingSkills(profile, job.extractedRequirements?.requiredSkills ?? [])
+  const missingSkills = computeMissingSkills(profile, requirements?.requiredSkills ?? [])
 
   const jobId = `${job.sourceId}:${job.sourceJobId}`
   const materialsCollection = db.collection<Materials>('materials')

@@ -1,4 +1,5 @@
 import { Icon } from './Icon'
+import { Logo } from './Logo'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
@@ -31,14 +32,6 @@ function useHideOnScroll(): boolean {
   }, [])
 
   return hidden
-}
-
-function BrandMark() {
-  return (
-    <span className="brand-mark">
-      <img src="/logo.png" alt="Hunter" />
-    </span>
-  )
 }
 
 function navLinkClass({ isActive }: { isActive: boolean }): string {
@@ -128,8 +121,7 @@ export function PublicNav() {
     <nav className={`nav${hidden && !menuOpen ? ' nav-hidden' : ''}`}>
       <div className="wrap nav-row">
         <NavLink to="/" className="brand" onClick={closeMenu}>
-          <BrandMark />
-          Hunter
+          <Logo />
         </NavLink>
         <NavLinks links={PUBLIC_LINKS} />
         <div className="nav-cta">
@@ -212,8 +204,7 @@ export function AppNav() {
     <nav className={`nav app-nav${hidden && !menuOpen ? ' nav-hidden' : ''}`}>
       <div className="wrap nav-row">
         <NavLink to="/" className="brand" onClick={closeMenu}>
-          <BrandMark />
-          Hunter
+          <Logo />
         </NavLink>
         <NavLinks links={APP_LINKS} />
         <div className="nav-cta">

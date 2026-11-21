@@ -20,6 +20,15 @@ All new UI development in this project MUST use Tailwind CSS for styling.
 - Exceptions (e.g. a one-off global style, a third-party integration that needs raw CSS) are allowed only when a utility approach genuinely doesn't fit — call it out when you do.
 
 
+## No color gradients (global rule)
+
+Do **not** use color gradients anywhere in the UI. Use flat, solid colors.
+
+- No `linear-gradient` / `radial-gradient` / `conic-gradient` as a **color** fill — not for backgrounds, text, borders, buttons, bars, progress fills, glows, highlights, or hover sheens. Use a single solid color (from the design tokens) instead.
+- A "glow" is a solid translucent color plus `filter: blur()`, never a gradient.
+- **Allowed exceptions** (these are not color gradients): CSS `mask-image` / `-webkit-mask-image` gradients used purely for **transparency fades**, and single-color **pattern** gradients that draw hairline grids or dot grids (e.g. `linear-gradient(var(--line) 1px, transparent 1px)`). Everything that reads as a visible color blend is banned.
+- This applies to `index.css`, inline `style`, Tailwind arbitrary values, and SVG `<linearGradient>`/`<radialGradient>` alike.
+
 ## Motion & animation (global rule)
 
 New and updated UI in the `dashboard/` app MUST feel modern and animated. When a surface includes any of the elements below, implement the corresponding motion — don't ship static versions:

@@ -9,6 +9,7 @@ import { FormError } from '../components/FormError'
 import { useSavedJobs } from '../hooks/useSavedJobs'
 import { profileCompletenessPercent } from '../lib/profileCompleteness'
 import { STATUS_GROUPS, countTrackedJobsByGroup, isFollowUpOverdue } from '../lib/jobTracking'
+import { relativeTimeFromNow } from '../lib/relativeTime'
 
 interface JobsResponseBody {
   jobs: Job[]
@@ -48,24 +49,6 @@ function formatSalaryRange(salaryMin: number | null, salaryMax: number | null): 
     return `$${salaryMin.toLocaleString()} – $${salaryMax.toLocaleString()}`
   }
   return `$${(salaryMin ?? salaryMax)?.toLocaleString()}`
-}
-
-function relativeTimeFromNow(dateString: string): string {
-  const diffSeconds = Math.round((Date.now() - new Date(dateString).getTime()) / 1000)
-  const diffMinutes = Math.round(diffSeconds / 60)
-  const diffHours = Math.round(diffMinutes / 60)
-  const diffDays = Math.round(diffHours / 24)
-
-  if (diffSeconds < 60) return 'just now'
-  if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`
-  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`
-  if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`
-  if (diffDays < 30) {
-    const diffWeeks = Math.round(diffDays / 7)
-    return `${diffWeeks} week${diffWeeks === 1 ? '' : 's'} ago`
-  }
-  const diffMonths = Math.round(diffDays / 30)
-  return `${diffMonths} month${diffMonths === 1 ? '' : 's'} ago`
 }
 
 function oldestReadyApplication(applications: Application[]): Application | null {

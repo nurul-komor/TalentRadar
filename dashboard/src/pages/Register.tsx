@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext'
 import { FormError } from '../components/FormError'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { LogoChip } from '../components/LogoChip'
+import { Logo } from '../components/Logo'
 import { Pill } from '../components/Pill'
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -91,10 +92,7 @@ export function RegisterPage() {
       <div className="auth-form-side">
         <div className="auth-top">
           <Link to="/" className="brand">
-            <span className="brand-mark">
-              <img src="/logo.png" alt="Hunter" />
-            </span>
-            Hunter
+            <Logo />
           </Link>
           <ThemeToggle />
         </div>

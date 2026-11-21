@@ -3,6 +3,7 @@ import { ObjectId, type Db } from 'mongodb'
 import type { UserJob } from '@job-hunter/shared'
 import { UserJobInputSchema, UserJobUpdateSchema } from '@job-hunter/shared'
 import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
+import { USER_JOB_SOURCE_ID } from '../jobs/resolveJobForApply.js'
 import {
   createUserJob,
   getUserJob,
@@ -104,10 +105,26 @@ export function createUserJobsRoutes(
   userJobsRoutes.delete('/:id', async (c) => {
     const id = c.req.param('id')
     if (!ObjectId.isValid(id)) return c.json({ error: 'job not found' }, 404)
+    const profileId = c.get('profileId')
     const result = await db
       .collection('userJobs')
-      .deleteOne({ _id: new ObjectId(id), profileId: c.get('profileId') })
+      .deleteOne({ _id: new ObjectId(id), profileId })
     if (result.deletedCount === 0) return c.json({ error: 'job not found' }, 404)
+
+    // Cascade: remove everything keyed to this job so nothing is orphaned. A
+    // leftover application would otherwise trip the duplicate-application guard
+    // (same company/title) when the user re-adds the role, and show up as a
+    // ghost in their applications list. The apply-flow jobId is `userJob:<id>`,
+    // and that id is unique to this user-job, so jobId-only filters are safe for
+    // the owner-less run/approval records.
+    const jobId = `${USER_JOB_SOURCE_ID}:${id}`
+    await Promise.all([
+      db.collection('applications').deleteMany({ jobId, profileId }),
+      db.collection('materials').deleteMany({ jobId, profileId }),
+      db.collection('automationRuns').deleteMany({ jobId }),
+      db.collection('approvals').deleteMany({ jobId }),
+    ])
+
     return c.body(null, 204)
   })
 

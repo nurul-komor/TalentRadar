@@ -4,7 +4,7 @@ import type { Application, AutomationRun } from '@job-hunter/shared'
 import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
 import { createApplication } from '../applications/applicationsService.js'
 import { approveRun } from '../applications/automationRunsService.js'
-import { ForbiddenError, NotFoundError } from '../lib/errors.js'
+import { ConflictError, ForbiddenError, NotFoundError } from '../lib/errors.js'
 
 export function createApplicationsRoutes(db: Db, jwtSecret: string) {
   const applicationsRoutes = new Hono<{ Variables: AuthVariables }>()
@@ -33,8 +33,16 @@ export function createApplicationsRoutes(db: Db, jwtSecret: string) {
       )
       return c.json(application, 201)
     } catch (reason) {
-      const message = reason instanceof Error ? reason.message : 'failed to create application'
-      return c.json({ error: message }, 409)
+      // A duplicate application is an expected conflict — return 409 plus the
+      // existing record's jobId so the client can link the user back to it.
+      if (reason instanceof ConflictError) {
+        return c.json({ error: reason.message, existingJobId: reason.existingJobId ?? null }, 409)
+      }
+      if (reason instanceof NotFoundError) {
+        return c.json({ error: reason.message }, 404)
+      }
+      console.error('failed to create application', reason)
+      return c.json({ error: 'failed to create application' }, 500)
     }
   })
 

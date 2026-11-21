@@ -1,10 +1,13 @@
 import { Hono } from 'hono'
 import { ObjectId, type Db, type Filter } from 'mongodb'
-import type { Job, JobSourceId, JobStatus } from '@job-hunter/shared'
-import { JobSourceIdSchema, JobStatusSchema, UNSCORED_JOB_SOURCE_IDS } from '@job-hunter/shared'
+import type { Job, JobSourceId, JobStatus, Profile } from '@job-hunter/shared'
+import { JobSourceIdSchema, JobStatusSchema, UNSCORED_JOB_SOURCE_IDS, isResumeEmpty, emptyResume } from '@job-hunter/shared'
 import { createRequireAuth, type AuthVariables } from '../middleware/auth.js'
 import { verifyAuthToken } from '../lib/jwt.js'
 import type { JobSource } from '../discovery/types.js'
+import { findInternetJobs } from '../discovery/internetJobSearch.js'
+import { findJobsViaTavily, type InternetJob } from '../discovery/tavilyJobSearch.js'
+import { repairMojibake } from '../discovery/textEncoding.js'
 import type { Embedder } from '../embeddings/embeddingProvider.js'
 import { embedProfile } from '../suggestions/embeddingService.js'
 import { searchRankedJobsPage } from '../suggestions/vectorSearch.js'
@@ -13,6 +16,10 @@ import { listPublicUserJobs, getPublicUserJob } from '../userJobs/userJobsServic
 
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
+
+// How many resume-matched internet jobs to return from /jobs/from-internet. Enough
+// to fill the feed with strong matches without overwhelming the client.
+const INTERNET_RESULT_LIMIT = 60
 
 export const GOVT_JOB_SOURCE_IDS = UNSCORED_JOB_SOURCE_IDS
 
@@ -210,6 +217,97 @@ export function createJobsRoutes(
     ])
 
     return c.json({ jobs: results, total })
+  })
+
+  // "Find jobs from the internet": search the open web for roles that match the
+  // signed-in user's own resume. The queries are built from the user's roles and
+  // skills, so results are personal — not a generic listing. Primary engine is the
+  // Tavily web-search API (TAVILY_API_KEY); when that's unconfigured we fall back
+  // to the internet-wide job boards. Unlike the feed above (which reads the stored
+  // `jobs` collection), this queries live on demand and returns ephemeral,
+  // resume-matched results — nothing is persisted. Requires auth and a resume to
+  // match against. Registered before `/:id` so the static segment wins the match.
+  jobsRoutes.get('/from-internet', createRequireAuth(jwtSecret), async (c) => {
+    const profileId = c.get('profileId')
+    let profile: Profile | null = null
+    try {
+      profile = await db.collection('profiles').findOne<Profile>({ _id: new ObjectId(profileId) })
+    } catch {
+      profile = null
+    }
+    if (!profile) return c.json({ error: 'profile not found' }, 404)
+
+    const resume = profile.resume ?? emptyResume()
+    const hasResume = !isResumeEmpty(resume) || Boolean(profile.cvText?.trim())
+    if (!hasResume) {
+      return c.json(
+        { error: 'no-resume', message: 'Upload your resume to find matching jobs from the internet.' },
+        422
+      )
+    }
+
+    const tavilyKey = process.env.TAVILY_API_KEY?.trim()
+    // Both engines produce the same normalized `InternetJob` shape, so the response
+    // mapping below is identical regardless of which one ran.
+    let items: InternetJob[]
+    let engine: 'tavily' | 'boards'
+    if (tavilyKey) {
+      engine = 'tavily'
+      items = await findJobsViaTavily(tavilyKey, profile, { limit: INTERNET_RESULT_LIMIT })
+    } else {
+      engine = 'boards'
+      const ranked = await findInternetJobs(sources, profile, { limit: INTERNET_RESULT_LIMIT })
+      items = ranked.map((posting) => ({
+        sourceId: posting.sourceId,
+        sourceKey: posting.sourceJobId,
+        title: posting.title,
+        company: posting.company,
+        description: posting.rawDescription,
+        url: posting.url,
+        source: posting.sourceId,
+        location: posting.location,
+        salaryMin: posting.salaryMin,
+        salaryMax: posting.salaryMax,
+        postedAt: posting.postedAt,
+        matchScore: posting.matchScore,
+      }))
+    }
+
+    const now = new Date().toISOString()
+    // Shape each result like a discovery `Job` so the feed renders it with the
+    // existing row component. The synthetic `_id` marks it as a live internet
+    // result (not a stored job) for the client, which uses it to apply externally
+    // rather than linking to a non-existent detail page. `source` carries the
+    // human-facing origin (board name or hostname) for display.
+    const jobs = items.map((item) => ({
+      _id: `internet:${item.sourceId}:${item.sourceKey}`,
+      sourceId: item.sourceId,
+      sourceJobId: item.sourceKey,
+      normalizedUrl: item.url,
+      title: repairMojibake(item.title),
+      company: item.company === null ? null : repairMojibake(item.company),
+      rawDescription: repairMojibake(item.description),
+      location: item.location === null ? null : repairMojibake(item.location),
+      source: item.source,
+      salaryMin: item.salaryMin,
+      salaryMax: item.salaryMax,
+      postedAt: item.postedAt,
+      status: 'verified' as const,
+      discoveredAt: item.postedAt ?? now,
+      updatedAt: now,
+      verifiedAt: now,
+      verificationEvidence: 'fetched live from source',
+      contentHash: null,
+      extractedRequirements: null,
+      extractedAt: null,
+      score: null,
+      scoreBreakdown: null,
+      scoredAt: null,
+      govtDetails: null,
+      matchScore: item.matchScore,
+    }))
+
+    return c.json({ jobs, total: jobs.length, source: 'internet', engine })
   })
 
   // Public jobs members added themselves and chose to share. They live in a

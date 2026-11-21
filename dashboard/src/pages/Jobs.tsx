@@ -11,6 +11,7 @@ import { FormError } from '../components/FormError'
 import { ScoreRing } from '../components/ScoreRing'
 import { Pill } from '../components/Pill'
 import { useSavedJobs } from '../hooks/useSavedJobs'
+import { relativeTimeFromNow } from '../lib/relativeTime'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../components/ui/accordion'
 import { Checkbox } from '../components/ui/checkbox'
 import {
@@ -131,6 +132,31 @@ function userJobMatchesKeyword(job: UserJob, keyword: string): boolean {
   return haystack.toLowerCase().includes(needle)
 }
 
+// Marks a feed row as a live internet result (its id is synthetic, e.g.
+// "internet:remoteok:123") rather than a stored discovery job. Such rows have no
+// detail page and can't be bookmarked, so they apply externally instead.
+function isInternetJob(job: { _id: string }): boolean {
+  return job._id.startsWith('internet:')
+}
+
+// Internet-mode results are already resume-matched and ranked server-side, so the
+// only client-side narrowing is the search box and language filter (the rest of
+// the rail is feed-only and hidden in that mode). These mirror the user-job
+// matchers above but read a discovery Job's fields (rawDescription, not description).
+function feedJobMatchesKeyword(job: FeedJob, keyword: string): boolean {
+  const needle = keyword.trim().toLowerCase()
+  if (!needle) return true
+  const haystack = `${job.title}\n${job.company}\n${job.rawDescription}\n${job.location ?? ''}`
+  return haystack.toLowerCase().includes(needle)
+}
+
+function feedJobMatchesLanguages(job: FeedJob, languages: string[]): boolean {
+  if (languages.length === 0) return true
+  const pattern = languages.map((key) => LANGUAGE_MATCHERS[key]).filter(Boolean).join('|')
+  if (!pattern) return true
+  return new RegExp(pattern, 'i').test(`${job.title}\n${job.rawDescription}`)
+}
+
 function parseSourceSelection(searchParams: URLSearchParams): SourceSelection {
   const sourceId = searchParams.get('sourceId')
   if (sourceId) return { kind: 'source', id: sourceId as JobSourceId }
@@ -148,9 +174,11 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced
 }
 
-// matchScore is present only on responses from the "Best match" sort (sort=match); it's the
-// semantic similarity (0–100) between the job and the signed-in user's resume.
-type FeedJob = Job & { _id: string; matchScore?: number }
+// matchScore is present only on responses from the "Best match" sort (sort=match) and the
+// "Find jobs from the internet" feed; it's the 0–100 relevance of the job to the signed-in
+// user's resume. `source` is the human-facing origin (board name or hostname) sent for
+// internet results, whose synthetic sourceId isn't a known JobSourceId.
+type FeedJob = Job & { _id: string; matchScore?: number; source?: string }
 
 interface JobsResponseBody {
   jobs: FeedJob[]
@@ -168,28 +196,6 @@ interface TrackedCompany {
 
 interface SeedCompaniesResponseBody {
   companies: TrackedCompany[]
-}
-
-function relativeTimeFromNow(dateString: string): string {
-  const diffSeconds = Math.round((Date.now() - new Date(dateString).getTime()) / 1000)
-  const diffMinutes = Math.round(diffSeconds / 60)
-  const diffHours = Math.round(diffMinutes / 60)
-  const diffDays = Math.round(diffHours / 24)
-
-  if (diffSeconds < 60) return 'just now'
-  if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`
-  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`
-  if (diffDays < 7) return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`
-  if (diffDays < 30) {
-    const diffWeeks = Math.round(diffDays / 7)
-    return `${diffWeeks} week${diffWeeks === 1 ? '' : 's'} ago`
-  }
-  if (diffDays < 365) {
-    const diffMonths = Math.round(diffDays / 30)
-    return `${diffMonths} month${diffMonths === 1 ? '' : 's'} ago`
-  }
-  const diffYears = Math.round(diffDays / 365)
-  return `${diffYears} year${diffYears === 1 ? '' : 's'} ago`
 }
 
 function statusBadgeLabel(job: Job): string {
@@ -257,6 +263,12 @@ export function JobsPage() {
   const savedMode = searchParams.get('saved') === '1'
   const savedKey = savedIds.join(',')
 
+  // "Find jobs from the internet" mode (reached via /jobs?internet=1). Instead of
+  // the stored discovery feed, this fetches postings live from the internet-wide
+  // job boards and ranks them against the signed-in user's resume. Results are
+  // ephemeral — not persisted — so there's no paging or server-side filtering.
+  const internetMode = searchParams.get('internet') === '1'
+
   const category = (searchParams.get('category') as CategoryFilter) || 'all'
   const sourceSelection = parseSourceSelection(searchParams)
   const sourceSelectionKey =
@@ -276,7 +288,7 @@ export function JobsPage() {
   // return an empty Government tab, so disable it there too. The server falls back to
   // newest-first if it can't match, but we only surface the control when it will actually work.
   const canSortByMatch =
-    isAuthenticated && hasResume && !savedMode && category !== 'mine' && category !== 'government'
+    isAuthenticated && hasResume && !savedMode && !internetMode && category !== 'mine' && category !== 'government'
   const sortByMatch = canSortByMatch && searchParams.get('sort') === 'match'
 
   const [keyword, setKeyword] = useState(searchParams.get('q') ?? '')
@@ -385,6 +397,7 @@ export function JobsPage() {
 
   const activeFilterCount =
     Number(savedMode) +
+    Number(internetMode) +
     Number(category !== 'all') +
     Number(sourceSelection.kind !== 'all') +
     Number(datePosted !== 'all') +
@@ -414,6 +427,26 @@ export function JobsPage() {
 
   function clearFilters() {
     setSearchParams(new URLSearchParams(), { replace: true })
+  }
+
+  function toggleInternetMode() {
+    // Needs the signed-in user's resume to match against; send guests to sign in.
+    if (!isAuthenticated) {
+      navigate('/login')
+      return
+    }
+    if (internetMode) {
+      updateFilters({ internet: null })
+      return
+    }
+    // Entering internet mode replaces the stored feed, so drop the feed-only
+    // filters (category/source/date/salary/sort) that don't apply to live results.
+    const next = new URLSearchParams(searchParams)
+    next.set('internet', '1')
+    for (const key of ['category', 'sourceId', 'company', 'datePosted', 'salaryMin', 'salaryMax', 'sort', 'saved', 'offset']) {
+      next.delete(key)
+    }
+    setSearchParams(next, { replace: true })
   }
 
   useEffect(() => {
@@ -484,6 +517,50 @@ export function JobsPage() {
     setLoading(true)
     setError(null)
 
+    // Internet mode: fetch resume-matched postings live from the job boards. The
+    // server ranks them against the user's resume and returns them in one shot, so
+    // there's no server-side filtering or paging here.
+    if (internetMode) {
+      let cancelled = false
+      apiFetch('/jobs/from-internet')
+        .then(async (res) => {
+          if (cancelled) return
+          if (res.status === 401) {
+            setError('Sign in to find jobs matched to your resume.')
+            setJobs([])
+            setTotal(0)
+            return
+          }
+          if (res.status === 422) {
+            setError('Upload your resume first — we match internet jobs against it.')
+            setJobs([])
+            setTotal(0)
+            return
+          }
+          if (!res.ok) {
+            setError('Could not fetch jobs from the internet. Please try again.')
+            setJobs([])
+            setTotal(0)
+            return
+          }
+          const data: JobsResponseBody = await res.json()
+          setJobs(data.jobs)
+          setTotal(data.total)
+        })
+        .catch(() => {
+          if (cancelled) return
+          setError('Could not fetch jobs from the internet. Please try again.')
+          setJobs([])
+          setTotal(0)
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+      return () => {
+        cancelled = true
+      }
+    }
+
     // Saved mode: fetch each bookmarked job by id and show them all (no
     // server-side paging/filtering). Jobs that were since removed from their
     // source simply 404 and are dropped from the list.
@@ -549,13 +626,32 @@ export function JobsPage() {
         setTotal(data.total)
       })
       .finally(() => setLoading(false))
-  }, [savedMode, savedKey, category, sourceSelectionKey, datePosted, languagesKey, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset, sortByMatch])
+  }, [internetMode, savedMode, savedKey, category, sourceSelectionKey, datePosted, languagesKey, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset, sortByMatch])
 
   const rangeStart = total === 0 ? 0 : offset + 1
   const rangeEnd = Math.min(offset + PAGE_SIZE, total)
 
   const filterControls = (
     <div className="filter-rail">
+      <button
+        type="button"
+        onClick={toggleInternetMode}
+        aria-pressed={internetMode}
+        className={`mt-4 flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-sm font-medium shadow-sm transition-all duration-200 hover:-translate-y-px active:translate-y-0 ${
+          internetMode
+            ? 'border-indigo-500 bg-indigo-500 text-white hover:bg-indigo-600'
+            : 'border-input bg-background text-foreground hover:border-indigo-400 hover:text-indigo-600'
+        }`}
+      >
+        <Icon name="globe-outline" style={{ fontSize: 16 }} />
+        {internetMode ? 'Browsing the internet' : 'Find jobs from the internet'}
+      </button>
+      {internetMode && (
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          Showing live roles from across the web, ranked against your resume. Use search and the
+          language filter to narrow them.
+        </p>
+      )}
       <div className="group relative mt-4">
         <Icon
           name="search-outline"
@@ -635,6 +731,7 @@ export function JobsPage() {
       </div>
 
       <Accordion defaultValue={['date', 'language', 'source']}>
+            {!internetMode && (
             <AccordionItem value="date">
               <AccordionTrigger>Date posted</AccordionTrigger>
               <AccordionContent>
@@ -653,6 +750,7 @@ export function JobsPage() {
                 </div>
               </AccordionContent>
             </AccordionItem>
+            )}
 
             <AccordionItem value="language">
               <AccordionTrigger>Language</AccordionTrigger>
@@ -673,6 +771,8 @@ export function JobsPage() {
               </AccordionContent>
             </AccordionItem>
 
+            {!internetMode && (
+            <>
             <AccordionItem value="source">
               <AccordionTrigger>Source</AccordionTrigger>
               <AccordionContent>
@@ -749,6 +849,8 @@ export function JobsPage() {
                 </div>
               </AccordionContent>
             </AccordionItem>
+            </>
+            )}
           </Accordion>
     </div>
   )
@@ -771,7 +873,7 @@ export function JobsPage() {
   // so they're left out there.
   const myJobRows = savedMode
     ? visibleMyJobs
-    : !sortByMatch && (category === 'mine' || (category === 'all' && offset === 0))
+    : !internetMode && !sortByMatch && (category === 'mine' || (category === 'all' && offset === 0))
       ? visibleMyJobs
       : []
 
@@ -784,7 +886,7 @@ export function JobsPage() {
     .filter((job) => userJobMatchesLanguages(job, selectedLanguages))
     .filter((job) => userJobMatchesKeyword(job, debouncedKeyword))
   const communityJobRows =
-    !savedMode && !sortByMatch && category === 'all' && offset === 0 ? visibleCommunityJobs : []
+    !savedMode && !internetMode && !sortByMatch && category === 'all' && offset === 0 ? visibleCommunityJobs : []
 
   // Merge added jobs into the discovery feed inline, newest-first, instead of
   // pinning them above it. Each row keeps its own renderer (added jobs link to
@@ -811,7 +913,17 @@ export function JobsPage() {
           // Added jobs and shared community jobs are interleaved into the feed
           // newest-first; we only re-sort when there are extras to weave in, so an
           // extras-free feed keeps the server's ordering (relevance / newest-first).
-          const feedRows = jobs.map(
+          // In internet mode the feed is the live, resume-ranked results; apply the
+          // two client-side filters that still make sense (search + language) and
+          // keep the server's relevance order (no extras to interleave).
+          const feedJobs = internetMode
+            ? jobs.filter(
+                (job) =>
+                  feedJobMatchesKeyword(job, debouncedKeyword) &&
+                  feedJobMatchesLanguages(job, selectedLanguages),
+              )
+            : jobs
+          const feedRows = feedJobs.map(
             (job): MergedRow => ({ kind: 'feed', job, ts: rowTimestamp(job.discoveredAt) }),
           )
           const extras = [...mineAsRows(), ...communityAsRows()]
@@ -819,12 +931,16 @@ export function JobsPage() {
         })()
 
   const jobsCountLabel = loading
-    ? 'Searching…'
+    ? internetMode
+      ? 'Searching the web…'
+      : 'Searching…'
     : savedMode
       ? `${total.toLocaleString()} saved ${total === 1 ? 'job' : 'jobs'}`
-      : category === 'mine'
-        ? `${myJobRows.length.toLocaleString()} ${myJobRows.length === 1 ? 'job' : 'jobs'}`
-        : `${total.toLocaleString()} jobs found`
+      : internetMode
+        ? `${total.toLocaleString()} ${total === 1 ? 'job' : 'jobs'} from the web`
+        : category === 'mine'
+          ? `${myJobRows.length.toLocaleString()} ${myJobRows.length === 1 ? 'job' : 'jobs'}`
+          : `${total.toLocaleString()} jobs found`
 
   function handleToggleSaved(jobId: string) {
     const willBeSaved = !isSaved(jobId)
@@ -845,18 +961,18 @@ export function JobsPage() {
             <button
               type="button"
               role="tab"
-              className={`seg${category === 'all' ? ' on' : ''}`}
-              aria-selected={category === 'all'}
-              onClick={() => updateFilters({ category: null })}
+              className={`seg${category === 'all' && !internetMode ? ' on' : ''}`}
+              aria-selected={category === 'all' && !internetMode}
+              onClick={() => updateFilters({ category: null, internet: null })}
             >
               All jobs
             </button>
             <button
               type="button"
               role="tab"
-              className={`seg${category === 'government' ? ' on' : ''}`}
-              aria-selected={category === 'government'}
-              onClick={() => updateFilters({ category: 'government' })}
+              className={`seg${category === 'government' && !internetMode ? ' on' : ''}`}
+              aria-selected={category === 'government' && !internetMode}
+              onClick={() => updateFilters({ category: 'government', internet: null })}
             >
               Government
             </button>
@@ -864,9 +980,9 @@ export function JobsPage() {
               <button
                 type="button"
                 role="tab"
-                className={`seg${category === 'mine' ? ' on' : ''}`}
-                aria-selected={category === 'mine'}
-                onClick={() => updateFilters({ category: 'mine' })}
+                className={`seg${category === 'mine' && !internetMode ? ' on' : ''}`}
+                aria-selected={category === 'mine' && !internetMode}
+                onClick={() => updateFilters({ category: 'mine', internet: null })}
               >
                 My jobs
               </button>
@@ -874,9 +990,9 @@ export function JobsPage() {
             <button
               type="button"
               role="tab"
-              className={`seg${category === 'private' ? ' on' : ''}`}
-              aria-selected={category === 'private'}
-              onClick={() => updateFilters({ category: 'private' })}
+              className={`seg${category === 'private' && !internetMode ? ' on' : ''}`}
+              aria-selected={category === 'private' && !internetMode}
+              onClick={() => updateFilters({ category: 'private', internet: null })}
             >
               Other jobs
             </button>
@@ -972,6 +1088,17 @@ export function JobsPage() {
                 </Link>
               </div>
             )}
+            {internetMode && !error && (
+              <div className="saved-banner">
+                <span>
+                  <Icon name="globe-outline" style={{ fontSize: 15 }} />
+                  Live roles from across the web, matched to your resume
+                </span>
+                <Link to="/jobs" className="btn btn-ghost btn-sm">
+                  Back to feed
+                </Link>
+              </div>
+            )}
             {category === 'mine' && (
               <div className="my-jobs-head">
                 <h2>Your added jobs</h2>
@@ -1013,6 +1140,13 @@ export function JobsPage() {
                     <>
                       <b>You haven't added any jobs yet.</b>
                       Use “Add a job” to track roles you found elsewhere.
+                    </>
+                  )
+                ) : internetMode ? (
+                  error ? null : (
+                    <>
+                      <b>No matching roles on the web right now.</b>
+                      Try adjusting your search, or enrich your resume for better matches.
                     </>
                   )
                 ) : (
@@ -1118,26 +1252,39 @@ export function JobsPage() {
                 }
                 const job = row.job
                 const requirements = requirementsPreview(job.rawDescription)
+                // Live internet results have no stored detail page and can't be
+                // bookmarked — they link straight out to the source to apply.
+                const internet = isInternetJob(job)
                 return (
                   <article key={job._id} className="jrow">
                     <ScoreRing score={job.matchScore ?? job.score ?? 0} />
                     <div className="main">
                       <div className="title">
-                        <Link to={`/jobs/${job._id}`}>{job.title}</Link>
+                        {internet ? (
+                          <a href={job.normalizedUrl} target="_blank" rel="noreferrer">
+                            {job.title}
+                          </a>
+                        ) : (
+                          <Link to={`/jobs/${job._id}`}>{job.title}</Link>
+                        )}
                       </div>
                       <div className="sub">
                         <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
-                        {job.company}
+                        {job.company ?? job.source}
                         {job.location ? ` · ${job.location}` : ''}
                       </div>
                       <div className="tags">
                         {typeof job.matchScore === 'number' && (
                           <Pill tone="verified">{Math.round(job.matchScore)}% match</Pill>
                         )}
-                        {job.status === 'verified' && <Pill tone="verified">Verified</Pill>}
+                        {internet ? (
+                          <Pill tone="mono">From the web</Pill>
+                        ) : (
+                          job.status === 'verified' && <Pill tone="verified">Verified</Pill>
+                        )}
                         {job.sourceId === 'teletalk-govt' && <Pill tone="govt">Government</Pill>}
                         <Pill tone="mono">{formatSalary(job)}</Pill>
-                        <Pill tone="mono">{SOURCE_LABELS[job.sourceId]}</Pill>
+                        <Pill tone="mono">{SOURCE_LABELS[job.sourceId] ?? job.source}</Pill>
                       </div>
                       <p style={{ marginTop: 10, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
                         {descriptionPreview(job.rawDescription)}
@@ -1148,34 +1295,44 @@ export function JobsPage() {
                         </p>
                       )}
                       <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <Link to={`/jobs/${job._id}`} className="btn btn-ghost">
-                          View details
-                        </Link>
+                        {internet ? (
+                          <a href={job.normalizedUrl} target="_blank" rel="noreferrer" className="btn btn-ghost">
+                            View
+                          </a>
+                        ) : (
+                          <Link to={`/jobs/${job._id}`} className="btn btn-ghost">
+                            View details
+                          </Link>
+                        )}
                         <a href={job.normalizedUrl} target="_blank" rel="noreferrer" className="btn btn-indigo">
                           Apply
                         </a>
                       </div>
                     </div>
                     <div className="side">
-                      <span className="when">{statusBadgeLabel(job)}</span>
-                      <button
-                        type="button"
-                        className={`save-btn${isSaved(job._id) ? ' saved' : ''}`}
-                        aria-pressed={isSaved(job._id)}
-                        aria-label={isSaved(job._id) ? 'Remove from saved' : 'Save job'}
-                        onClick={() => handleToggleSaved(job._id)}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-                          <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
-                        </svg>
-                      </button>
+                      <span className="when">
+                        {internet ? relativeTimeFromNow(job.postedAt ?? job.discoveredAt) : statusBadgeLabel(job)}
+                      </span>
+                      {!internet && (
+                        <button
+                          type="button"
+                          className={`save-btn${isSaved(job._id) ? ' saved' : ''}`}
+                          aria-pressed={isSaved(job._id)}
+                          aria-label={isSaved(job._id) ? 'Remove from saved' : 'Save job'}
+                          onClick={() => handleToggleSaved(job._id)}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+                            <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   </article>
                 )
               })
             )}
 
-            {!savedMode && category !== 'mine' && (
+            {!savedMode && !internetMode && category !== 'mine' && (
               <div className="mt-4 flex flex-wrap items-center justify-between gap-2" style={{ color: 'var(--muted-text)', fontSize: 13 }}>
                 <span>{total === 0 ? 'No results' : `Showing ${rangeStart}–${rangeEnd} of ${total}`}</span>
                 <div className="pager">

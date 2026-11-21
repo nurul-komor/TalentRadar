@@ -19,6 +19,7 @@ const JOB_REQUIREMENTS_JSON_SCHEMA = {
   properties: {
     requiredSkills: { type: 'array', items: { type: 'string' } },
     niceToHaveSkills: { type: 'array', items: { type: 'string' } },
+    softSkills: { type: 'array', items: { type: 'string' } },
     minExperienceYears: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
     workAuthRequirement: {
       type: 'string',
@@ -32,6 +33,7 @@ const JOB_REQUIREMENTS_JSON_SCHEMA = {
   required: [
     'requiredSkills',
     'niceToHaveSkills',
+    'softSkills',
     'minExperienceYears',
     'workAuthRequirement',
     'remoteType',

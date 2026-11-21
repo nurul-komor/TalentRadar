@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { JobRequirementsSchema } from './job.js'
 
 // Jobs a user adds themselves — either typed in manually or synced from a pasted
 // URL. These are kept entirely separate from the global discovery `jobs`
@@ -20,6 +21,12 @@ export const UserJobSchema = z.object({
   visibility: UserJobVisibilitySchema,
   createdAt: z.string(),
   updatedAt: z.string(),
+  // Structured hiring requirements, extracted lazily the first time materials are
+  // generated for this job (discovery jobs get these during scoring; user jobs
+  // have no scoring pass, so they're filled in on demand and cached here).
+  // Optional so jobs added before this field existed still validate.
+  extractedRequirements: JobRequirementsSchema.nullable().optional(),
+  extractedAt: z.string().nullable().optional(),
 })
 
 // Payload for saving a job (from the manual form or an edited sync preview).

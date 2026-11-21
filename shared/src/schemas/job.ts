@@ -22,6 +22,10 @@ export const JobStatusSchema = z.enum(['discovered', 'verified', 'rejected'])
 export const JobRequirementsSchema = z.object({
   requiredSkills: z.array(z.string()),
   niceToHaveSkills: z.array(z.string()),
+  // Soft skills / personal traits the posting asks for (communication, teamwork,
+  // problem-solving, etc.). Defaults to [] so documents extracted before this
+  // field existed still validate when read back.
+  softSkills: z.array(z.string()).default([]),
   minExperienceYears: z.number().int().nonnegative().nullable(),
   workAuthRequirement: z.enum(['any', 'citizen_only', 'visa_sponsorship_available', 'unknown']),
   remoteType: z.enum(['fully_remote', 'hybrid', 'onsite', 'unknown']),

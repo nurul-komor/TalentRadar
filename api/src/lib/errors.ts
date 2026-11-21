@@ -19,3 +19,15 @@ export class ForbiddenError extends Error {
     this.name = 'ForbiddenError'
   }
 }
+
+// An expected domain conflict (e.g. a duplicate application). Carries the jobId
+// of the already-existing record so the route layer can hand the client a link
+// back to it instead of a dead-end error.
+export class ConflictError extends Error {
+  readonly existingJobId?: string
+  constructor(message: string, existingJobId?: string) {
+    super(message)
+    this.name = 'ConflictError'
+    this.existingJobId = existingJobId
+  }
+}

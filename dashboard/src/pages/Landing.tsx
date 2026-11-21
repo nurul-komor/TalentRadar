@@ -37,6 +37,9 @@ const SOURCE_LABELS: Record<JobSourceId, string> = {
   adzuna: 'Adzuna',
 }
 
+// Every source, for the Sources marquee (rendered twice for a seamless loop).
+const sourceEntries = Object.entries(SOURCE_LABELS) as [JobSourceId, string][]
+
 // Static illustrative cards for the hero's floating stack — not live data
 // (the public landing page is logged-out, so there's no profile to score against).
 const HERO_NOTICE_CARDS = [
@@ -165,10 +168,28 @@ export function LandingPage() {
 
   const statsRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-stat' })
   const stepsRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-step' })
-  const sourcesRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-source-chip' })
   const recheckRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.rc', stagger: 0.12 })
   // Application-success strip: nodes light up in sequence as the row scrolls in.
   const trackRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.tnode', stagger: 0.14 })
+
+  // Pipeline tracing beam: the connecting line fills left→right, scrubbed to scroll.
+  const pipelineBeamRef = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    const el = pipelineBeamRef.current
+    if (!el) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      el.style.transform = 'scaleX(1)'
+      return
+    }
+    const ctx = gsap.context(() => {
+      gsap.to(el, {
+        scaleX: 1,
+        ease: 'none',
+        scrollTrigger: { trigger: el, start: 'top 85%', end: 'bottom 55%', scrub: 0.6 },
+      })
+    })
+    return () => ctx.revert()
+  }, [])
 
   function goToJobs(params: Record<string, string>) {
     const search = new URLSearchParams(params).toString()
@@ -225,13 +246,12 @@ export function LandingPage() {
   )
 
   return (
-    <div className="page-enter">
+    <div className="page-enter type-pro">
       <PublicNav />
 
       <section ref={heroRef} className="hero hero-bleed">
         <div className="hero-bg" />
         <div className="hero-aurora" aria-hidden="true" />
-        <div className="hero-glow" />
         <div className="wrap hero-grid">
           <div>
             <span className="hero-reveal eyebrow">
@@ -242,7 +262,7 @@ export function LandingPage() {
             <h1 className="hero-reveal">
               Job boards lie. We don't.
               <br />
-              <em>Verified</em> remote roles &amp; government circulars.
+              <span className="hl-sweep">Verified</span> remote roles &amp; government circulars.
             </h1>
             <p className="hero-reveal lead">
               We discover remote roles and Bangladesh government circulars, re-check each one against
@@ -537,6 +557,10 @@ export function LandingPage() {
             <p>Nothing gets submitted on your behalf without you clicking confirm. Every time.</p>
           </div>
           <div ref={stepsRevealRef} className="steps">
+            <div className="pipeline-beam" aria-hidden="true">
+              <span className="pipeline-beam-track" />
+              <span ref={pipelineBeamRef} className="pipeline-beam-fill" />
+            </div>
             <div className="step reveal-step">
               <div className="step-icon">
                 <Icon name="search-outline" style={{ fontSize: 18 }} />
@@ -582,16 +606,23 @@ export function LandingPage() {
             <h2>Sources, plain and honest.</h2>
             <p>We only show integrations that are actually live. Nothing here is aspirational.</p>
           </div>
-          <div ref={sourcesRevealRef} className="sources-row">
-            {(summary?.bySource ?? []).map((entry) => (
-              <span className="source-chip reveal-source-chip" key={entry.sourceId}>
-                <span className="dot" />
-                {SOURCE_LABELS[entry.sourceId]}
-                {entry.sourceId === 'teletalk-govt' && (
-                  <Pill tone="govt">Government</Pill>
-                )}
-              </span>
-            ))}
+          {/* Infinite moving cards: a seamless, hover-pausing marquee of every
+              live source. The list is rendered twice so the -50% loop is seamless;
+              the second copy is aria-hidden to avoid duplicate announcements. */}
+          <div className="marquee" aria-label="Live job sources">
+            <div className="marquee-track">
+              {[...sourceEntries, ...sourceEntries].map(([id, label], i) => (
+                <span
+                  className="source-chip"
+                  key={`${id}-${i}`}
+                  aria-hidden={i >= sourceEntries.length}
+                >
+                  <span className="dot" />
+                  {label}
+                  {id === 'teletalk-govt' && <Pill tone="govt">Government</Pill>}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </section>
