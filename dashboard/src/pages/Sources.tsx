@@ -12,7 +12,6 @@ import { useCountUp } from '../hooks/useCountUp'
 interface SourceInfo {
   label: string
   initials: string
-  color: string
   // The concrete integration behind the source — real metadata, not decoration.
   method: string
   description: string
@@ -23,7 +22,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   remoteok: {
     label: 'Remote OK',
     initials: 'OK',
-    color: '#4453FF',
     method: 'Public JSON API',
     description:
       "A general remote-jobs board. We pull their public job API directly — title, company, description, location, salary when it's listed, and posting date.",
@@ -31,7 +29,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   weworkremotely: {
     label: 'We Work Remotely',
     initials: 'WWR',
-    color: '#1FC9B7',
     method: 'RSS feed',
     description:
       'We parse the public RSS feed for their remote-programming-jobs category. Company and title come from a single listing field, split on the colon they always use between them.',
@@ -39,7 +36,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   himalayas: {
     label: 'Himalayas',
     initials: 'HI',
-    color: '#6B78FF',
     method: 'Public JSON API',
     description:
       'Another general remote board, pulled from their public jobs API — the same shape as Remote OK: title, company, description, salary range, and location restrictions when the listing specifies them.',
@@ -47,7 +43,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   adzuna: {
     label: 'Adzuna',
     initials: 'AZ',
-    color: '#7A5CFF',
     method: 'Aggregator API',
     description:
       'A job-search aggregator that indexes listings from across the web. We pull their public job API — title, company, location, salary estimates when available, and posting date.',
@@ -55,7 +50,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   'brainstation-23': {
     label: 'Brain Station 23',
     initials: 'BS',
-    color: '#2FC1E1',
     method: 'easy.jobs ATS',
     description:
       "A Bangladesh software firm that recruits through the easy.jobs ATS rather than a general board. We pull its public career API directly — title, full job description, and location — and fetch each posting's detail page for the description the scoring pipeline needs.",
@@ -63,7 +57,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   'riseup-labs': {
     label: 'Riseup Labs',
     initials: 'RL',
-    color: '#1A6CFF',
     method: 'WordPress REST',
     description:
       'A Bangladesh software and game studio. Its careers section runs on WordPress, so we pull the jobs straight from the public WP REST API — title, permalink, publish date, and the full HTML body.',
@@ -71,7 +64,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   enosis: {
     label: 'Enosis Solutions',
     initials: 'EN',
-    color: '#00A36C',
     method: 'Pinpoint ATS',
     description:
       'A Dhaka/Atlanta software firm recruiting through the Pinpoint ATS, which exposes a public postings feed. We read title, location, salary (when the employer makes it visible), and the full description in one request.',
@@ -79,7 +71,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   bdtask: {
     label: 'Bdtask',
     initials: 'BT',
-    color: '#F5A623',
     method: 'HTML parsing',
     description:
       'A Bangladesh software product company. Its careers page is plain server-rendered HTML with no API, so we parse the job list and fetch each detail page for the location and description.',
@@ -87,7 +78,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   selise: {
     label: 'SELISE Digital Platforms',
     initials: 'SE',
-    color: '#E4002B',
     method: 'hirebee.ai ATS',
     description:
       'A Swiss-Bangladeshi engineering company recruiting through the hirebee.ai ATS. The listings are server-rendered HTML, so we scrape the job list (title and city) and each detail page for the full description.',
@@ -95,7 +85,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   bjit: {
     label: 'BJIT Limited',
     initials: 'BJ',
-    color: '#0057B8',
     method: 'JSON API',
     description:
       'A Bangladesh-Japan software firm. Its Next.js career page loads jobs from a public JSON API that already includes the full requirements, posting date, and country.',
@@ -103,7 +92,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   cefalo: {
     label: 'Cefalo Bangladesh',
     initials: 'CE',
-    color: '#5B2A86',
     method: 'Custom ATS',
     description:
       'A Norwegian-Bangladeshi software company running its own ATS. We read the public jobs endpoint, skip expired postings, and fetch each job for its full description and posting date.',
@@ -111,7 +99,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   vivasoft: {
     label: 'Vivasoft Limited',
     initials: 'VS',
-    color: '#FF6B35',
     method: 'Novara ATS',
     description:
       'A Bangladesh software outsourcing firm recruiting through the Novara ATS. We pull the public jobs API — title, city/country, salary when set — and fetch each job for the full HTML description and posting date.',
@@ -119,7 +106,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   dsinnovators: {
     label: 'Dynamic Solution Innovators',
     initials: 'DS',
-    color: '#2E8B57',
     method: 'hrythmic ATS',
     description:
       'A Dhaka software company recruiting through the hrythmic ATS. The openings page is server-rendered HTML, so we scrape the job list and each detail page for the description and posting date.',
@@ -127,7 +113,6 @@ const SOURCES: Record<JobSourceId, SourceInfo> = {
   'teletalk-govt': {
     label: 'alljobs.teletalk.com.bd',
     initials: 'TG',
-    color: '#0A7D3B',
     method: 'Official portal',
     description:
       "Bangladesh government job circulars, pulled from the official portal's org-list and per-posting detail endpoints. These carry fields the general boards don't: vacancy count, age limits, gender requirement, publication and deadline dates, and a link to the official advertisement PDF.",
@@ -182,10 +167,7 @@ function SourceCard({ source, href, count }: { source: SourceInfo; href: string;
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span
-            className="flex size-9 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold tracking-tight text-white"
-            style={{ background: source.color }}
-          >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-[color:var(--surface-2)] text-[11px] font-semibold tracking-tight text-muted-foreground">
             {source.initials}
           </span>
           <div className="min-w-0">
@@ -341,18 +323,20 @@ export function SourcesPage() {
         </div>
       </section>
 
-      {/* Alternating full-bleed bands (white ↔ #F5F5F7), Apple product-page style. */}
-      {SOURCE_GROUPS.map((group, i) => (
-        <section key={group.title} className={`band${i % 2 === 0 ? ' band-alt' : ''}`}>
+      {/* Full-width stacking panels — each section pins and the next scrolls up
+          over it (shared .stack-scroll / .stack-card system). */}
+      <div className="stack-scroll">
+      {SOURCE_GROUPS.map((group) => (
+        <section key={group.title} className="stack-card">
           <div className="wrap">
             <SourceGroup {...group} countById={countById} />
           </div>
         </section>
       ))}
 
-      {/* Government: its own band, pairing the source with why it's scored
+      {/* Government: its own panel, pairing the source with why it's scored
           differently — a distinct panel, not just another card. */}
-      <section className="band band-alt">
+      <section className="stack-card">
         <div className="wrap">
           <SectionHead
             title="Government circulars"
@@ -361,13 +345,10 @@ export function SourcesPage() {
           <div className="mx-auto grid max-w-5xl overflow-hidden rounded-[var(--card-radius-lg)] border border-border bg-card md:grid-cols-[minmax(0,340px)_1fr]">
             <Link
               to={sourceHref('teletalk-govt')}
-              className="group block border-b border-border p-6 transition-colors duration-200 hover:bg-[color:var(--indigo-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ring)] md:border-b-0 md:border-r"
+              className="group block border-b border-border p-6 transition-colors duration-200 hover:bg-[color:var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--ring)] md:border-b-0 md:border-r"
             >
               <div className="flex items-center gap-3">
-                <span
-                  className="flex size-9 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold tracking-tight text-white"
-                  style={{ background: govt.color }}
-                >
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-[color:var(--surface-2)] text-[11px] font-semibold tracking-tight text-muted-foreground">
                   {govt.initials}
                 </span>
                 <div className="min-w-0">
@@ -403,7 +384,7 @@ export function SourcesPage() {
         </div>
       </section>
 
-      <section className="band">
+      <section className="stack-card">
         <div className="wrap">
           <SectionHead
             title="Current coverage"
@@ -433,8 +414,8 @@ export function SourcesPage() {
                       <span className="truncate text-[13px] text-foreground">{source.label}</span>
                       <span className="col-span-2 order-last h-2 overflow-hidden rounded-full bg-[color:var(--ring-track)] sm:order-none sm:col-span-1">
                         <span
-                          className="block h-full rounded-full"
-                          style={{ width: `${pct}%`, background: source.color }}
+                          className="block h-full rounded-full bg-[color:var(--line-strong)]"
+                          style={{ width: `${pct}%` }}
                         />
                       </span>
                       <span className="mono w-14 text-right text-[12.5px] tabular-nums text-muted-foreground">
@@ -448,6 +429,7 @@ export function SourcesPage() {
           </div>
         </div>
       </section>
+      </div>
 
       <Footer />
     </div>

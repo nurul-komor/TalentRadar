@@ -29,6 +29,25 @@ Do **not** use color gradients anywhere in the UI. Use flat, solid colors.
 - **Allowed exceptions** (these are not color gradients): CSS `mask-image` / `-webkit-mask-image` gradients used purely for **transparency fades**, and single-color **pattern** gradients that draw hairline grids or dot grids (e.g. `linear-gradient(var(--line) 1px, transparent 1px)`). Everything that reads as a visible color blend is banned.
 - This applies to `index.css`, inline `style`, Tailwind arbitrary values, and SVG `<linearGradient>`/`<radialGradient>` alike.
 
+## Restrained color — no "AI design" rainbow (global rule)
+
+Do **not** use a lot of color. The UI must read as near-monochrome with **a single accent**, the way Apple / Linear / Stripe do — never the over-colored, multi-hue look typical of AI-generated / template design.
+
+- **One accent only.** Reserve the accent color (the project's blue/indigo) for the primary action and the single most important highlight on a surface. Everything else is grayscale: text, borders, cards, icons, bars, badges, chips.
+- **No per-item color.** Do not give each item in a list/grid its own color (e.g. a rainbow of source/company badge swatches). Use one neutral treatment — `--surface-2` fill, hairline border, muted text — and let type, spacing, and imagery carry the hierarchy.
+- **Status colors are neutral by default.** "Live", "Verified", "Success" etc. render as neutral gray chips/dots, not green/teal/multi-color, unless a single semantic color is genuinely required — and even then, at most one beyond the accent.
+- **Progress/score bars** use one solid neutral (`--line-strong` / `--muted-text`) or the single accent — never a different color per row.
+- Pair this with the **No color gradients** rule above: flat solid colors only. When in doubt, remove color.
+
+## Corner radii — concentric corners (global rule)
+
+Use a consistent, tiered corner-radius scale, and keep nested corners **concentric**.
+
+- **Scale by element role:** ~**8pt** for small controls (buttons, inputs, chips, non-full-round pills, small icon tiles); ~**12pt** for larger surfaces (cards, sheets, dialogs, popovers, panels). Larger hero/feature surfaces may go bigger, but stay on the scale — don't invent one-off radii.
+- **Concentric nesting:** when a rounded element sits inside another, the **inner radius = outer radius − padding** (the gap between them). A child flush inside a card with 16px padding and a 24px outer radius gets an 8px radius, so the corners stay parallel. Never nest a larger radius inside a smaller one.
+- **Use the tokens, not literals:** reach for the existing radius tokens in `index.css` (`--card-radius-sm/md/lg`; the `.apple-ui` skin tunes these for the Apple look). Add a token rather than hard-coding a new px value.
+- Full-round (`999px`) is reserved for genuinely pill-shaped controls and circular avatars/dots.
+
 ## Motion & animation (global rule)
 
 New and updated UI in the `dashboard/` app MUST feel modern and animated. When a surface includes any of the elements below, implement the corresponding motion — don't ship static versions:

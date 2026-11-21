@@ -132,7 +132,7 @@ export function JobDetailPage() {
 
   if (!job && !error) {
     return (
-      <div>
+      <div className="apple-ui">
         <PublicNav />
         <div className="wrap crumbs" aria-hidden="true">
           <div className="sk" style={{ width: 40 }} />
@@ -188,7 +188,7 @@ export function JobDetailPage() {
 
   if (error || !job) {
     return (
-      <div>
+      <div className="apple-ui">
         <PublicNav />
         <div className="wrap" style={{ marginTop: 24 }}>
           <FormError message={error ?? 'Job not found.'} />
@@ -205,7 +205,7 @@ export function JobDetailPage() {
   )
 
   return (
-    <div>
+    <div className="apple-ui">
       <PublicNav />
       <div className="wrap crumbs">
         <Link to="/jobs">Jobs</Link>

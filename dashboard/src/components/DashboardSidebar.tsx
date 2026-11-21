@@ -4,7 +4,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import type { Profile, TrackedJob } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
-import { canSync, isAdmin } from '../lib/syncAccess'
+import { isAdmin } from '../lib/syncAccess'
 import { profileCompletenessPercent } from '../lib/profileCompleteness'
 import { isFollowUpOverdue } from '../lib/jobTracking'
 import { ThemeToggle } from './ThemeToggle'
@@ -15,7 +15,16 @@ function sidebarLinkClass({ isActive }: { isActive: boolean }): string {
   return isActive ? 'app-sidebar-link current' : 'app-sidebar-link'
 }
 
-const SIDEBAR_LINKS = [
+interface NavItem {
+  to: string
+  label: string
+  icon: string
+  // Exact-match the route (used by the admin Overview link so it isn't marked
+  // active on its own sub-routes).
+  end?: boolean
+}
+
+const SIDEBAR_LINKS: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: 'grid-outline' },
   { to: '/suggestions', label: 'Suggested', icon: 'sparkles-outline' },
   { to: '/add-job', label: 'Add Job', icon: 'add-outline' },
@@ -23,6 +32,52 @@ const SIDEBAR_LINKS = [
   { to: '/profile', label: 'Profile', icon: 'person-outline' },
   { to: '/cv', label: 'Resume', icon: 'document-text-outline' },
 ]
+
+// Admin-mode nav. Shown in place of SIDEBAR_LINKS when an admin flips the
+// User | Admin switch (i.e. while on an admin route).
+const ADMIN_LINKS: NavItem[] = [
+  { to: '/admin', label: 'Overview', icon: 'grid-outline', end: true },
+  { to: '/admin/users', label: 'Users', icon: 'people-outline' },
+  { to: '/sync', label: 'Job Sync', icon: 'refresh-outline' },
+  { to: '/settings', label: 'AI Settings', icon: 'settings-outline' },
+]
+
+// Admin mode is derived purely from the route, so deep links and refreshes stay
+// consistent with no separate state to drift. The switch just navigates.
+function isAdminPath(pathname: string): boolean {
+  return pathname.startsWith('/admin') || pathname === '/settings' || pathname === '/sync'
+}
+
+// Segmented User | Admin switch. Only rendered for admins; the active segment
+// follows the route, and clicking a segment navigates to that mode's home.
+function ModeSwitch({ className }: { className?: string }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const adminMode = isAdminPath(location.pathname)
+  return (
+    <div className={`app-sidebar-switch${className ? ` ${className}` : ''}`} role="tablist" aria-label="Dashboard mode">
+      <span className="app-sidebar-switch-thumb" aria-hidden="true" data-mode={adminMode ? 'admin' : 'user'} />
+      <button
+        type="button"
+        role="tab"
+        aria-selected={!adminMode}
+        className={adminMode ? '' : 'current'}
+        onClick={() => navigate('/dashboard')}
+      >
+        User
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={adminMode}
+        className={adminMode ? 'current' : ''}
+        onClick={() => navigate('/admin')}
+      >
+        Admin
+      </button>
+    </div>
+  )
+}
 
 function initialsFromEmail(email: string | null): string {
   if (!email) return '?'
@@ -58,11 +113,11 @@ function AccountMenu({ variant, title, subtitle }: { variant: 'sidebar' | 'heade
     }
   }, [open])
 
+  // Admins reach Job Sync / AI Settings through the sidebar's Admin mode now, so
+  // the account menu stays to the account's own essentials.
   const links = [
     { to: '/profile', label: 'Profile', icon: 'person-outline', badge: 0 },
     { to: '/cv', label: 'Resume', icon: 'document-text-outline', badge: 0 },
-    ...(canSync(email) ? [{ to: '/sync', label: 'Job Sync', icon: 'refresh-outline', badge: 0 }] : []),
-    ...(isAdmin(email) ? [{ to: '/settings', label: 'Settings', icon: 'settings-outline', badge: 0 }] : []),
   ]
 
   function go(to: string) {
@@ -192,6 +247,10 @@ export function DashboardSidebar() {
   // Overdue follow-ups are the thing worth nudging the user toward on the tracker.
   const overdueCount = trackedJobs.filter((job) => isFollowUpOverdue(job.followUpDate, job.status)).length
 
+  // Swap the whole nav to the admin set while an admin is on an admin route.
+  const adminMode = isAdmin(email) && isAdminPath(location.pathname)
+  const links = adminMode ? ADMIN_LINKS : SIDEBAR_LINKS
+
   // Reposition the sliding indicator to the active link whenever the route
   // changes or the nav's contents/size shift (badges, resize).
   useLayoutEffect(() => {
@@ -223,6 +282,8 @@ export function DashboardSidebar() {
         <Logo />
       </NavLink>
 
+      {isAdmin(email) && <ModeSwitch />}
+
       <form className="app-sidebar-search" onSubmit={submitSearch}>
         <Icon name="search-outline" style={{ fontSize: 15 }} />
         <input
@@ -245,30 +306,16 @@ export function DashboardSidebar() {
             opacity: indicator.ready ? 1 : 0,
           }}
         />
-        {SIDEBAR_LINKS.map(({ to, label, icon }) => (
-          <NavLink key={to} to={to} className={sidebarLinkClass}>
-            <Icon name={icon} style={{ fontSize: 18 }} />
-            {label}
-            {to === '/applications' && overdueCount > 0 && <span className="badge">{overdueCount}</span>}
+        {links.map((link) => (
+          <NavLink key={link.to} to={link.to} end={link.end} className={sidebarLinkClass}>
+            <Icon name={link.icon} style={{ fontSize: 18 }} />
+            {link.label}
+            {link.to === '/applications' && overdueCount > 0 && <span className="badge">{overdueCount}</span>}
           </NavLink>
         ))}
-
-        {canSync(email) && (
-          <NavLink to="/sync" className={sidebarLinkClass}>
-            <Icon name="refresh-outline" style={{ fontSize: 18 }} />
-            Job Sync
-          </NavLink>
-        )}
-
-        {isAdmin(email) && (
-          <NavLink to="/settings" className={sidebarLinkClass}>
-            <Icon name="settings-outline" style={{ fontSize: 18 }} />
-            Settings
-          </NavLink>
-        )}
       </div>
 
-      {overdueCount > 0 && (
+      {!adminMode && overdueCount > 0 && (
         <div className="app-sidebar-next">
           <div className="k">Next action</div>
           <b>
@@ -295,6 +342,9 @@ interface FabItem {
   // Items pointing at a query-string route (e.g. /jobs?...) can opt out of active
   // styling so NavLink doesn't mark them active whenever the base route is open.
   matchActive?: boolean
+  // Exact-match the route (used by the admin Overview link so it isn't active on
+  // its own sub-routes).
+  end?: boolean
 }
 
 // Mobile primary nav as a floating speed-dial at the bottom-right. The old
@@ -321,11 +371,11 @@ export function DashboardMobileNav() {
     return () => document.removeEventListener('keydown', onKey)
   }, [open])
 
-  const items: FabItem[] = [
-    ...SIDEBAR_LINKS.map((link) => ({ ...link, matchActive: true })),
-    ...(canSync(email) ? [{ to: '/sync', label: 'Job Sync', icon: 'refresh-outline', matchActive: true }] : []),
-    ...(isAdmin(email) ? [{ to: '/settings', label: 'Settings', icon: 'settings-outline', matchActive: true }] : []),
-  ]
+  const adminMode = isAdmin(email) && isAdminPath(location.pathname)
+  const items: FabItem[] = (adminMode ? ADMIN_LINKS : SIDEBAR_LINKS).map((link) => ({
+    ...link,
+    matchActive: true,
+  }))
 
   return (
     <div className={`app-fab${open ? ' open' : ''}`}>
@@ -337,7 +387,7 @@ export function DashboardMobileNav() {
           <NavLink
             key={item.to}
             to={item.to}
-            end={item.matchActive ? undefined : true}
+            end={item.end ?? (item.matchActive ? undefined : true)}
             className={({ isActive }) =>
               item.matchActive && isActive ? 'app-fab-item current' : 'app-fab-item'
             }
@@ -371,11 +421,13 @@ export function DashboardMobileNav() {
 // account popover lives here (not in the bottom tab bar) so all six primary
 // destinations fit the fixed bottom nav without clipping on narrow phones.
 export function DashboardMobileHeader() {
+  const { email } = useAuth()
   return (
     <header className="app-mobile-header">
       <NavLink to="/" className="brand app-mobile-header-brand">
         <Logo />
       </NavLink>
+      {isAdmin(email) && <ModeSwitch className="app-sidebar-switch--compact" />}
       <AccountMenu variant="header" />
     </header>
   )

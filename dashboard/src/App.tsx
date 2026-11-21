@@ -25,7 +25,8 @@ import { JobDetailPage } from './pages/JobDetail'
 import { MyJobDetailPage } from './pages/MyJobDetail'
 import { CommunityJobDetailPage } from './pages/CommunityJobDetail'
 import { ApplicationsPage } from './pages/Applications'
-import { AdminPage } from './pages/Admin'
+import { AdminOverviewPage } from './pages/admin/AdminOverview'
+import { AdminUsersPage } from './pages/admin/AdminUsers'
 import { SettingsPage } from './pages/Settings'
 
 export default function App() {
@@ -57,13 +58,13 @@ export default function App() {
                   <Route path="/applications" element={<ApplicationsPage />} />
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/cv" element={<CvPage />} />
-                  {/* Admin-only settings, inside the dashboard shell so it keeps the sidebar. */}
+                  {/* Admin dashboard, inside the shell so it keeps the sidebar. The
+                      sidebar's User | Admin switch toggles between these and the user nav. */}
                   <Route element={<AdminRoute />}>
+                    <Route path="/admin" element={<AdminOverviewPage />} />
+                    <Route path="/admin/users" element={<AdminUsersPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
                   </Route>
-                </Route>
-                <Route element={<AdminRoute />}>
-                  <Route path="/admin" element={<AdminPage />} />
                 </Route>
               </Route>
             </Route>

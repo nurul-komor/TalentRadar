@@ -1,8 +1,18 @@
 import { Icon } from '../components/Icon'
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import {
+  Fragment,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { Job, JobSourceId, UserJob } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
+import { gsap } from '../lib/gsap'
 import { useAuth } from '../auth/AuthContext'
 import { PublicNav } from '../components/Nav'
 import { Footer } from '../components/Footer'
@@ -241,9 +251,71 @@ function requirementsPreview(rawDescription: string): string | null {
   return plainText ? truncate(plainText, REQUIREMENTS_PREVIEW_LENGTH) : null
 }
 
+function prefersReducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+type SlidingTab = { key: string; label: ReactNode; selected: boolean; onSelect: () => void }
+
+// Segmented control matching the landing page: a neutral glass pill slides behind
+// the active tab (same sliding-window motion as the global nav and landing filters).
+function SlidingTabs({ tabs, ariaLabel }: { tabs: SlidingTab[]; ariaLabel: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [indicator, setIndicator] = useState<{ left: number; width: number; ready: boolean }>({
+    left: 0,
+    width: 0,
+    ready: false,
+  })
+  const activeKey = tabs.find((tab) => tab.selected)?.key
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    function reposition() {
+      const current = el!.querySelector<HTMLElement>('button.on')
+      if (!current) {
+        setIndicator((prev) => ({ ...prev, ready: false }))
+        return
+      }
+      setIndicator({ left: current.offsetLeft, width: current.offsetWidth, ready: true })
+    }
+    reposition()
+    const observer = new ResizeObserver(reposition)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [activeKey, tabs.length])
+
+  return (
+    <div className="lp-filters" role="tablist" aria-label={ariaLabel} ref={ref}>
+      <span
+        className="lp-filters-indicator"
+        aria-hidden="true"
+        style={{
+          transform: `translateX(${indicator.left}px)`,
+          width: indicator.width,
+          opacity: indicator.ready ? 1 : 0,
+        }}
+      />
+      {tabs.map((tab) => (
+        <button
+          key={tab.key}
+          type="button"
+          role="tab"
+          aria-selected={tab.selected}
+          className={`lp-chip ${tab.selected ? 'on' : ''}`}
+          onClick={tab.onSelect}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function JobsPage() {
   const { isAuthenticated } = useAuth()
   const navigate = useNavigate()
+  const headerRef = useRef<HTMLElement | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const [jobs, setJobs] = useState<FeedJob[]>([])
   const [total, setTotal] = useState(0)
@@ -322,6 +394,26 @@ export function JobsPage() {
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  // Staggered header entrance — kicker, headline, lead and category tabs rise into
+  // place with a soft focus-in, mirroring the landing hero's `.hero-reveal` motion.
+  useEffect(() => {
+    const container = headerRef.current
+    if (!container || prefersReducedMotion()) return
+    const ctx = gsap.context(() => {
+      gsap.from('.hero-reveal', {
+        opacity: 0,
+        y: 24,
+        filter: 'blur(8px)',
+        duration: 0.7,
+        stagger: 0.09,
+        ease: 'power3.out',
+        delay: 0.05,
+        clearProps: 'filter',
+      })
+    }, container)
+    return () => ctx.revert()
   }, [])
   useEffect(() => setSalaryMin(urlSalaryMin), [urlSalaryMin])
   useEffect(() => setSalaryMax(urlSalaryMax), [urlSalaryMax])
@@ -949,53 +1041,47 @@ export function JobsPage() {
     setTimeout(() => setToastMessage(null), 1800)
   }
 
+  const categoryTabs: SlidingTab[] = [
+    { key: 'all', label: 'All jobs', selected: category === 'all' && !internetMode, onSelect: () => updateFilters({ category: null, internet: null }) },
+    { key: 'government', label: 'Government', selected: category === 'government' && !internetMode, onSelect: () => updateFilters({ category: 'government', internet: null }) },
+    ...(isAuthenticated
+      ? [{ key: 'mine', label: 'My jobs', selected: category === 'mine' && !internetMode, onSelect: () => updateFilters({ category: 'mine', internet: null }) }]
+      : []),
+    { key: 'private', label: 'Other jobs', selected: category === 'private' && !internetMode, onSelect: () => updateFilters({ category: 'private', internet: null }) },
+  ]
+
+  const sortTabs: SlidingTab[] = [
+    { key: 'newest', label: 'Newest', selected: !sortByMatch, onSelect: () => updateFilters({ sort: null }) },
+    {
+      key: 'match',
+      label: (
+        <>
+          <Icon name="sparkles-outline" style={{ fontSize: 13, marginRight: 4, verticalAlign: 'middle' }} />
+          Best match
+        </>
+      ),
+      selected: sortByMatch,
+      onSelect: () => updateFilters({ sort: 'match' }),
+    },
+  ]
+
+  // A signature of everything that re-shapes the feed. Re-keying the list on it
+  // remounts the rows so their staggered entrance replays — the landing grid's
+  // "smooth filtering transition" applied to the feed.
+  const listKey = `${category}|${internetMode}|${savedMode}|${sortByMatch}|${sourceSelectionKey}|${datePosted}|${languagesKey}|${debouncedKeyword}|${offset}`
+
   return (
-    <div>
+    <div className="page-enter type-pro apple-ui">
       <PublicNav />
-      <header className="page-head">
+      <header ref={headerRef} className="page-head jobs-hero">
+        <div className="hero-bg" aria-hidden="true" />
+        <div className="hero-glow" aria-hidden="true" />
         <div className="wrap">
-          <div className="kicker">Job feed</div>
-          <h1>Verified roles, scored for you.</h1>
-          <p>Remote roles and Bangladesh government circulars, each re-checked against its source in the last 24 hours.</p>
-          <div className="segment" role="tablist" aria-label="Job category">
-            <button
-              type="button"
-              role="tab"
-              className={`seg${category === 'all' && !internetMode ? ' on' : ''}`}
-              aria-selected={category === 'all' && !internetMode}
-              onClick={() => updateFilters({ category: null, internet: null })}
-            >
-              All jobs
-            </button>
-            <button
-              type="button"
-              role="tab"
-              className={`seg${category === 'government' && !internetMode ? ' on' : ''}`}
-              aria-selected={category === 'government' && !internetMode}
-              onClick={() => updateFilters({ category: 'government', internet: null })}
-            >
-              Government
-            </button>
-            {isAuthenticated && (
-              <button
-                type="button"
-                role="tab"
-                className={`seg${category === 'mine' && !internetMode ? ' on' : ''}`}
-                aria-selected={category === 'mine' && !internetMode}
-                onClick={() => updateFilters({ category: 'mine', internet: null })}
-              >
-                My jobs
-              </button>
-            )}
-            <button
-              type="button"
-              role="tab"
-              className={`seg${category === 'private' && !internetMode ? ' on' : ''}`}
-              aria-selected={category === 'private' && !internetMode}
-              onClick={() => updateFilters({ category: 'private', internet: null })}
-            >
-              Other jobs
-            </button>
+          <div className="kicker hero-reveal">Job feed</div>
+          <h1 className="hero-reveal">Verified roles, scored for you.</h1>
+          <p className="hero-reveal">Remote roles and Bangladesh government circulars, each re-checked against its source in the last 24 hours.</p>
+          <div className="hero-reveal segment" aria-label="Job category">
+            <SlidingTabs tabs={categoryTabs} ariaLabel="Job category" />
             {category === 'government' && (
               <span className="seg-note">
                 Government circulars come from{' '}
@@ -1055,26 +1141,8 @@ export function JobsPage() {
 
           <div className="results lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
             {canSortByMatch && (
-              <div className="segment" role="tablist" aria-label="Sort jobs" style={{ marginBottom: 16 }}>
-                <button
-                  type="button"
-                  role="tab"
-                  className={`seg${!sortByMatch ? ' on' : ''}`}
-                  aria-selected={!sortByMatch}
-                  onClick={() => updateFilters({ sort: null })}
-                >
-                  Newest
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  className={`seg${sortByMatch ? ' on' : ''}`}
-                  aria-selected={sortByMatch}
-                  onClick={() => updateFilters({ sort: 'match' })}
-                >
-                  <Icon name="sparkles-outline" style={{ fontSize: 13, marginRight: 4, verticalAlign: 'middle' }} />
-                  Best match
-                </button>
+              <div style={{ marginBottom: 16 }}>
+                <SlidingTabs tabs={sortTabs} ariaLabel="Sort jobs" />
               </div>
             )}
             {savedMode && (
@@ -1116,52 +1184,67 @@ export function JobsPage() {
             )}
 
             {loading ? (
-              <div className="skeleton" aria-hidden="true">
-                <div className="sk" style={{ width: 40, height: 40, borderRadius: '50%' }} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div className="sk" style={{ width: '46%' }} />
-                  <div className="sk" style={{ width: '30%' }} />
+              [0, 1, 2, 3, 4].map((i) => (
+                <div className="skeleton" aria-hidden="true" key={i}>
+                  <div className="sk" style={{ width: 40, height: 40, borderRadius: '50%' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div className="sk" style={{ width: '46%' }} />
+                    <div className="sk" style={{ width: '30%' }} />
+                    <div className="sk sk-pills" style={{ marginTop: 6 }} />
+                  </div>
                 </div>
-              </div>
+              ))
             ) : mergedRows.length === 0 ? (
-              <p className="saved-empty">
-                {savedMode ? (
-                  <>
-                    <b>No saved jobs yet.</b>
-                    Tap the bookmark on any job to save it here.
-                  </>
-                ) : category === 'mine' ? (
-                  selectedLanguages.length > 0 ? (
+              internetMode && error ? null : (
+                <div className="lp-empty">
+                  <div className="lp-empty-icon">
+                    <Icon
+                      name={savedMode ? 'briefcase-outline' : internetMode ? 'globe-outline' : 'search-outline'}
+                      style={{ fontSize: 26 }}
+                    />
+                  </div>
+                  {savedMode ? (
                     <>
-                      <b>No added jobs match these languages.</b>
-                      Clear the language filter or add a job.
+                      <b>No saved jobs yet</b>
+                      <span>Tap the bookmark on any job to save it here.</span>
+                    </>
+                  ) : category === 'mine' ? (
+                    selectedLanguages.length > 0 ? (
+                      <>
+                        <b>No added jobs match these languages</b>
+                        <span>Clear the language filter or add a job.</span>
+                      </>
+                    ) : (
+                      <>
+                        <b>You haven't added any jobs yet</b>
+                        <span>Use “Add a job” to track roles you found elsewhere.</span>
+                      </>
+                    )
+                  ) : internetMode ? (
+                    <>
+                      <b>No matching roles on the web right now</b>
+                      <span>Try adjusting your search, or enrich your resume for better matches.</span>
                     </>
                   ) : (
                     <>
-                      <b>You haven't added any jobs yet.</b>
-                      Use “Add a job” to track roles you found elsewhere.
+                      <b>No jobs found</b>
+                      <span>Try widening your filters.</span>
+                      {hasActiveFilters && (
+                        <button type="button" className="lp-chip on lp-empty-reset" onClick={clearFilters}>
+                          Clear filters
+                        </button>
+                      )}
                     </>
-                  )
-                ) : internetMode ? (
-                  error ? null : (
-                    <>
-                      <b>No matching roles on the web right now.</b>
-                      Try adjusting your search, or enrich your resume for better matches.
-                    </>
-                  )
-                ) : (
-                  <>
-                    <b>No jobs found.</b>
-                    Try widening your filters.
-                  </>
-                )}
-              </p>
+                  )}
+                </div>
+              )
             ) : (
-              mergedRows.map((row) => {
+              <Fragment key={listKey}>
+              {mergedRows.map((row, index) => {
                 if (row.kind === 'mine') {
                   const job = row.job
                   return (
-                    <article key={`myjob-${job._id}`} className="jrow">
+                    <article key={`myjob-${job._id}`} className="jrow row-in" style={{ '--i': index } as CSSProperties}>
                       <div className="main">
                         <div className="title">
                           <Link to={`/my-jobs/${job._id}`}>{job.title}</Link>
@@ -1213,7 +1296,7 @@ export function JobsPage() {
                 if (row.kind === 'community') {
                   const job = row.job
                   return (
-                    <article key={`community-${job._id}`} className="jrow">
+                    <article key={`community-${job._id}`} className="jrow row-in" style={{ '--i': index } as CSSProperties}>
                       <div className="main">
                         <div className="title">
                           <Link to={`/community-jobs/${job._id}`}>{job.title}</Link>
@@ -1256,7 +1339,7 @@ export function JobsPage() {
                 // bookmarked — they link straight out to the source to apply.
                 const internet = isInternetJob(job)
                 return (
-                  <article key={job._id} className="jrow">
+                  <article key={job._id} className="jrow row-in" style={{ '--i': index } as CSSProperties}>
                     <ScoreRing score={job.matchScore ?? job.score ?? 0} />
                     <div className="main">
                       <div className="title">
@@ -1329,7 +1412,8 @@ export function JobsPage() {
                     </div>
                   </article>
                 )
-              })
+              })}
+              </Fragment>
             )}
 
             {!savedMode && !internetMode && category !== 'mine' && (

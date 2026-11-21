@@ -34,7 +34,7 @@ export function HowItWorksPage() {
   const pipelineRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-pnode' })
 
   return (
-    <div>
+    <div className="apple-ui">
       <PublicNav />
 
       <section className="page-head">

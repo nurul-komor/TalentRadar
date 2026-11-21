@@ -108,7 +108,7 @@ export function ScoringPage() {
   const tiersRevealRef = useScrollReveal<HTMLDivElement>({ selector: '.reveal-tier' })
 
   return (
-    <div>
+    <div className="apple-ui">
       <PublicNav />
 
       <section className="page-head">
@@ -122,7 +122,8 @@ export function ScoringPage() {
         </div>
       </section>
 
-      <section className="band">
+      <div className="stack-scroll">
+      <section className="stack-card">
         <div className="wrap">
           <div className="formula">
             <span className="w">score</span> = <span className="k">workAuth</span>(30) +{' '}
@@ -147,8 +148,12 @@ export function ScoringPage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
 
-          <div className="section-head" style={{ marginTop: 72, marginBottom: 0 }}>
+      <section className="stack-card">
+        <div className="wrap">
+          <div className="section-head">
             <div className="kicker">Reading the score</div>
             <h2>What the number means.</h2>
             <p>
@@ -168,7 +173,11 @@ export function ScoringPage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
 
+      <section className="stack-card">
+        <div className="wrap">
           <div className="worked">
             <div>
               <div className="kicker">Worked example</div>
@@ -211,6 +220,7 @@ export function ScoringPage() {
           </div>
         </div>
       </section>
+      </div>
 
       <Footer />
     </div>

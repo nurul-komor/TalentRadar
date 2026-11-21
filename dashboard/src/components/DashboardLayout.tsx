@@ -36,7 +36,10 @@ function AnimatedOutlet() {
 
 export function DashboardLayout() {
   return (
-    <div className="app-shell">
+    // `type-pro apple-ui` applies the Landing page's design system (Apple palette,
+    // card radii/shadows, Poppins type) to the whole dashboard. The sidebar keeps
+    // its original corner radius via a pinned value in index.css (.app-sidebar).
+    <div className="app-shell type-pro apple-ui">
       <DashboardSidebar />
       <DashboardMobileHeader />
       <DashboardMobileNav />

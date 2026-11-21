@@ -1,6 +1,7 @@
 import { Icon } from '../components/Icon'
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -43,9 +44,9 @@ const sourceEntries = Object.entries(SOURCE_LABELS) as [JobSourceId, string][]
 // Static illustrative cards for the hero's floating stack — not live data
 // (the public landing page is logged-out, so there's no profile to score against).
 const HERO_NOTICE_CARDS = [
-  { seal: 'LX', sealColor: '#4453FF', role: 'Senior Backend Engineer', company: 'Lightbox Labs', score: 88, sourceLabel: 'Remote OK' },
-  { seal: 'PV', sealColor: '#1FC9B7', role: 'Product Designer', company: 'Pavement', score: 74, sourceLabel: 'Himalayas' },
-  { seal: 'NR', sealColor: '#6B78FF', role: 'DevRel Lead', company: 'Norther', score: 62, sourceLabel: 'WeWorkRemotely' },
+  { seal: 'LX', role: 'Senior Backend Engineer', company: 'Lightbox Labs', score: 88, sourceLabel: 'Remote OK' },
+  { seal: 'PV', role: 'Product Designer', company: 'Pavement', score: 74, sourceLabel: 'Himalayas' },
+  { seal: 'NR', role: 'DevRel Lead', company: 'Norther', score: 62, sourceLabel: 'WeWorkRemotely' },
 ] as const
 
 // Filter chips for the "Freshly discovered" grid. Each maps to a predicate so the
@@ -91,6 +92,68 @@ function relativeTimeFromNow(dateString: string): string {
   if (diffDays < 30) return `${diffDays} days ago`
   const diffMonths = Math.round(diffDays / 30)
   return `${diffMonths} month${diffMonths === 1 ? '' : 's'} ago`
+}
+
+// Segmented control for the "Freshly discovered" filters: a single neutral pill
+// slides behind the active tab (same "sliding window" idea as the global nav).
+function FilterTabs({
+  filters,
+  active,
+  onChange,
+}: {
+  filters: { id: JobFilter; label: string }[]
+  active: JobFilter
+  onChange: (id: JobFilter) => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [indicator, setIndicator] = useState<{ left: number; width: number; ready: boolean }>({
+    left: 0,
+    width: 0,
+    ready: false,
+  })
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    function reposition() {
+      const current = el!.querySelector<HTMLElement>('button.on')
+      if (!current) {
+        setIndicator((prev) => ({ ...prev, ready: false }))
+        return
+      }
+      setIndicator({ left: current.offsetLeft, width: current.offsetWidth, ready: true })
+    }
+    reposition()
+    const observer = new ResizeObserver(reposition)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [active, filters])
+
+  return (
+    <div className="lp-filters" role="tablist" aria-label="Filter featured jobs" ref={ref}>
+      <span
+        className="lp-filters-indicator"
+        aria-hidden="true"
+        style={{
+          transform: `translateX(${indicator.left}px)`,
+          width: indicator.width,
+          opacity: indicator.ready ? 1 : 0,
+        }}
+      />
+      {filters.map((f) => (
+        <button
+          key={f.id}
+          type="button"
+          role="tab"
+          aria-selected={active === f.id}
+          className={`lp-chip ${active === f.id ? 'on' : ''}`}
+          onClick={() => onChange(f.id)}
+        >
+          {f.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 export function LandingPage() {
@@ -246,7 +309,7 @@ export function LandingPage() {
   )
 
   return (
-    <div className="page-enter type-pro">
+    <div className="page-enter type-pro apple-ui">
       <PublicNav />
 
       <section ref={heroRef} className="hero hero-bleed">
@@ -366,10 +429,7 @@ export function LandingPage() {
               <div className={`fcard c${index + 1}`} key={card.company}>
                 <div className="fcard-top">
                   <div className="fcard-co">
-                    <span
-                      className="logo-chip"
-                      style={{ width: 36, height: 36, fontSize: 13, background: card.sealColor }}
-                    >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] border border-border bg-[color:var(--surface-2)] text-[13px] font-bold tracking-tight text-muted-foreground">
                       {card.seal}
                     </span>
                     <div>
@@ -396,53 +456,6 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section className="band band-alt">
-        <div className="wrap">
-          {summary ? (
-            <div ref={statsRevealRef} className="stat-grid">
-              <div className="stat reveal-stat">
-                <div className="k">Discovery</div>
-                <div className="n mono">{totalJobsCount.toLocaleString()}</div>
-                <div className="l">Jobs discovered in total</div>
-              </div>
-              <div className="stat reveal-stat">
-                <div className="k">Coverage</div>
-                <div className="n mono">{sourcesCount}</div>
-                <div className="l">Active sources</div>
-              </div>
-              <div className="stat reveal-stat">
-                <div className="k">Verification</div>
-                <div className="n mono">0</div>
-                <div className="l">Verified open rate</div>
-              </div>
-              <div className="stat reveal-stat">
-                <div className="k">Matching</div>
-                <div className="n mono">0</div>
-                <div className="l">Avg. match score of applied jobs</div>
-              </div>
-            </div>
-          ) : (
-            // Skeleton while the live summary loads.
-            <div className="stat-grid" aria-hidden="true">
-              {[0, 1, 2, 3].map((i) => (
-                <div className="stat" key={i}>
-                  <div className="sk sk-line" style={{ width: '40%' }} />
-                  <div className="sk sk-stat-n" />
-                  <div className="sk sk-line" style={{ width: '70%' }} />
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="placeholder-note">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 8v5M12 16h.01" strokeLinecap="round" />
-            </svg>
-            Verification rate and match score require a signed-in profile — the two figures above are live.
-          </div>
-        </div>
-      </section>
-
       <section className="band">
         <div className="wrap">
           <div className="section-head">
@@ -453,20 +466,7 @@ export function LandingPage() {
 
           {/* Live filter — re-staggers the grid as the active chip changes. */}
           {summary && featuredJobs.length > 0 && (
-            <div className="lp-filters" role="tablist" aria-label="Filter featured jobs">
-              {JOB_FILTERS.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={jobFilter === f.id}
-                  className={`lp-chip ${jobFilter === f.id ? 'on' : ''}`}
-                  onClick={() => setJobFilter(f.id)}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
+            <FilterTabs filters={JOB_FILTERS} active={jobFilter} onChange={setJobFilter} />
           )}
 
           {!summary ? (
@@ -549,7 +549,55 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section className="band band-alt">
+      <div className="stack-scroll">
+      <section className="stack-card">
+        <div className="wrap">
+          {summary ? (
+            <div ref={statsRevealRef} className="stat-grid">
+              <div className="stat reveal-stat">
+                <div className="k">Discovery</div>
+                <div className="n mono">{totalJobsCount.toLocaleString()}</div>
+                <div className="l">Jobs discovered in total</div>
+              </div>
+              <div className="stat reveal-stat">
+                <div className="k">Coverage</div>
+                <div className="n mono">{sourcesCount}</div>
+                <div className="l">Active sources</div>
+              </div>
+              <div className="stat reveal-stat">
+                <div className="k">Verification</div>
+                <div className="n mono">0</div>
+                <div className="l">Verified open rate</div>
+              </div>
+              <div className="stat reveal-stat">
+                <div className="k">Matching</div>
+                <div className="n mono">0</div>
+                <div className="l">Avg. match score of applied jobs</div>
+              </div>
+            </div>
+          ) : (
+            // Skeleton while the live summary loads.
+            <div className="stat-grid" aria-hidden="true">
+              {[0, 1, 2, 3].map((i) => (
+                <div className="stat" key={i}>
+                  <div className="sk sk-line" style={{ width: '40%' }} />
+                  <div className="sk sk-stat-n" />
+                  <div className="sk sk-line" style={{ width: '70%' }} />
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="placeholder-note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 8v5M12 16h.01" strokeLinecap="round" />
+            </svg>
+            Verification rate and match score require a signed-in profile — the two figures above are live.
+          </div>
+        </div>
+      </section>
+
+      <section className="stack-card">
         <div className="wrap">
           <div className="section-head center" style={{ margin: '0 auto 56px' }}>
             <div className="kicker">How it works</div>
@@ -599,7 +647,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section className="band">
+      <section className="stack-card">
         <div className="wrap">
           <div className="section-head">
             <div className="kicker">Where it looks</div>
@@ -617,7 +665,17 @@ export function LandingPage() {
                   key={`${id}-${i}`}
                   aria-hidden={i >= sourceEntries.length}
                 >
-                  <span className="dot" />
+                  {/* Real source logo, rendered grayscale to hold the monochrome
+                      look. Falls back to the neutral dot if the image is missing. */}
+                  <img
+                    src={`/logos/${id}.png`}
+                    alt=""
+                    className="source-logo"
+                    loading="lazy"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                    }}
+                  />
                   {label}
                   {id === 'teletalk-govt' && <Pill tone="govt">Government</Pill>}
                 </span>
@@ -627,23 +685,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section className="band cta-band">
-        <div className="hero-glow" />
-        <div className="wrap" style={{ position: 'relative', zIndex: 1 }}>
-          <h2>Stop refreshing ten job boards a day.</h2>
-          <p>Build your profile once. Let verification and scoring do the filtering.</p>
-          <div className="hero-ctas">
-            <Link to="/jobs" className="btn btn-indigo btn-lg">
-              Explore jobs
-            </Link>
-            <Link to={isAuthenticated ? '/dashboard' : '/register'} className="btn btn-ghost btn-lg">
-              {isAuthenticated ? 'Go to dashboard' : 'Create your profile'}
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <section className="band">
+      <section className="stack-card">
         <div className="wrap">
           <div className="section-head center">
             <div className="kicker">Verification</div>
@@ -682,7 +724,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section className="band band-alt">
+      <section className="stack-card">
         <div className="wrap">
           <div className="section-head center">
             <div className="kicker">Tracking</div>
@@ -723,7 +765,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section className="band">
+      <section className="stack-card">
         <div className="wrap">
           <div className="showcase">
             <div>
@@ -756,7 +798,7 @@ export function LandingPage() {
         </div>
       </section>
 
-      <section className="band band-alt">
+      <section className="stack-card">
         <div className="wrap">
           <div className="duo">
             <div className="tilex a">
@@ -773,6 +815,23 @@ export function LandingPage() {
                 <p>Verified listings from alljobs.teletalk.com.bd, tagged so you can filter them separately.</p>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+      </div>
+
+      <section className="band cta-band">
+        <div className="hero-glow" />
+        <div className="wrap" style={{ position: 'relative', zIndex: 1 }}>
+          <h2>Stop refreshing ten job boards a day.</h2>
+          <p>Build your profile once. Let verification and scoring do the filtering.</p>
+          <div className="hero-ctas">
+            <Link to="/jobs" className="btn btn-indigo btn-lg">
+              Explore jobs
+            </Link>
+            <Link to={isAuthenticated ? '/dashboard' : '/register'} className="btn btn-ghost btn-lg">
+              {isAuthenticated ? 'Go to dashboard' : 'Create your profile'}
+            </Link>
           </div>
         </div>
       </section>

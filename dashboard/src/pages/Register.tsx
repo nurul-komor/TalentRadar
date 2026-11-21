@@ -88,7 +88,7 @@ export function RegisterPage() {
   }
 
   return (
-    <div className="auth">
+    <div className="auth apple-ui">
       <div className="auth-form-side">
         <div className="auth-top">
           <Link to="/" className="brand">
