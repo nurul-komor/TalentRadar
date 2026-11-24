@@ -1,4 +1,5 @@
 import { Icon } from './Icon'
+import { CvPreview } from './CvPreview'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Profile } from '@job-hunter/shared'
@@ -7,6 +8,7 @@ import { FormError } from './FormError'
 import { Pill } from './Pill'
 import { materialFileName } from '../lib/filename'
 import { DownloadMenu, type DownloadFormat } from './DownloadMenu'
+import { GenerationLoader } from './GenerationLoader'
 
 // The generated materials are only as good as the profile behind them, so when
 // key resume inputs are thin we nudge (never block) the user to fill them in.
@@ -436,7 +438,7 @@ export function ApplyDrawer({
       link.href = url
       link.download = materialFileName({
         fullName: profile?.resume?.fullName,
-        company,
+        jobTitle: title,
         kind,
         ext: format,
       })
@@ -509,6 +511,7 @@ export function ApplyDrawer({
 
   return (
     <div className={`drawer${open ? ' open' : ''}`} role="dialog" aria-hidden={!open}>
+      <GenerationLoader open={cvBusy || coverBusy} kind={cvBusy ? 'cv' : 'cover'} />
       <div className="scrim" onClick={onClose} />
       <div className="panel">
         <div className="p-head">
@@ -747,7 +750,7 @@ export function ApplyDrawer({
                           {cvCopyState === 'copied' ? 'Copied' : 'Copy'}
                         </button>
                       </div>
-                      <p style={{ whiteSpace: 'pre-wrap', maxHeight: 360, overflowY: 'auto' }}>{cvPreview}</p>
+                      <CvPreview text={cvPreview} className="max-h-[360px] space-y-1 overflow-y-auto text-sm" />
                       <div className="doc-actions" style={{ marginTop: 14 }}>
                         <DownloadMenu
                           label="Download tailored CV"
@@ -979,7 +982,7 @@ export function ApplyDrawer({
                           {cvCopyState === 'copied' ? 'Copied' : 'Copy'}
                         </button>
                       </div>
-                      <p className="mt-2 max-h-40 overflow-y-auto whitespace-pre-wrap text-sm text-foreground">{cvPreview}</p>
+                      <CvPreview text={cvPreview} className="mt-2 max-h-40 space-y-1 overflow-y-auto text-sm" />
                       {unmetRequirements.length > 0 && (
                         <div className="mt-3 border-t border-border pt-3">
                           <span className="text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">Unmet requirements</span>

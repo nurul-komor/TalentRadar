@@ -1010,6 +1010,190 @@ footer{padding-block:56px 64px;}
 .pager a:hover:not(.on),.pager button:hover:not(.on){border-color:var(--line-strong);}
 .pager button:disabled{opacity:.5;cursor:not-allowed;}
 
+/* ===================================================================
+   /jobs — "talentry" dashboard redesign (scoped under .jobs-v2)
+   Near-monochrome white cards on a soft gray page; ink (black/white)
+   primary buttons; the one semantic color is the green verified check.
+   =================================================================== */
+.jobs-v2{
+  min-height:100vh;background:var(--bg);
+  /* Flat, subtle card shadow (per spec) — scoped to this page only. */
+  --shadow-card:rgba(226, 232, 240, 0.9) 0px 2px 6px 0px;
+  --shadow-hover:rgba(226, 232, 240, 0.95) 0px 6px 16px -2px;
+}
+
+/* ---- Shell + hero ---- */
+.jv-shell{padding:0 24px 56px;}
+.jv-main{max-width:1320px;margin:0 auto;}
+.jv-hero{position:relative;overflow:hidden;padding:40px 0 26px;}
+.jv-hero .hero-bg{z-index:0;}
+.jv-hero .hero-aurora{z-index:0;}
+.jv-hero__content{position:relative;z-index:1;}
+.jv-hero h1{font-family:var(--font-display);font-weight:700;font-size:clamp(34px,4.8vw,58px);letter-spacing:-0.03em;line-height:1.0;color:var(--fg);}
+.jv-hero h1 em{font-style:normal;color:var(--indigo);position:relative;white-space:nowrap;}
+.jv-hero h1 em::after{content:"";position:absolute;left:0;right:0;bottom:.04em;height:.08em;background:var(--indigo-soft);z-index:-1;border-radius:4px;}
+.jv-hero-sub{margin-top:16px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;font-size:14.5px;color:var(--muted-text);}
+.jv-hero-item{position:relative;padding-left:20px;}
+.jv-hero-item::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);width:5px;height:5px;border-radius:50%;background:var(--line-strong);}
+
+/* ---- Search bar card ---- */
+.jv-searchbar{background:var(--surface);border:1px solid var(--line);border-radius:var(--card-radius-lg);box-shadow:var(--shadow-card);padding:16px;display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr auto;gap:12px;align-items:end;}
+@media (max-width:900px){.jv-searchbar{grid-template-columns:1fr 1fr;}}
+@media (max-width:540px){.jv-searchbar{grid-template-columns:1fr;}}
+.jv-field{position:relative;display:flex;flex-direction:column;gap:7px;min-width:0;}
+.jv-field__label{font-size:12.5px;font-weight:600;color:var(--fg);padding-left:2px;}
+.jv-field__control{position:relative;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);transition:border-color .15s,box-shadow .15s;}
+.jv-field__control:focus-within{border-color:var(--indigo);box-shadow:0 0 0 3px var(--indigo-soft);}
+.jv-field__icon{flex:none;color:var(--muted-text);}
+.jv-field__input{flex:1;min-width:0;height:100%;border:none;outline:none;background:transparent;font-family:var(--font-body);font-size:14px;color:var(--fg);}
+.jv-field__input::placeholder{color:var(--muted-text);}
+.jv-field__select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:22px;}
+.jv-field__chevron{position:absolute;right:12px;pointer-events:none;color:var(--muted-text);}
+.jv-searchbar__btn{height:44px;align-self:end;padding:0 24px;border-radius:12px;}
+
+/* Animated custom dropdown (replaces native <select> in the filter bar). */
+.jv-select{position:relative;}
+.jv-select__btn{display:flex;align-items:center;gap:8px;width:100%;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-family:var(--font-body);font-size:14px;color:var(--fg);cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+.jv-select__btn:hover{border-color:var(--line-strong);}
+.jv-select.open .jv-select__btn{border-color:var(--indigo);box-shadow:0 0 0 3px var(--indigo-soft);}
+.jv-select__value{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.jv-select__chevron{flex:none;color:var(--muted-text);transition:transform .22s ease;}
+.jv-select.open .jv-select__chevron{transform:rotate(180deg);}
+.jv-select__menu{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:40;list-style:none;margin:0;padding:6px;max-height:280px;overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-hover);transform-origin:top;animation:jvSelectIn .16s cubic-bezier(.22,.61,.36,1);}
+@keyframes jvSelectIn{from{opacity:0;transform:translateY(-6px) scale(.98);}to{opacity:1;transform:translateY(0) scale(1);}}
+.jv-select__menu li{animation:jvOptIn .22s cubic-bezier(.22,.61,.36,1) backwards;animation-delay:calc(var(--oi,0) * 16ms);}
+@keyframes jvOptIn{from{opacity:0;transform:translateX(-5px);}to{opacity:1;transform:none;}}
+.jv-select__opt{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:9px 10px;border:none;background:transparent;border-radius:8px;font-family:var(--font-body);font-size:13.5px;color:var(--fg-2);text-align:left;cursor:pointer;transition:background .12s,color .12s;}
+.jv-select__opt:hover{background:var(--surface-2);color:var(--fg);}
+.jv-select__opt.on{color:var(--indigo);font-weight:600;}
+.jv-select__opt svg{color:var(--indigo);flex:none;}
+@media (prefers-reduced-motion:reduce){.jv-select__menu,.jv-select__menu li{animation:none;}.jv-select__chevron{transition:none;}}
+@media (max-width:900px){.jv-searchbar__btn{grid-column:1 / -1;}}
+
+/* ---- Body: sidebar + results ---- */
+.jv-body{margin-top:22px;display:grid;grid-template-columns:300px minmax(0,1fr);gap:24px;align-items:start;}
+@media (max-width:1023px){.jv-body{grid-template-columns:1fr;}}
+.jv-side{display:flex;flex-direction:column;gap:18px;position:sticky;top:84px;}
+@media (max-width:1023px){.jv-side{display:none;}}
+
+.jv-ai-card{position:relative;overflow:hidden;background:var(--surface);border:1px solid var(--line);border-radius:var(--card-radius-md);box-shadow:var(--shadow-card);padding:20px;}
+/* Drifting accent dots behind the card — solid translucent + blur (no gradient). */
+.jv-ai-orbit{position:absolute;inset:0;pointer-events:none;z-index:0;}
+.jv-ai-orbit__dot{position:absolute;border-radius:50%;background:var(--indigo);opacity:.12;filter:blur(14px);}
+.jv-ai-orbit__dot:nth-child(1){width:70px;height:70px;top:-20px;right:-14px;animation:aiDrift 7s ease-in-out infinite;}
+.jv-ai-orbit__dot:nth-child(2){width:50px;height:50px;bottom:40px;left:-18px;animation:aiDrift 9s ease-in-out infinite reverse;}
+.jv-ai-orbit__dot:nth-child(3){width:40px;height:40px;bottom:-16px;right:40px;opacity:.1;animation:aiDrift 8s ease-in-out infinite;}
+@keyframes aiDrift{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(10px,-12px) scale(1.15);}}
+.jv-ai-card > *:not(.jv-ai-orbit){position:relative;z-index:1;}
+.jv-ai-card__head{display:flex;align-items:flex-start;gap:12px;}
+.jv-ai-card__badge{position:relative;flex:none;width:40px;height:40px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:var(--indigo-soft);color:var(--indigo);}
+.jv-ai-card__badge svg{position:relative;z-index:1;animation:aiTwinkle 2.6s ease-in-out infinite;}
+.jv-ai-card__badge::after{content:"";position:absolute;inset:0;border-radius:12px;background:var(--indigo);opacity:.16;filter:blur(9px);animation:aiGlow 2.6s ease-in-out infinite;}
+@keyframes aiTwinkle{0%,100%{transform:scale(1) rotate(0);}50%{transform:scale(1.16) rotate(10deg);}}
+@keyframes aiGlow{0%,100%{opacity:.12;transform:scale(1);}50%{opacity:.28;transform:scale(1.15);}}
+.jv-ai-card__title{font-family:var(--font-display);font-weight:600;font-size:16px;color:var(--fg);line-height:1.25;}
+.jv-ai-card__sub{margin-top:4px;font-size:13px;color:var(--muted-text);line-height:1.5;}
+.jv-dropzone{position:relative;overflow:hidden;margin-top:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;border:1.5px dashed var(--line-strong);border-radius:12px;background:var(--surface-2);padding:22px 16px;color:var(--muted-text);font-size:13px;transition:border-color .15s,color .15s;}
+.jv-dropzone:hover{border-color:var(--indigo);color:var(--fg);}
+.jv-dropzone__icon{position:relative;display:inline-flex;align-items:center;justify-content:center;width:46px;height:46px;border-radius:50%;background:var(--surface);border:1px solid var(--line);color:var(--indigo);animation:aiFloat 3.2s ease-in-out infinite;}
+@keyframes aiFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-5px);}}
+.jv-dropzone__scan{position:absolute;left:12px;right:12px;top:0;height:2px;border-radius:2px;background:var(--indigo);box-shadow:0 0 10px 1px var(--indigo);opacity:.55;animation:aiDropScan 2.8s ease-in-out infinite;}
+@keyframes aiDropScan{0%{top:8%;opacity:0;}15%{opacity:.6;}85%{opacity:.6;}100%{top:92%;opacity:0;}}
+.jv-ai-analyze{margin-top:12px;display:flex;align-items:center;gap:8px;}
+.jv-ai-analyze__bar{flex:1;height:4px;border-radius:99px;background:var(--surface-2);position:relative;overflow:hidden;}
+.jv-ai-analyze__bar::after{content:"";position:absolute;top:0;bottom:0;left:0;width:40%;border-radius:99px;background:var(--indigo);animation:aiIndeterminate 1.8s cubic-bezier(.65,0,.35,1) infinite;}
+@keyframes aiIndeterminate{0%{left:-40%;}100%{left:100%;}}
+.jv-ai-analyze__text{flex:none;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted-text);}
+.jv-ai-dots::after{content:"";animation:aiDots 1.4s steps(1,end) infinite;}
+@keyframes aiDots{0%{content:"";}25%{content:".";}50%{content:"..";}75%{content:"...";}}
+.jv-ai-card__cta{position:relative;overflow:hidden;margin-top:14px;width:100%;gap:7px;}
+.jv-ai-card__cta::after{content:"";position:absolute;top:0;bottom:0;left:-45%;width:35%;background:rgba(255,255,255,.28);transform:skewX(-20deg);filter:blur(5px);animation:aiSheen 3.6s ease-in-out infinite;}
+@keyframes aiSheen{0%{left:-45%;}55%,100%{left:150%;}}
+@media (prefers-reduced-motion:reduce){
+  .jv-ai-orbit__dot,.jv-ai-card__badge svg,.jv-ai-card__badge::after,.jv-dropzone__icon,.jv-dropzone__scan,.jv-ai-analyze__bar::after,.jv-ai-dots::after,.jv-ai-card__cta::after{animation:none;}
+  .jv-dropzone__scan{opacity:0;}
+}
+
+.jv-filters{background:var(--surface);border:1px solid var(--line);border-radius:var(--card-radius-md);box-shadow:var(--shadow-card);padding:16px 18px 8px;}
+.jv-filters__head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;}
+.jv-filters__title{font-family:var(--font-display);font-weight:600;font-size:16px;color:var(--fg);}
+.jv-filters .filter-rail{gap:0;}
+
+/* ---- Results column ---- */
+.jv-results{min-width:0;display:flex;flex-direction:column;gap:16px;}
+.jv-results__head{display:flex;align-items:center;justify-content:space-between;gap:12px 16px;flex-wrap:wrap;}
+/* The shared segmented control ships with a 22px bottom margin for stacked use;
+   zero it here so the category tabs, sort tabs and view toggle sit on one line
+   with matched vertical centers. */
+.jv-results__head .lp-filters{margin:0;}
+.jv-results__tabs{min-width:0;max-width:100%;overflow-x:auto;scrollbar-width:none;display:flex;align-items:center;}
+.jv-results__tabs::-webkit-scrollbar{display:none;}
+.jv-results__tools{display:flex;align-items:center;gap:10px;flex:none;}
+/* Sort chips carry an icon ("Best match"): align icon + label inline so the SVG
+   doesn't stack above the text. Scoped to this page's tools row. */
+.jv-results__tools .lp-chip{display:inline-flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap;}
+.jv-results__tools .lp-chip svg{flex:none;}
+.jv-filter-trigger{display:none;}
+@media (max-width:1023px){.jv-filter-trigger{display:inline-flex;}}
+.jv-results__meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.jv-govt-note{font-size:12.5px;color:var(--muted-text);}
+.jv-pager-row{margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;color:var(--muted-text);font-size:13px;}
+
+/* Layout switch control (grid ⇄ full-width list). */
+.view-toggle{display:inline-flex;align-items:center;gap:2px;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--surface);flex:none;}
+.view-toggle button{all:unset;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:34px;height:30px;border-radius:999px;color:var(--muted-text);transition:color .15s,background .15s;}
+.view-toggle button:hover{color:var(--fg);}
+.view-toggle button.on{background:var(--surface-2);color:var(--fg);}
+.apple-ui .view-toggle button.on{background:var(--indigo-soft);color:var(--indigo);}
+
+/* Grid vs full-width list containers. */
+.jv-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;min-width:0;}
+@media (max-width:1280px){.jv-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media (max-width:620px){.jv-grid{grid-template-columns:1fr;}}
+.jv-list{display:flex;flex-direction:column;gap:14px;min-width:0;}
+
+/* ---- The white job card (landing aesthetic) ---- */
+.tcard{position:relative;display:flex;flex-direction:column;min-width:0;background:var(--surface);border:1px solid #eeeeee;border-radius:var(--card-radius-md);padding:22px;box-shadow:var(--shadow-card);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease,opacity .28s ease;}
+/* Card surfaces share the light-gray hairline border; keep theme border in dark. */
+.jobs-v2 .jv-searchbar,.jobs-v2 .jv-ai-card,.jobs-v2 .jv-filters{border-color:#eeeeee;}
+:root[data-theme="dark"] .jobs-v2 .tcard,:root[data-theme="dark"] .jobs-v2 .jv-searchbar,:root[data-theme="dark"] .jobs-v2 .jv-ai-card,:root[data-theme="dark"] .jobs-v2 .jv-filters{border-color:var(--line);}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .jobs-v2 .tcard,:root:not([data-theme="light"]) .jobs-v2 .jv-searchbar,:root:not([data-theme="light"]) .jobs-v2 .jv-ai-card,:root:not([data-theme="light"]) .jobs-v2 .jv-filters{border-color:var(--line);}}
+.tcard:hover{transform:translateY(-6px);box-shadow:var(--shadow-hover);border-color:var(--line-strong);}
+/* Grid "smooth filtering" focus: siblings dim while hovering one card. */
+@media (hover:hover){
+  .jv-grid:hover .tcard{opacity:.6;}
+  .jv-grid .tcard:hover{opacity:1;}
+}
+.tcard__top{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.tcard__ident{display:flex;align-items:center;gap:10px;min-width:0;}
+.tcard__logo{position:relative;width:44px;height:44px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--surface-2);border:1px solid var(--line);overflow:hidden;}
+.tcard__logo-mono{font-family:var(--font-display);font-weight:700;font-size:14px;color:var(--fg-2);}
+.tcard__logo-img{position:absolute;inset:0;width:100%;height:100%;padding:7px;box-sizing:border-box;object-fit:contain;background:var(--surface);border-radius:50%;}
+.tcard__date{font-size:12px;color:var(--muted-text);background:var(--surface-2);border-radius:999px;padding:5px 11px;white-space:nowrap;}
+.tcard__save{flex:none;}
+.tcard__save .save-btn{width:32px;height:32px;}
+.tcard__save .save-btn svg{width:14px;height:14px;}
+.tcard__company{display:flex;align-items:center;gap:6px;margin-top:16px;min-width:0;}
+.tcard__co-name{font-size:13.5px;font-weight:500;color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tcard__verified{flex:none;color:#16a34a;}
+.tcard__title{margin-top:7px;font-size:18px;font-weight:600;letter-spacing:-0.015em;line-height:1.25;color:var(--fg);}
+.tcard__title a{color:inherit;}
+.tcard__title a:hover{color:var(--indigo);}
+/* Skills on a single line; extras clip with a soft right-edge fade (mask = a
+   transparency fade, not a color gradient). */
+.tcard__tags{display:flex;flex-wrap:nowrap;gap:6px;margin-top:14px;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,#000 88%,transparent);mask-image:linear-gradient(90deg,#000 88%,transparent);}
+.tcard__tag{flex:none;white-space:nowrap;font-size:11.5px;font-weight:500;color:var(--fg-2);background:var(--surface-2);border-radius:999px;padding:4px 10px;}
+.tcard__salary{margin-top:12px;font-size:13.5px;color:var(--muted-text);}
+.tcard__foot{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.tcard__stats{display:flex;align-items:center;gap:10px;min-width:0;}
+.tcard__stat{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;color:var(--indigo);white-space:nowrap;}
+.tcard__stat--muted{color:var(--muted-text);font-weight:500;}
+.tcard__cta{flex:none;}
+.tcard__details{padding:9px 18px;font-size:13px;border-radius:10px;}
+.tcard__details::after{content:"→";margin-left:7px;display:inline-block;transition:transform .2s ease;}
+.tcard:hover .tcard__details::after{transform:translateX(4px);}
+.tcard--sk{pointer-events:none;box-shadow:none;}
+
 /* ---------- job details ---------- */
 .job-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:48px;align-items:start;margin-top:12px;}
 @media (max-width:980px){.job-layout{grid-template-columns:1fr;}}
@@ -2014,13 +2198,57 @@ a.kpi:hover{transform:translateY(-3px);border-color:var(--line-strong);box-shado
 /* Bookmark pop — brings the feed save button in line with the landing .lp-save. */
 .save-btn.saved svg{animation:savePop .35s cubic-bezier(.3,1.4,.4,1);}
 
+/* --- Generation loader: fullscreen stepped checklist shown while a résumé or
+   cover letter is generated from a job. Dark, near-monochrome; the one soft
+   spotlight on the active step is a solid translucent white + blur (not a
+   gradient). Steps advance on a timer, then all snap to done and the overlay
+   fades out when the request resolves. */
+.gen-loader{
+  position:fixed;inset:0;z-index:120;
+  display:flex;align-items:center;justify-content:center;
+  background:#060609;
+  animation:genFade .32s ease both;
+}
+.gen-loader[data-closing]{animation:genFadeOut .5s ease .15s both;}
+.gen-loader__inner{display:flex;flex-direction:column;gap:30px;padding:24px;width:min(520px,86vw);}
+.gen-loader__list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:22px;}
+.gen-loader__step{
+  position:relative;display:flex;align-items:center;gap:14px;
+  color:rgba(255,255,255,.18);
+  font-size:17px;line-height:1.2;letter-spacing:-.01em;
+  transition:color .5s ease,transform .5s ease;
+}
+.gen-loader__icon{flex:none;color:currentColor;transition:color .5s ease;}
+.gen-loader__label{transition:color .5s ease;}
+.gen-loader__glow{
+  position:absolute;left:-28px;top:50%;width:360px;height:120px;
+  transform:translateY(-50%);pointer-events:none;
+  border-radius:999px;background:rgba(255,255,255,.14);
+  filter:blur(44px);opacity:0;transition:opacity .5s ease;
+}
+.gen-loader__step[data-state="done"]{color:rgba(255,255,255,.42);}
+.gen-loader__step[data-state="active"]{color:#fff;font-weight:600;}
+.gen-loader__step[data-state="active"] .gen-loader__glow{opacity:1;animation:genPulse 2.4s ease-in-out infinite;}
+.gen-loader__caption{
+  margin:0;padding-left:34px;display:flex;align-items:baseline;
+  color:rgba(255,255,255,.5);font-size:14px;letter-spacing:.01em;
+}
+.gen-loader__dots{display:inline-block;width:16px;text-align:left;}
+.gen-loader__dots::after{content:'';animation:genDots 1.4s steps(1,end) infinite;}
+@keyframes genFade{from{opacity:0;}to{opacity:1;}}
+@keyframes genFadeOut{to{opacity:0;}}
+@keyframes genPulse{0%,100%{opacity:.55;}50%{opacity:1;}}
+@keyframes genDots{0%{content:'';}25%{content:'.';}50%{content:'..';}75%{content:'...';}}
+
 /* --- Reduced-motion: disable the landing motion layer --- */
 @media (prefers-reduced-motion: reduce){
   .page-enter,.lp-jobcard,.lp-empty,.fcard-match-track i,
   .lp-save.on svg,.cvdemo .thumb .scan,.cvdemo .thumb i,
   .hero-aurora,.lp-empty-icon,.row-in,.save-btn.saved svg,.jobs-hero .hero-glow,
   .auto-reveal,.auto-result-icon,.auto-result-icon.ok::after,
-  .track-strip .tnode.success .dot,.track-strip .tnode.success .dot::after{animation:none;}
+  .track-strip .tnode.success .dot,.track-strip .tnode.success .dot::after,
+  .gen-loader,.gen-loader[data-closing],.gen-loader__step[data-state="active"] .gen-loader__glow,
+  .gen-loader__dots::after{animation:none;}
   .fcard-match-track i{width:var(--match-w);}
   .lp-jobcard:hover::after{animation:none;}
   .hero-aurora{opacity:.3;}

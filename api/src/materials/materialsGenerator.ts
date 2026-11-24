@@ -150,6 +150,57 @@ function normalizeForMatch(text: string): string {
   return ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `
 }
 
+// Job-posting extraction routinely yields "skills" that are not skills — raw
+// requirement sentences ("2 years experience will be a plus"), responsibilities
+// ("Problem analysis and problem resolution at the functional level"), education
+// lines ("Graduation in CS/CSE"), and certification-preference meta ("training/
+// certification related to Laravel is preferable"). Left unfiltered they flow
+// into the coverage check and the deterministic backfill, which then dumps them
+// verbatim into `## Skills` — the exact "Additional Skills: …is preferable" line
+// users keep reporting. This normalizes each term to a clean skill token and
+// drops the non-skills, so only genuine keywords ever reach the résumé.
+//
+// Applied at the ingestion points AND inside backfillMissingSkills, so no path
+// can leak an un-normalized term into the Skills section.
+const SKILL_META_TAIL_RE =
+  /[\s,()./–-]*(?:is\s+)?(?:a\s+)?(?:preferable|preferred|nice[\s-]to[\s-]have|a\s+plus|is\s+a\s+plus|required|mandatory|optional|must[\s-]have|bonus)\s*\)?\.?$/i
+const SKILL_LEAD_FRAMING_RE =
+  /^(?:have\s+)?(?:working\s+)?(?:experienced?|experience|proficien\w*|proficiency|knowledge|familiar\w*|familiarity|hands[\s-]on|has\s+(?:a\s+)?(?:clear\s+)?(?:concept|understanding|knowledge|experience))\s+(?:in|of|with|on)?\s+/i
+// Entries matching any of these are role metadata, not résumé keywords.
+const NON_SKILL_PATTERNS: RegExp[] = [
+  /\b\d+\+?\s*(?:years?|yrs?)\b/i, // "2 years experience", "2+ yrs"
+  /\byears?\s+of\s+experience\b/i,
+  /\b(?:diploma|degree|graduation|graduate|bachelor'?s?|master'?s?|b\.?sc|m\.?sc|ph\.?d|hsc|ssc|university|cgpa)\b/i,
+  /\b(?:salary|negotiable|per\s+company\s+policy|vacanc(?:y|ies)|working\s+hours?|office\s+hours?|job\s+(?:nature|type|time|location)|full[\s-]time|part[\s-]time|benefits?)\b/i,
+  /\brelated\s+to\b/i, // "training/certification related to …" meta
+]
+
+export function sanitizeSkills(skills: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of skills) {
+    if (typeof raw !== 'string') continue
+    let s = raw.replace(/\s+/g, ' ').trim().replace(/^["'`]+|["'`]+$/g, '').trim()
+    // Strip trailing meta qualifiers repeatedly ("…, a plus." → "…").
+    let prev: string
+    do {
+      prev = s
+      s = s.replace(SKILL_META_TAIL_RE, '').trim()
+    } while (s !== prev && s.length > 0)
+    s = s.replace(SKILL_LEAD_FRAMING_RE, '').trim().replace(/[.,;:]+$/, '').trim()
+    if (s.length < 2) continue
+    if (NON_SKILL_PATTERNS.some((re) => re.test(s))) continue
+    // Sentence/responsibility shaped rather than a keyword — a genuine skill name
+    // is short; anything over 7 words is a duty line the model handles in prose.
+    if (s.split(' ').filter(Boolean).length > 7) continue
+    const key = s.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(s)
+  }
+  return out
+}
+
 // The ATS matches posting keywords literally: a skill the résumé never spells out
 // scores as a miss no matter how strongly the surrounding bullets imply it. The
 // prompt demands 100% coverage, but models reliably drop terms they consider
@@ -186,6 +237,10 @@ export function analyzeSkillCoverage(
 // which must stay strictly truthful, is never touched. Falls back to appending a
 // Skills section when the draft somehow has none.
 export function backfillMissingSkills(tailoredCv: string, missing: string[]): string {
+  if (missing.length === 0) return tailoredCv
+  // Final guard: never append a raw requirement sentence or role-metadata line to
+  // `## Skills`, no matter how it reached here (extractor, audit, or caller).
+  missing = sanitizeSkills(missing)
   if (missing.length === 0) return tailoredCv
 
   // Split across several bullets rather than one sprawling line: a single line
@@ -243,10 +298,16 @@ export function createMaterialsGenerator(
   auditModel?: string | null
 ): MaterialsGenerator {
   return async ({ job, profile, requirements }): Promise<GenerationResult> => {
-    const softSkills = requirements?.softSkills ?? []
+    // Normalize the extractor's output up front: it routinely emits raw
+    // requirement sentences, responsibilities, education lines, and "…is
+    // preferable" meta as "skills". sanitizeSkills strips those so every
+    // downstream use (summary, coverage, backfill) sees clean keywords only.
+    const requiredSkills = sanitizeSkills(requirements?.requiredSkills ?? [])
+    const niceToHaveSkills = sanitizeSkills(requirements?.niceToHaveSkills ?? [])
+    const softSkills = sanitizeSkills(requirements?.softSkills ?? [])
     const requirementsSummary = requirements
-      ? `Required skills: ${requirements.requiredSkills.join(', ') || 'none listed'}\n` +
-        `Nice-to-have skills: ${requirements.niceToHaveSkills.join(', ') || 'none listed'}\n` +
+      ? `Required skills: ${requiredSkills.join(', ') || 'none listed'}\n` +
+        `Nice-to-have skills: ${niceToHaveSkills.join(', ') || 'none listed'}\n` +
         `Soft skills: ${softSkills.join(', ') || 'none listed'}\n` +
         `Minimum experience: ${requirements.minExperienceYears ?? 'not specified'} years\n` +
         `Work authorization: ${requirements.workAuthRequirement}\n` +
@@ -255,10 +316,7 @@ export function createMaterialsGenerator(
 
     // Force-add every stated hard skill the master CV lacks — required AND
     // nice-to-have — so the résumé covers the role's keywords for the ATS.
-    const missingSkills = computeMissingSkills(profile, [
-      ...(requirements?.requiredSkills ?? []),
-      ...(requirements?.niceToHaveSkills ?? []),
-    ])
+    const missingSkills = computeMissingSkills(profile, [...requiredSkills, ...niceToHaveSkills])
 
     // Authoritative contact details from the structured résumé — passed so the
     // header (especially the location, which the ATS checks for) is reliable even
@@ -282,6 +340,10 @@ export function createMaterialsGenerator(
         system: MATERIALS_SYSTEM_PROMPT,
         user: buildMaterialsUserPrompt({
           cvText: profile.cvText ?? null,
+          projects: (resume?.projects ?? []).map((project) => ({
+            name: project.name,
+            url: project.url ?? null,
+          })),
           jobTitle: job.title,
           company: job.company,
           requirementsSummary,
@@ -301,11 +363,7 @@ export function createMaterialsGenerator(
     // `missingSkills` — which is only what the PROFILE lacks — this is the full
     // list the finished CV must spell out, since a skill the candidate holds
     // still scores as a miss when the résumé never names it.
-    const postingKeywords = [
-      ...(requirements?.requiredSkills ?? []),
-      ...(requirements?.niceToHaveSkills ?? []),
-      ...softSkills,
-    ]
+    const postingKeywords = [...requiredSkills, ...niceToHaveSkills, ...softSkills]
 
     const first = await runOnce(null)
     let best = first.output
@@ -388,7 +446,7 @@ export function createMaterialsGenerator(
         })
         usage.inputTokens += audit.usage.inputTokens
         usage.outputTokens += audit.usage.outputTokens
-        auditMissing = audit.output.missingSkills
+        auditMissing = sanitizeSkills(audit.output.missingSkills)
       } catch {
         // Fall through with whatever the deterministic check found.
       }

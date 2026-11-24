@@ -8,6 +8,7 @@ import { useAuth } from '../auth/AuthContext'
 import { FormError } from '../components/FormError'
 import { ScoreRing } from '../components/ScoreRing'
 import { profileRequiredChecks, type ProfileCheckKey } from '../lib/profileCompleteness'
+import { materialFileName } from '../lib/filename'
 import {
   EducationEntryFields,
   ExperienceEntryFields,
@@ -294,7 +295,8 @@ export function ProfilePage() {
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = 'cv.pdf'
+      // No job attached to the base CV, so jobTitle is omitted → FirstName_LastName_CV.pdf.
+      link.download = materialFileName({ fullName: resume.fullName, kind: 'cv', ext: 'pdf' })
       document.body.appendChild(link)
       link.click()
       link.remove()

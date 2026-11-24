@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import { ThemeProvider } from './theme/ThemeContext'
 import { AuthProvider } from './auth/AuthContext'
 import { ProtectedRoute } from './auth/ProtectedRoute'
@@ -70,6 +71,10 @@ export default function App() {
             </Route>
             <Route path="*" element={<Navigate to="/jobs" replace />} />
           </Routes>
+          {/* Mounted at the app root — outside every page's `.page-enter` wrapper,
+              whose transform would otherwise become the containing block for the
+              toaster's position:fixed and push it off-screen. */}
+          <Toaster position="bottom-right" theme="system" toastOptions={{ className: 'type-pro' }} />
         </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>

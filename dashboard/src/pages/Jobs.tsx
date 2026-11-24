@@ -1,6 +1,5 @@
 import { Icon } from '../components/Icon'
 import {
-  Fragment,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -10,6 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { toast } from 'sonner'
 import type { Job, JobSourceId, UserJob } from '@job-hunter/shared'
 import { apiFetch } from '../api/client'
 import { gsap } from '../lib/gsap'
@@ -18,10 +18,9 @@ import { PublicNav } from '../components/Nav'
 import { Footer } from '../components/Footer'
 import { Button } from '../components/Button'
 import { FormError } from '../components/FormError'
-import { ScoreRing } from '../components/ScoreRing'
-import { Pill } from '../components/Pill'
 import { useSavedJobs } from '../hooks/useSavedJobs'
 import { relativeTimeFromNow } from '../lib/relativeTime'
+import { sourceLogoUrl } from '../lib/sourceLogo'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../components/ui/accordion'
 import { Checkbox } from '../components/ui/checkbox'
 import {
@@ -208,10 +207,6 @@ interface SeedCompaniesResponseBody {
   companies: TrackedCompany[]
 }
 
-function statusBadgeLabel(job: Job): string {
-  return job.status === 'discovered' ? relativeTimeFromNow(job.discoveredAt) : job.status
-}
-
 function formatSalary(salary: { salaryMin: number | null; salaryMax: number | null }): string {
   const { salaryMin, salaryMax } = salary
   if (salaryMin == null && salaryMax == null) return '—'
@@ -221,34 +216,10 @@ function formatSalary(salary: { salaryMin: number | null; salaryMax: number | nu
   return `$${(salaryMin ?? salaryMax)?.toLocaleString()}`
 }
 
-const DESCRIPTION_PREVIEW_LENGTH = 220
-const REQUIREMENTS_PREVIEW_LENGTH = 500
-const REQUIREMENTS_HEADING_PATTERN = /requirement|qualification|\bbring\b|who you are|about you|nice to have/i
-
-function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text
-  return `${text.slice(0, maxLength).trimEnd()}…`
-}
-
-function descriptionPreview(rawDescription: string): string {
-  const plainText = rawDescription.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-  return truncate(plainText, DESCRIPTION_PREVIEW_LENGTH)
-}
-
-function requirementsPreview(rawDescription: string): string | null {
-  const doc = new DOMParser().parseFromString(rawDescription, 'text/html')
-  const headings = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6'))
-  const match = headings.find((heading) => REQUIREMENTS_HEADING_PATTERN.test(heading.textContent ?? ''))
-  if (!match) return null
-
-  const textParts: string[] = []
-  for (let node = match.nextElementSibling; node && !/^H[1-6]$/.test(node.tagName); node = node.nextElementSibling) {
-    const text = node.textContent?.trim()
-    if (text) textParts.push(text)
-  }
-
-  const plainText = textParts.join(' ').replace(/\s+/g, ' ').trim()
-  return plainText ? truncate(plainText, REQUIREMENTS_PREVIEW_LENGTH) : null
+// Salary for the card footer — "Negotiable" when the posting has no salary.
+function salaryLabel(salary: { salaryMin: number | null; salaryMax: number | null }): string {
+  const formatted = formatSalary(salary)
+  return formatted === '—' ? 'Negotiable' : formatted
 }
 
 function prefersReducedMotion(): boolean {
@@ -312,8 +283,301 @@ function SlidingTabs({ tabs, ariaLabel }: { tabs: SlidingTab[]; ariaLabel: strin
   )
 }
 
+type ViewMode = 'grid' | 'list'
+
+// Company monogram shown in the card's logo circle (we don't store real logos).
+function companyInitials(name?: string | null): string {
+  const trimmed = (name ?? '').trim()
+  if (!trimmed) return '—'
+  const letters = trimmed
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+  return letters.toUpperCase() || '—'
+}
+
+// Skills shown as tags on a card. Prefers the job's extracted required skills;
+// when none are stored (most current jobs), it detects known languages/skills
+// from the job text using the same patterns the language filter uses.
+function detectSkills(text: string): string[] {
+  return LANGUAGE_OPTIONS.filter((option) => {
+    const pattern = LANGUAGE_MATCHERS[option.value]
+    return pattern ? new RegExp(pattern, 'i').test(text) : false
+  }).map((option) => option.label)
+}
+
+function skillTags(extracted: string[] | null | undefined, text: string): string[] {
+  const fromExtracted = (extracted ?? []).filter(Boolean)
+  if (fromExtracted.length) return fromExtracted.slice(0, 8)
+  return detectSkills(text).slice(0, 8)
+}
+
+// Aggregator / job-board hosts whose favicon is NOT the company's logo — for feed
+// jobs the stored URL points here, so we skip them and fall back to the monogram.
+const AGGREGATOR_HOSTS = new Set([
+  'himalayas.app',
+  'remoteok.com',
+  'remoteok.io',
+  'weworkremotely.com',
+  'adzuna.com',
+  'ats.hirebee.ai',
+  'hirebee.ai',
+  'boards.greenhouse.io',
+  'jobs.lever.co',
+  'apply.workable.com',
+  'teletalk.com.bd',
+  'alljobs.teletalk.com.bd',
+])
+
+function hostFromUrl(url?: string | null): string | null {
+  if (!url) return null
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return null
+  }
+}
+
+// A crisp favicon for a domain via Google's favicon service — used as the company
+// logo when we can resolve a real domain. Falls back (via <img onError>) to the
+// monogram when it fails to load.
+function faviconUrl(domain: string): string {
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`
+}
+
+// Grid/list layout switch at the top-right of the results column.
+function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (next: ViewMode) => void }) {
+  return (
+    <div className="view-toggle" role="group" aria-label="Results layout">
+      <button
+        type="button"
+        className={value === 'grid' ? 'on' : ''}
+        aria-pressed={value === 'grid'}
+        aria-label="Grid view"
+        onClick={() => onChange('grid')}
+      >
+        <Icon name="grid-outline" style={{ fontSize: 16 }} />
+      </button>
+      <button
+        type="button"
+        className={value === 'list' ? 'on' : ''}
+        aria-pressed={value === 'list'}
+        aria-label="List view"
+        onClick={() => onChange('list')}
+      >
+        <Icon name="list-outline" style={{ fontSize: 16 }} />
+      </button>
+    </div>
+  )
+}
+
+// Animated custom dropdown replacing a native <select> in the filter bar: the
+// chevron rotates, the menu fades/slides in, options highlight on hover and the
+// active one shows a check. Closes on outside-click, Escape, or selection.
+function AnimatedSelect({
+  value,
+  options,
+  onChange,
+  icon,
+  ariaLabel,
+}: {
+  value: string
+  options: Array<{ value: string; label: string }>
+  onChange: (next: string) => void
+  icon?: string
+  ariaLabel: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    function onDoc(event: MouseEvent) {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false)
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  const selected = options.find((option) => option.value === value) ?? options[0]
+  return (
+    <div className={`jv-select${open ? ' open' : ''}`} ref={ref}>
+      <button
+        type="button"
+        className="jv-select__btn"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        {icon && <Icon name={icon} className="jv-field__icon" style={{ fontSize: 15 }} />}
+        <span className="jv-select__value">{selected?.label}</span>
+        <Icon name="chevron-down-outline" className="jv-select__chevron" style={{ fontSize: 15 }} />
+      </button>
+      {open && (
+        <ul className="jv-select__menu" role="listbox" aria-label={ariaLabel}>
+          {options.map((option, i) => (
+            <li key={option.value} role="option" aria-selected={option.value === value} style={{ '--oi': i } as CSSProperties}>
+              <button
+                type="button"
+                className={`jv-select__opt${option.value === value ? ' on' : ''}`}
+                onClick={() => {
+                  onChange(option.value)
+                  setOpen(false)
+                }}
+              >
+                <span>{option.label}</span>
+                {option.value === value && <Icon name="checkmark-outline" style={{ fontSize: 14 }} />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// Dual-thumb salary range slider (two overlaid native range inputs). Writes
+// through to the existing salaryMin/salaryMax filter state.
+const SALARY_FLOOR = 0
+const SALARY_CEIL = 300000
+const SALARY_STEP = 5000
+function formatK(value: number): string {
+  return `$${Math.round(value / 1000)}K`
+}
+function SalaryRange({
+  min,
+  max,
+  onChange,
+}: {
+  min: string
+  max: string
+  onChange: (next: { min?: string; max?: string }) => void
+}) {
+  const lo = min.trim() === '' ? SALARY_FLOOR : Math.max(SALARY_FLOOR, Number(min) || SALARY_FLOOR)
+  const hi = max.trim() === '' ? SALARY_CEIL : Math.min(SALARY_CEIL, Number(max) || SALARY_CEIL)
+  const leftPct = ((lo - SALARY_FLOOR) / (SALARY_CEIL - SALARY_FLOOR)) * 100
+  const rightPct = ((hi - SALARY_FLOOR) / (SALARY_CEIL - SALARY_FLOOR)) * 100
+  return (
+    <div className="jv-slider">
+      <div className="jv-slider__track">
+        <span className="jv-slider__fill" style={{ left: `${leftPct}%`, right: `${100 - rightPct}%` }} />
+        <input
+          type="range"
+          aria-label="Minimum salary"
+          min={SALARY_FLOOR}
+          max={SALARY_CEIL}
+          step={SALARY_STEP}
+          value={lo}
+          onChange={(e) => {
+            const next = Math.min(Number(e.target.value), hi - SALARY_STEP)
+            onChange({ min: next <= SALARY_FLOOR ? '' : String(next) })
+          }}
+        />
+        <input
+          type="range"
+          aria-label="Maximum salary"
+          min={SALARY_FLOOR}
+          max={SALARY_CEIL}
+          step={SALARY_STEP}
+          value={hi}
+          onChange={(e) => {
+            const next = Math.max(Number(e.target.value), lo + SALARY_STEP)
+            onChange({ max: next >= SALARY_CEIL ? '' : String(next) })
+          }}
+        />
+      </div>
+      <div className="jv-slider__labels">
+        <span>{formatK(lo)}</span>
+        <span>{hi >= SALARY_CEIL ? `${formatK(SALARY_CEIL)}+` : formatK(hi)}</span>
+      </div>
+    </div>
+  )
+}
+
+// A single job rendered as the reference's white card. Kind-specific bits are
+// composed by the caller and passed in, so one card renders added, community and
+// feed jobs alike.
+function JobCard({
+  index,
+  logoLabel,
+  logoUrl,
+  dateLabel,
+  company,
+  verified,
+  titleNode,
+  tags,
+  stat,
+  saveControl,
+  detailsNode,
+}: {
+  index: number
+  logoLabel: string
+  logoUrl?: string | null
+  dateLabel: string | null
+  company?: ReactNode
+  verified?: boolean
+  titleNode: ReactNode
+  tags: string[]
+  stat: ReactNode
+  saveControl: ReactNode
+  detailsNode: ReactNode
+}) {
+  return (
+    <article className="tcard row-in" style={{ '--i': index } as CSSProperties}>
+      <div className="tcard__top">
+        <div className="tcard__ident">
+          <span className="tcard__logo" aria-hidden="true">
+            <span className="tcard__logo-mono">{logoLabel}</span>
+            {logoUrl && (
+              <img
+                className="tcard__logo-img"
+                src={logoUrl}
+                alt=""
+                loading="lazy"
+                onError={(e) => e.currentTarget.remove()}
+              />
+            )}
+          </span>
+          {dateLabel && <span className="tcard__date">{dateLabel}</span>}
+        </div>
+        {saveControl && <div className="tcard__save">{saveControl}</div>}
+      </div>
+      {company && (
+        <div className="tcard__company">
+          <span className="tcard__co-name">{company}</span>
+          {verified && (
+            <Icon name="checkmark-circle" className="tcard__verified" style={{ fontSize: 15 }} aria-label="Verified" />
+          )}
+        </div>
+      )}
+      <h3 className="tcard__title">{titleNode}</h3>
+      {tags.length > 0 && (
+        <div className="tcard__tags">
+          {tags.map((tag, i) => (
+            <span key={i} className="tcard__tag">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="tcard__foot">
+        <div className="tcard__stats">{stat}</div>
+        <div className="tcard__cta">{detailsNode}</div>
+      </div>
+    </article>
+  )
+}
+
 export function JobsPage() {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, email } = useAuth()
   const navigate = useNavigate()
   const headerRef = useRef<HTMLElement | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -327,6 +591,8 @@ export function JobsPage() {
   const [communityJobs, setCommunityJobs] = useState<UserJob[]>([])
   // Whether the signed-in user has a resume to match against — gates the "Best match" sort.
   const [hasResume, setHasResume] = useState(false)
+  // Display name for the "Welcome back" greeting, read from the resume.
+  const [userName, setUserName] = useState<string | null>(null)
 
   const { isSaved, toggleSaved, savedIds } = useSavedJobs()
   // "Saved jobs" mode (reached via /jobs?saved=1 from the sidebar) shows only
@@ -334,6 +600,10 @@ export function JobsPage() {
   // fetches them by id rather than going through the server-side filters.
   const savedMode = searchParams.get('saved') === '1'
   const savedKey = savedIds.join(',')
+  // Only the saved view cares when the saved set changes; in the normal feed,
+  // toggling a bookmark must NOT refetch (otherwise the whole list flashes/reloads
+  // on every save). Scoping the dep to saved mode keeps saving instant + local.
+  const savedFetchKey = savedMode ? savedKey : ''
 
   // "Find jobs from the internet" mode (reached via /jobs?internet=1). Instead of
   // the stored discovery feed, this fetches postings live from the internet-wide
@@ -353,6 +623,14 @@ export function JobsPage() {
   const selectedLanguages = parseLanguages(searchParams)
   const languagesKey = selectedLanguages.join(',')
   const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
+
+  // Results layout: a 3-up pastel card grid (default) or the full-width list.
+  // Persisted in the URL so it survives reloads and shared links; changing it
+  // must not reset paging.
+  const viewMode: ViewMode = searchParams.get('view') === 'list' ? 'list' : 'grid'
+  function setViewMode(next: ViewMode) {
+    updateFilters({ view: next === 'grid' ? null : 'list' }, { resetOffset: false })
+  }
 
   // "Best match" semantic sort is only meaningful for a signed-in user with a resume, and not
   // in the saved / "my jobs" views (which aren't the discovery feed). Government jobs are
@@ -566,10 +844,11 @@ export function JobsPage() {
     // we infer eligibility from the resume content the server does return.
     apiFetch('/profile')
       .then((res) => (res.ok ? res.json() : null))
-      .then((profile: { cvText?: string | null; resume?: { skillGroups?: unknown[] } } | null) => {
+      .then((profile: { cvText?: string | null; resume?: { fullName?: string | null; skillGroups?: unknown[] } } | null) => {
         const hasCv = Boolean(profile?.cvText && profile.cvText.trim())
         const hasSkills = Boolean(profile?.resume?.skillGroups && profile.resume.skillGroups.length > 0)
         setHasResume(hasCv || hasSkills)
+        setUserName(profile?.resume?.fullName?.trim() || null)
       })
       .catch(() => setHasResume(false))
   }, [isAuthenticated])
@@ -718,10 +997,83 @@ export function JobsPage() {
         setTotal(data.total)
       })
       .finally(() => setLoading(false))
-  }, [internetMode, savedMode, savedKey, category, sourceSelectionKey, datePosted, languagesKey, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset, sortByMatch])
+  }, [internetMode, savedMode, savedFetchKey, category, sourceSelectionKey, datePosted, languagesKey, debouncedKeyword, debouncedLocation, debouncedSalaryMin, debouncedSalaryMax, offset, sortByMatch])
 
   const rangeStart = total === 0 ? 0 : offset + 1
   const rangeEnd = Math.min(offset + PAGE_SIZE, total)
+
+  // The keyword search field (with typeahead) — rendered in the top search bar.
+  const keywordField = (
+    <div className="jv-field jv-field--search group">
+      <label className="jv-field__label" htmlFor="jobs-keyword">
+        Job Title / Keywords
+      </label>
+      <div className="jv-field__control">
+        <Icon name="search-outline" className="jv-field__icon" style={{ fontSize: 15 }} />
+        <input
+          id="jobs-keyword"
+          ref={searchInputRef}
+          type="text"
+          placeholder="e.g. UI Designer, Backend Developer"
+          className="jv-field__input"
+          value={keyword}
+          onChange={(e) => {
+            setKeyword(e.target.value)
+            setShowSuggestions(true)
+          }}
+          onFocus={() => setShowSuggestions(true)}
+          onBlur={() => window.setTimeout(() => setShowSuggestions(false), 120)}
+          onKeyDown={onSearchKeyDown}
+          role="combobox"
+          aria-expanded={showSuggestions && suggestions.length > 0}
+          aria-controls="search-suggestions"
+          aria-autocomplete="list"
+        />
+        {searchPending ? (
+          <span
+            aria-hidden="true"
+            className="block size-4 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-indigo-500"
+          />
+        ) : keyword ? (
+          <button
+            type="button"
+            onClick={clearSearch}
+            aria-label="Clear search"
+            className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Icon name="close-outline" style={{ fontSize: 15 }} />
+          </button>
+        ) : null}
+      </div>
+      {showSuggestions && suggestions.length > 0 && (
+        <ul
+          id="search-suggestions"
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-30 mt-2 origin-top animate-in fade-in slide-in-from-top-1 overflow-hidden rounded-xl border border-input bg-popover p-1 shadow-lg duration-150"
+        >
+          {suggestions.map((suggestion, index) => (
+            <li key={suggestion._id} role="option" aria-selected={index === activeSuggestion}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setActiveSuggestion(index)}
+                onClick={() => commitSuggestion(suggestion)}
+                className={`flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left transition-colors ${
+                  index === activeSuggestion ? 'bg-muted' : 'hover:bg-muted/60'
+                }`}
+              >
+                <span className="line-clamp-1 text-sm font-medium text-foreground">{suggestion.title}</span>
+                <span className="line-clamp-1 text-xs text-muted-foreground">
+                  {suggestion.company}
+                  {suggestion.location ? ` · ${suggestion.location}` : ''}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 
   const filterControls = (
     <div className="filter-rail">
@@ -729,7 +1081,7 @@ export function JobsPage() {
         type="button"
         onClick={toggleInternetMode}
         aria-pressed={internetMode}
-        className={`mt-4 flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-sm font-medium shadow-sm transition-all duration-200 hover:-translate-y-px active:translate-y-0 ${
+        className={`flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-sm font-medium shadow-sm transition-all duration-200 hover:-translate-y-px active:translate-y-0 ${
           internetMode
             ? 'border-indigo-500 bg-indigo-500 text-white hover:bg-indigo-600'
             : 'border-input bg-background text-foreground hover:border-indigo-400 hover:text-indigo-600'
@@ -744,85 +1096,8 @@ export function JobsPage() {
           language filter to narrow them.
         </p>
       )}
-      <div className="group relative mt-4">
-        <Icon
-          name="search-outline"
-          style={{ fontSize: 16 }}
-          className="pointer-events-none absolute left-3.5 top-[21px] -translate-y-1/2 text-muted-foreground transition-colors duration-200 group-focus-within:text-indigo-500"
-        />
-        <input
-          ref={searchInputRef}
-          type="text"
-          placeholder="Search title, company, skills…"
-          className="w-full rounded-full border border-input bg-background py-2.5 pl-10 pr-16 text-sm text-foreground shadow-sm outline-none transition-all duration-200 placeholder:text-muted-foreground focus:border-indigo-500 focus:shadow-[0_0_0_4px_rgba(99,102,241,0.15)]"
-          value={keyword}
-          onChange={(e) => {
-            setKeyword(e.target.value)
-            setShowSuggestions(true)
-          }}
-          onFocus={() => setShowSuggestions(true)}
-          onBlur={() => window.setTimeout(() => setShowSuggestions(false), 120)}
-          onKeyDown={onSearchKeyDown}
-          role="combobox"
-          aria-expanded={showSuggestions && suggestions.length > 0}
-          aria-controls="search-suggestions"
-          aria-autocomplete="list"
-        />
-        {/* Right-side affordance: spinner while the term settles, a clear button
-            when there's text, otherwise a subtle "/" shortcut hint. */}
-        <div className="absolute right-2 top-[21px] -translate-y-1/2">
-          {searchPending ? (
-            <span
-              aria-hidden="true"
-              className="block size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-indigo-500"
-            />
-          ) : keyword ? (
-            <button
-              type="button"
-              onClick={clearSearch}
-              aria-label="Clear search"
-              className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <Icon name="close-outline" style={{ fontSize: 15 }} />
-            </button>
-          ) : (
-            <kbd className="pointer-events-none hidden rounded border border-input px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground lg:inline-block">
-              /
-            </kbd>
-          )}
-        </div>
 
-        {showSuggestions && suggestions.length > 0 && (
-          <ul
-            id="search-suggestions"
-            role="listbox"
-            className="absolute left-0 right-0 top-full z-30 mt-2 origin-top animate-in fade-in slide-in-from-top-1 overflow-hidden rounded-xl border border-input bg-popover p-1 shadow-lg duration-150"
-          >
-            {suggestions.map((suggestion, index) => (
-              <li key={suggestion._id} role="option" aria-selected={index === activeSuggestion}>
-                <button
-                  type="button"
-                  // Prevent the input's blur from firing before the click lands.
-                  onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => setActiveSuggestion(index)}
-                  onClick={() => commitSuggestion(suggestion)}
-                  className={`flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-2 text-left transition-colors ${
-                    index === activeSuggestion ? 'bg-muted' : 'hover:bg-muted/60'
-                  }`}
-                >
-                  <span className="line-clamp-1 text-sm font-medium text-foreground">{suggestion.title}</span>
-                  <span className="line-clamp-1 text-xs text-muted-foreground">
-                    {suggestion.company}
-                    {suggestion.location ? ` · ${suggestion.location}` : ''}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <Accordion defaultValue={['date', 'language', 'source']}>
+      <Accordion defaultValue={['date', 'language', 'source', 'salary']}>
             {!internetMode && (
             <AccordionItem value="date">
               <AccordionTrigger>Date posted</AccordionTrigger>
@@ -918,27 +1193,16 @@ export function JobsPage() {
             </AccordionItem>
 
             <AccordionItem value="salary">
-              <AccordionTrigger>Salary</AccordionTrigger>
+              <AccordionTrigger>Salary Range</AccordionTrigger>
               <AccordionContent>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="Min"
-                    className="w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
-                    value={salaryMin}
-                    onChange={(e) => setSalaryMin(e.target.value)}
-                  />
-                  <span className="text-muted-foreground">–</span>
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="Max"
-                    className="w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
-                    value={salaryMax}
-                    onChange={(e) => setSalaryMax(e.target.value)}
-                  />
-                </div>
+                <SalaryRange
+                  min={salaryMin}
+                  max={salaryMax}
+                  onChange={({ min, max }) => {
+                    if (min !== undefined) setSalaryMin(min)
+                    if (max !== undefined) setSalaryMax(max)
+                  }}
+                />
               </AccordionContent>
             </AccordionItem>
             </>
@@ -946,8 +1210,6 @@ export function JobsPage() {
           </Accordion>
     </div>
   )
-
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
 
   // Jobs the user added themselves. Saved mode narrows to bookmarked ones; the
   // language filter applies here too so it behaves like the discovery feed.
@@ -1037,8 +1299,7 @@ export function JobsPage() {
   function handleToggleSaved(jobId: string) {
     const willBeSaved = !isSaved(jobId)
     toggleSaved(jobId)
-    setToastMessage(willBeSaved ? 'Saved' : 'Removed')
-    setTimeout(() => setToastMessage(null), 1800)
+    toast(willBeSaved ? 'Saved job' : 'Removed from saved')
   }
 
   const categoryTabs: SlidingTab[] = [
@@ -1056,7 +1317,7 @@ export function JobsPage() {
       key: 'match',
       label: (
         <>
-          <Icon name="sparkles-outline" style={{ fontSize: 13, marginRight: 4, verticalAlign: 'middle' }} />
+          <Icon name="sparkles-outline" style={{ fontSize: 13 }} />
           Best match
         </>
       ),
@@ -1070,378 +1331,477 @@ export function JobsPage() {
   // "smooth filtering transition" applied to the feed.
   const listKey = `${category}|${internetMode}|${savedMode}|${sortByMatch}|${sourceSelectionKey}|${datePosted}|${languagesKey}|${debouncedKeyword}|${offset}`
 
-  return (
-    <div className="page-enter type-pro apple-ui">
-      <PublicNav />
-      <header ref={headerRef} className="page-head jobs-hero">
-        <div className="hero-bg" aria-hidden="true" />
-        <div className="hero-glow" aria-hidden="true" />
-        <div className="wrap">
-          <div className="kicker hero-reveal">Job feed</div>
-          <h1 className="hero-reveal">Verified roles, scored for you.</h1>
-          <p className="hero-reveal">Remote roles and Bangladesh government circulars, each re-checked against its source in the last 24 hours.</p>
-          <div className="hero-reveal segment" aria-label="Job category">
-            <SlidingTabs tabs={categoryTabs} ariaLabel="Job category" />
-            {category === 'government' && (
-              <span className="seg-note">
-                Government circulars come from{' '}
-                <a href="https://alljobs.teletalk.com.bd/jobs/government" target="_blank" rel="noopener noreferrer">
-                  alljobs.teletalk.com.bd
-                </a>
+  const greetingName = userName || (email ? email.split('@')[0] : null)
+  const containerClass = viewMode === 'grid' ? 'jv-grid' : 'jv-list'
+
+  // Map tracked companies (from the seed list) to their website host, so jobs from
+  // those companies get a real logo. Keyed by lowercased company name.
+  const companyDomainMap = new Map<string, string>()
+  for (const tracked of trackedCompanies) {
+    const host = hostFromUrl(tracked.website)
+    if (host) companyDomainMap.set(tracked.name.toLowerCase().trim(), host)
+  }
+  // Best-effort company logo domain: a tracked company's website, or the job's own
+  // URL host when it isn't a known aggregator/board. Null → show the monogram.
+  function logoDomainFor(company?: string | null, jobUrl?: string | null): string | null {
+    const name = (company ?? '').toLowerCase().trim()
+    const tracked = companyDomainMap.get(name)
+    if (tracked) return tracked
+    const host = hostFromUrl(jobUrl)
+    if (host && !AGGREGATOR_HOSTS.has(host)) return host
+    return null
+  }
+  function logoUrlFor(company?: string | null, jobUrl?: string | null): string | null {
+    const domain = logoDomainFor(company, jobUrl)
+    return domain ? faviconUrl(domain) : null
+  }
+
+  // Renders one merged row as the reference's white card (used for both grid and
+  // full-width list layouts — only the container's column count changes).
+  function renderCard(row: MergedRow, index: number): ReactNode {
+    if (row.kind === 'mine') {
+      const job = row.job
+      return (
+        <JobCard
+          key={`myjob-${job._id}`}
+          index={index}
+          logoLabel={companyInitials(job.company)}
+          logoUrl={logoUrlFor(job.company, job.url)}
+          dateLabel={relativeTimeFromNow(job.createdAt)}
+          company={job.company}
+          titleNode={<Link to={`/my-jobs/${job._id}`}>{job.title}</Link>}
+          tags={(() => {
+            const s = skillTags(job.extractedRequirements?.requiredSkills, `${job.title}\n${job.description}`)
+            return s.length ? s : [job.visibility === 'public' ? 'Public' : 'Private', 'Added by you']
+          })()}
+          stat={
+            <span className="tcard__stat tcard__stat--muted">
+              <Icon name="wallet-outline" style={{ fontSize: 13 }} />
+              {salaryLabel(job)}
+            </span>
+          }
+          saveControl={
+            <button
+              type="button"
+              className={`save-btn${job._id && isSaved(job._id) ? ' saved' : ''}`}
+              aria-pressed={!!job._id && isSaved(job._id)}
+              aria-label={job._id && isSaved(job._id) ? 'Remove from saved' : 'Save job'}
+              onClick={() => job._id && handleToggleSaved(job._id)}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+                <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
+              </svg>
+            </button>
+          }
+          detailsNode={
+            <Link to={`/my-jobs/${job._id}`} className="btn btn-indigo tcard__details">
+              Details
+            </Link>
+          }
+        />
+      )
+    }
+    if (row.kind === 'community') {
+      const job = row.job
+      return (
+        <JobCard
+          key={`community-${job._id}`}
+          index={index}
+          logoLabel={companyInitials(job.company)}
+          logoUrl={logoUrlFor(job.company, job.url)}
+          dateLabel={relativeTimeFromNow(job.createdAt)}
+          company={job.company}
+          verified
+          titleNode={<Link to={`/community-jobs/${job._id}`}>{job.title}</Link>}
+          tags={(() => {
+            const s = skillTags(job.extractedRequirements?.requiredSkills, `${job.title}\n${job.description}`)
+            return s.length ? s : ['Community', 'Shared by a member']
+          })()}
+          stat={
+            <span className="tcard__stat tcard__stat--muted">
+              <Icon name="wallet-outline" style={{ fontSize: 13 }} />
+              {salaryLabel(job)}
+            </span>
+          }
+          saveControl={null}
+          detailsNode={
+            <Link to={`/community-jobs/${job._id}`} className="btn btn-indigo tcard__details">
+              Details
+            </Link>
+          }
+        />
+      )
+    }
+    const job = row.job
+    const internet = isInternetJob(job)
+    // Prefer the job's skills (extracted or detected from its text); fall back to
+    // source/location tags when no skills are found (e.g. government circulars).
+    const fallbackTags: string[] = []
+    if (job.sourceId === 'teletalk-govt') fallbackTags.push('Government')
+    if (internet) fallbackTags.push('From the web')
+    if (job.location && job.location.length <= 22) fallbackTags.push(job.location)
+    fallbackTags.push(SOURCE_LABELS[job.sourceId] ?? job.source ?? 'Job board')
+    const skills = skillTags(job.extractedRequirements?.requiredSkills, `${job.title}\n${job.rawDescription}`)
+    const tags = skills.length ? skills : fallbackTags.slice(0, 3)
+    return (
+      <JobCard
+        key={job._id}
+        index={index}
+        logoLabel={companyInitials(job.company ?? job.source)}
+        logoUrl={sourceLogoUrl(job.sourceId) ?? logoUrlFor(job.company, internet ? job.normalizedUrl : null)}
+        dateLabel={relativeTimeFromNow(internet ? (job.postedAt ?? job.discoveredAt) : job.discoveredAt)}
+        company={job.company ?? job.source}
+        verified={!internet && job.status === 'verified'}
+        titleNode={
+          internet ? (
+            <a href={job.normalizedUrl} target="_blank" rel="noreferrer">
+              {job.title}
+            </a>
+          ) : (
+            <Link to={`/jobs/${job._id}`}>{job.title}</Link>
+          )
+        }
+        tags={tags}
+        stat={
+          <>
+            {typeof job.matchScore === 'number' && (
+              <span className="tcard__stat">
+                <Icon name="sparkles-outline" style={{ fontSize: 13 }} />
+                {Math.round(job.matchScore)}%
               </span>
             )}
-          </div>
+            <span className="tcard__stat tcard__stat--muted">
+              <Icon name="wallet-outline" style={{ fontSize: 13 }} />
+              {salaryLabel(job)}
+            </span>
+          </>
+        }
+        saveControl={
+          internet ? null : (
+            <button
+              type="button"
+              className={`save-btn${isSaved(job._id) ? ' saved' : ''}`}
+              aria-pressed={isSaved(job._id)}
+              aria-label={isSaved(job._id) ? 'Remove from saved' : 'Save job'}
+              onClick={() => handleToggleSaved(job._id)}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+                <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
+              </svg>
+            </button>
+          )
+        }
+        detailsNode={
+          internet ? (
+            <a href={job.normalizedUrl} target="_blank" rel="noreferrer" className="btn btn-indigo tcard__details">
+              Details
+            </a>
+          ) : (
+            <Link to={`/jobs/${job._id}`} className="btn btn-indigo tcard__details">
+              Details
+            </Link>
+          )
+        }
+      />
+    )
+  }
+
+  const searchBar = (
+    <div className="jv-searchbar hero-reveal">
+      {keywordField}
+      <div className="jv-field">
+        <label className="jv-field__label" htmlFor="jobs-location">
+          Location
+        </label>
+        <div className="jv-field__control">
+          <Icon name="location-outline" className="jv-field__icon" style={{ fontSize: 15 }} />
+          <input
+            id="jobs-location"
+            type="text"
+            placeholder="e.g. Remote, Europe"
+            className="jv-field__input"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
         </div>
-      </header>
-      <section className="page-pad">
-        <div className="wrap listing">
-          <aside className="hidden w-full shrink-0 lg:sticky lg:top-24 lg:block lg:w-72 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-2">
-            <div className="flex items-center justify-between">
-              <span className="count">
-                <b>{jobsCountLabel}</b>
-              </span>
-              <button type="button" onClick={clearFilters} disabled={!hasActiveFilters} className="clear-all">
-                <Icon name="close-outline" style={{ fontSize: 14, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
-                Clear filters
-              </button>
-            </div>
-            {filterControls}
-          </aside>
+      </div>
+      <div className="jv-field">
+        <span className="jv-field__label">Source</span>
+        <AnimatedSelect
+          ariaLabel="Source"
+          value={sourceSelection.kind === 'source' ? sourceSelection.id : ''}
+          onChange={(next) => updateFilters({ sourceId: next || null, company: null })}
+          options={[{ value: '', label: 'All sources' }, ...SOURCE_OPTIONS]}
+        />
+      </div>
+      <div className="jv-field">
+        <span className="jv-field__label">Date posted</span>
+        <AnimatedSelect
+          ariaLabel="Date posted"
+          value={datePosted === 'all' ? '' : datePosted}
+          onChange={(next) => updateFilters({ datePosted: next || null })}
+          options={[{ value: '', label: 'Any time' }, ...DATE_FILTER_OPTIONS.map((o) => ({ value: o.value, label: o.label }))]}
+        />
+      </div>
+      <button type="button" className="btn btn-indigo jv-searchbar__btn" onClick={() => setShowSuggestions(false)}>
+        <Icon name="search-outline" style={{ fontSize: 16 }} />
+        Search
+      </button>
+    </div>
+  )
 
-          <Drawer>
-            <div className="flex w-full items-center justify-between gap-2 lg:hidden">
-              <span className="count">
-                <b>{jobsCountLabel}</b>
-              </span>
-              <div className="flex items-center gap-3">
-                <DrawerTrigger className="btn btn-ghost">
-                  <Icon name="options-outline" style={{ fontSize: 14 }} />
-                  Filters
-                  {activeFilterCount > 0 && <span className="pill mono">{activeFilterCount}</span>}
-                </DrawerTrigger>
-                <button type="button" onClick={clearFilters} disabled={!hasActiveFilters} className="clear-all">
-                  Clear
-                </button>
-              </div>
-            </div>
-            <DrawerPortal>
-              <DrawerHeader>
-                <DrawerTitle>Filters</DrawerTitle>
-                <DrawerClose />
-              </DrawerHeader>
-              <DrawerBody>{filterControls}</DrawerBody>
-              <DrawerFooter>
-                <button type="button" onClick={clearFilters} disabled={!hasActiveFilters} className="clear-all">
-                  Clear filters
-                </button>
-                <DrawerClose className="btn btn-indigo">Done</DrawerClose>
-              </DrawerFooter>
-            </DrawerPortal>
-          </Drawer>
-
-          <div className="results lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
-            {canSortByMatch && (
-              <div style={{ marginBottom: 16 }}>
-                <SlidingTabs tabs={sortTabs} ariaLabel="Sort jobs" />
-              </div>
-            )}
-            {savedMode && (
-              <div className="saved-banner">
+  return (
+    <div className="page-enter type-pro apple-ui jobs-v2">
+      <PublicNav />
+      <div className="jv-shell">
+        <main className="jv-main">
+          <header ref={headerRef} className="jv-hero">
+            <div className="hero-bg" aria-hidden="true" />
+            <div className="hero-aurora" aria-hidden="true" />
+            <div className="jv-hero__content">
+              <div className="kicker hero-reveal">Job feed</div>
+              <h1 className="hero-reveal">
+                {isAuthenticated ? (
+                  <>
+                    Welcome back{greetingName ? ', ' : ''}
+                    {greetingName && <em>{greetingName}</em>}
+                  </>
+                ) : (
+                  <>
+                    Find your <em>next role</em>
+                  </>
+                )}
+              </h1>
+              <p className="jv-hero-sub hero-reveal">
                 <span>
-                  <Icon name="briefcase-outline" style={{ fontSize: 15 }} />
-                  Showing your saved jobs
+                  {loading
+                    ? 'Finding roles for you…'
+                    : `${total.toLocaleString()} ${total === 1 ? 'role' : 'roles'} matched for you`}
                 </span>
-                <Link to="/jobs" className="btn btn-ghost btn-sm">
-                  View all jobs
-                </Link>
-              </div>
-            )}
-            {internetMode && !error && (
-              <div className="saved-banner">
-                <span>
-                  <Icon name="globe-outline" style={{ fontSize: 15 }} />
-                  Live roles from across the web, matched to your resume
+                <span className="jv-hero-item">
+                  {hasResume ? 'Resume on file' : 'Upload your CV to get matched'}
                 </span>
-                <Link to="/jobs" className="btn btn-ghost btn-sm">
-                  Back to feed
-                </Link>
-              </div>
-            )}
-            {category === 'mine' && (
-              <div className="my-jobs-head">
-                <h2>Your added jobs</h2>
-                <Link to="/add-job" className="btn btn-ghost">
-                  <Icon name="add-outline" style={{ fontSize: 14 }} />
-                  Add a job
-                </Link>
-              </div>
-            )}
+              </p>
+            </div>
+          </header>
 
-            {error && (
-              <div className="mb-4">
-                <FormError message={error} />
-              </div>
-            )}
+          {searchBar}
 
-            {loading ? (
-              [0, 1, 2, 3, 4].map((i) => (
-                <div className="skeleton" aria-hidden="true" key={i}>
-                  <div className="sk" style={{ width: 40, height: 40, borderRadius: '50%' }} />
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <div className="sk" style={{ width: '46%' }} />
-                    <div className="sk" style={{ width: '30%' }} />
-                    <div className="sk sk-pills" style={{ marginTop: 6 }} />
+          <div className="jv-body">
+            <aside className="jv-side">
+              {!hasResume && (
+                <div className="jv-ai-card hero-reveal">
+                  <div className="jv-ai-orbit" aria-hidden="true">
+                    <span className="jv-ai-orbit__dot" />
+                    <span className="jv-ai-orbit__dot" />
+                    <span className="jv-ai-orbit__dot" />
                   </div>
+                  <div className="jv-ai-card__head">
+                    <span className="jv-ai-card__badge" aria-hidden="true">
+                      <Icon name="sparkles-outline" style={{ fontSize: 17 }} />
+                    </span>
+                    <div>
+                      <h2 className="jv-ai-card__title">Let AI find your ideal job</h2>
+                      <p className="jv-ai-card__sub">Upload your CV and get matched instantly.</p>
+                    </div>
+                  </div>
+                  <Link to={isAuthenticated ? '/cv' : '/register'} className="jv-dropzone">
+                    <span className="jv-dropzone__scan" aria-hidden="true" />
+                    <span className="jv-dropzone__icon" aria-hidden="true">
+                      <Icon name="document-text-outline" style={{ fontSize: 22 }} />
+                    </span>
+                    <span className="jv-dropzone__label">Click to upload your CV</span>
+                  </Link>
+                  <div className="jv-ai-analyze" aria-hidden="true">
+                    <span className="jv-ai-analyze__bar" />
+                    <span className="jv-ai-analyze__text">
+                      AI matching<span className="jv-ai-dots" />
+                    </span>
+                  </div>
+                  <Link to={isAuthenticated ? '/cv' : '/register'} className="btn btn-indigo jv-ai-card__cta">
+                    <Icon name="sparkles-outline" style={{ fontSize: 15 }} />
+                    Get Matched
+                  </Link>
                 </div>
-              ))
-            ) : mergedRows.length === 0 ? (
-              internetMode && error ? null : (
-                <div className="lp-empty">
-                  <div className="lp-empty-icon">
-                    <Icon
-                      name={savedMode ? 'briefcase-outline' : internetMode ? 'globe-outline' : 'search-outline'}
-                      style={{ fontSize: 26 }}
-                    />
-                  </div>
-                  {savedMode ? (
-                    <>
-                      <b>No saved jobs yet</b>
-                      <span>Tap the bookmark on any job to save it here.</span>
-                    </>
-                  ) : category === 'mine' ? (
-                    selectedLanguages.length > 0 ? (
+              )}
+
+              <div className="jv-filters hero-reveal">
+                <div className="jv-filters__head">
+                  <span className="jv-filters__title">Filters</span>
+                  <button type="button" onClick={clearFilters} disabled={!hasActiveFilters} className="clear-all">
+                    Clear All
+                  </button>
+                </div>
+                {filterControls}
+              </div>
+            </aside>
+
+            <section className="jv-results">
+              <div className="jv-results__head">
+                <div className="jv-results__tabs">
+                  <SlidingTabs tabs={categoryTabs} ariaLabel="Job category" />
+                </div>
+                <div className="jv-results__tools">
+                  {canSortByMatch && <SlidingTabs tabs={sortTabs} ariaLabel="Sort jobs" />}
+                  <Drawer>
+                    <DrawerTrigger className="btn btn-ghost jv-filter-trigger">
+                      <Icon name="options-outline" style={{ fontSize: 14 }} />
+                      Filters
+                      {activeFilterCount > 0 && <span className="pill mono">{activeFilterCount}</span>}
+                    </DrawerTrigger>
+                    <DrawerPortal>
+                      <DrawerHeader>
+                        <DrawerTitle>Filters</DrawerTitle>
+                        <DrawerClose />
+                      </DrawerHeader>
+                      <DrawerBody>{filterControls}</DrawerBody>
+                      <DrawerFooter>
+                        <button type="button" onClick={clearFilters} disabled={!hasActiveFilters} className="clear-all">
+                          Clear filters
+                        </button>
+                        <DrawerClose className="btn btn-indigo">Done</DrawerClose>
+                      </DrawerFooter>
+                    </DrawerPortal>
+                  </Drawer>
+                  <ViewToggle value={viewMode} onChange={setViewMode} />
+                </div>
+              </div>
+
+              <div className="jv-results__meta">
+                <span className="count">
+                  <b>{jobsCountLabel}</b>
+                </span>
+                {category === 'government' && (
+                  <span className="jv-govt-note">
+                    From{' '}
+                    <a href="https://alljobs.teletalk.com.bd/jobs/government" target="_blank" rel="noopener noreferrer">
+                      alljobs.teletalk.com.bd
+                    </a>
+                  </span>
+                )}
+              </div>
+
+              {savedMode && (
+                <div className="saved-banner">
+                  <span>
+                    <Icon name="briefcase-outline" style={{ fontSize: 15 }} />
+                    Showing your saved jobs
+                  </span>
+                  <Link to="/jobs" className="btn btn-ghost btn-sm">
+                    View all jobs
+                  </Link>
+                </div>
+              )}
+              {internetMode && !error && (
+                <div className="saved-banner">
+                  <span>
+                    <Icon name="globe-outline" style={{ fontSize: 15 }} />
+                    Live roles from across the web, matched to your resume
+                  </span>
+                  <Link to="/jobs" className="btn btn-ghost btn-sm">
+                    Back to feed
+                  </Link>
+                </div>
+              )}
+
+              {error && (
+                <div className="mb-4">
+                  <FormError message={error} />
+                </div>
+              )}
+
+              {loading ? (
+                <div className={containerClass} aria-hidden="true">
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <div className="tcard tcard--sk" key={i}>
+                      <div className="tcard__top">
+                        <div className="sk" style={{ width: 44, height: 44, borderRadius: '50%' }} />
+                        <div className="sk" style={{ width: 28, height: 28, borderRadius: '50%' }} />
+                      </div>
+                      <div className="sk" style={{ width: '40%', marginTop: 16 }} />
+                      <div className="sk" style={{ width: '70%', marginTop: 12, height: 16 }} />
+                      <div className="sk sk-pills" style={{ marginTop: 14 }} />
+                      <div className="sk" style={{ width: '45%', marginTop: 14 }} />
+                    </div>
+                  ))}
+                </div>
+              ) : mergedRows.length === 0 ? (
+                internetMode && error ? null : (
+                  <div className="lp-empty">
+                    <div className="lp-empty-icon">
+                      <Icon
+                        name={savedMode ? 'briefcase-outline' : internetMode ? 'globe-outline' : 'search-outline'}
+                        style={{ fontSize: 26 }}
+                      />
+                    </div>
+                    {savedMode ? (
                       <>
-                        <b>No added jobs match these languages</b>
-                        <span>Clear the language filter or add a job.</span>
+                        <b>No saved jobs yet</b>
+                        <span>Tap the bookmark on any job to save it here.</span>
+                      </>
+                    ) : category === 'mine' ? (
+                      selectedLanguages.length > 0 ? (
+                        <>
+                          <b>No added jobs match these languages</b>
+                          <span>Clear the language filter or add a job.</span>
+                        </>
+                      ) : (
+                        <>
+                          <b>You haven't added any jobs yet</b>
+                          <span>Use “Add a job” to track roles you found elsewhere.</span>
+                        </>
+                      )
+                    ) : internetMode ? (
+                      <>
+                        <b>No matching roles on the web right now</b>
+                        <span>Try adjusting your search, or enrich your resume for better matches.</span>
                       </>
                     ) : (
                       <>
-                        <b>You haven't added any jobs yet</b>
-                        <span>Use “Add a job” to track roles you found elsewhere.</span>
+                        <b>No jobs found</b>
+                        <span>Try widening your filters.</span>
+                        {hasActiveFilters && (
+                          <button type="button" className="lp-chip on lp-empty-reset" onClick={clearFilters}>
+                            Clear filters
+                          </button>
+                        )}
                       </>
-                    )
-                  ) : internetMode ? (
-                    <>
-                      <b>No matching roles on the web right now</b>
-                      <span>Try adjusting your search, or enrich your resume for better matches.</span>
-                    </>
-                  ) : (
-                    <>
-                      <b>No jobs found</b>
-                      <span>Try widening your filters.</span>
-                      {hasActiveFilters && (
-                        <button type="button" className="lp-chip on lp-empty-reset" onClick={clearFilters}>
-                          Clear filters
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              )
-            ) : (
-              <Fragment key={listKey}>
-              {mergedRows.map((row, index) => {
-                if (row.kind === 'mine') {
-                  const job = row.job
-                  return (
-                    <article key={`myjob-${job._id}`} className="jrow row-in" style={{ '--i': index } as CSSProperties}>
-                      <div className="main">
-                        <div className="title">
-                          <Link to={`/my-jobs/${job._id}`}>{job.title}</Link>
-                        </div>
-                        <div className="sub">
-                          <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
-                          {job.company}
-                          {job.location ? ` · ${job.location}` : ''}
-                        </div>
-                        <div className="tags">
-                          <Pill tone={job.visibility === 'public' ? 'verified' : 'mono'}>
-                            {job.visibility === 'public' ? 'Public' : 'Private'}
-                          </Pill>
-                          <Pill tone="mono">{formatSalary(job)}</Pill>
-                          <Pill tone="mono">Added by you</Pill>
-                        </div>
-                        {job.description && (
-                          <p style={{ marginTop: 10, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
-                            {descriptionPreview(job.description)}
-                          </p>
-                        )}
-                        <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          <Link to={`/my-jobs/${job._id}`} className="btn btn-ghost">
-                            View details
-                          </Link>
-                          {job.url && (
-                            <a href={job.url} target="_blank" rel="noreferrer" className="btn btn-indigo">
-                              Apply
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                      <div className="side">
-                        <button
-                          type="button"
-                          className={`save-btn${job._id && isSaved(job._id) ? ' saved' : ''}`}
-                          aria-pressed={!!job._id && isSaved(job._id)}
-                          aria-label={job._id && isSaved(job._id) ? 'Remove from saved' : 'Save job'}
-                          onClick={() => job._id && handleToggleSaved(job._id)}
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-                            <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
-                          </svg>
-                        </button>
-                      </div>
-                    </article>
-                  )
-                }
-                if (row.kind === 'community') {
-                  const job = row.job
-                  return (
-                    <article key={`community-${job._id}`} className="jrow row-in" style={{ '--i': index } as CSSProperties}>
-                      <div className="main">
-                        <div className="title">
-                          <Link to={`/community-jobs/${job._id}`}>{job.title}</Link>
-                        </div>
-                        <div className="sub">
-                          <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
-                          {job.company}
-                          {job.location ? ` · ${job.location}` : ''}
-                        </div>
-                        <div className="tags">
-                          <Pill tone="verified">Community</Pill>
-                          <Pill tone="mono">{formatSalary(job)}</Pill>
-                          <Pill tone="mono">Shared by a member</Pill>
-                        </div>
-                        {job.description && (
-                          <p style={{ marginTop: 10, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
-                            {descriptionPreview(job.description)}
-                          </p>
-                        )}
-                        <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          <Link to={`/community-jobs/${job._id}`} className="btn btn-ghost">
-                            View details
-                          </Link>
-                          {job.url && (
-                            <a href={job.url} target="_blank" rel="noreferrer" className="btn btn-indigo">
-                              Apply
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                      <div className="side">
-                        <span className="when">{relativeTimeFromNow(job.createdAt)}</span>
-                      </div>
-                    </article>
-                  )
-                }
-                const job = row.job
-                const requirements = requirementsPreview(job.rawDescription)
-                // Live internet results have no stored detail page and can't be
-                // bookmarked — they link straight out to the source to apply.
-                const internet = isInternetJob(job)
-                return (
-                  <article key={job._id} className="jrow row-in" style={{ '--i': index } as CSSProperties}>
-                    <ScoreRing score={job.matchScore ?? job.score ?? 0} />
-                    <div className="main">
-                      <div className="title">
-                        {internet ? (
-                          <a href={job.normalizedUrl} target="_blank" rel="noreferrer">
-                            {job.title}
-                          </a>
-                        ) : (
-                          <Link to={`/jobs/${job._id}`}>{job.title}</Link>
-                        )}
-                      </div>
-                      <div className="sub">
-                        <Icon name="business-outline" style={{ fontSize: 12, display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }} />
-                        {job.company ?? job.source}
-                        {job.location ? ` · ${job.location}` : ''}
-                      </div>
-                      <div className="tags">
-                        {typeof job.matchScore === 'number' && (
-                          <Pill tone="verified">{Math.round(job.matchScore)}% match</Pill>
-                        )}
-                        {internet ? (
-                          <Pill tone="mono">From the web</Pill>
-                        ) : (
-                          job.status === 'verified' && <Pill tone="verified">Verified</Pill>
-                        )}
-                        {job.sourceId === 'teletalk-govt' && <Pill tone="govt">Government</Pill>}
-                        <Pill tone="mono">{formatSalary(job)}</Pill>
-                        <Pill tone="mono">{SOURCE_LABELS[job.sourceId] ?? job.source}</Pill>
-                      </div>
-                      <p style={{ marginTop: 10, fontSize: 13.5, color: 'var(--fg-2)', lineHeight: 1.6 }}>
-                        {descriptionPreview(job.rawDescription)}
-                      </p>
-                      {requirements && (
-                        <p style={{ marginTop: 8, fontSize: 13, color: 'var(--muted-text)', lineHeight: 1.6 }}>
-                          {requirements}
-                        </p>
-                      )}
-                      <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        {internet ? (
-                          <a href={job.normalizedUrl} target="_blank" rel="noreferrer" className="btn btn-ghost">
-                            View
-                          </a>
-                        ) : (
-                          <Link to={`/jobs/${job._id}`} className="btn btn-ghost">
-                            View details
-                          </Link>
-                        )}
-                        <a href={job.normalizedUrl} target="_blank" rel="noreferrer" className="btn btn-indigo">
-                          Apply
-                        </a>
-                      </div>
-                    </div>
-                    <div className="side">
-                      <span className="when">
-                        {internet ? relativeTimeFromNow(job.postedAt ?? job.discoveredAt) : statusBadgeLabel(job)}
-                      </span>
-                      {!internet && (
-                        <button
-                          type="button"
-                          className={`save-btn${isSaved(job._id) ? ' saved' : ''}`}
-                          aria-pressed={isSaved(job._id)}
-                          aria-label={isSaved(job._id) ? 'Remove from saved' : 'Save job'}
-                          onClick={() => handleToggleSaved(job._id)}
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-                            <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  </article>
+                    )}
+                  </div>
                 )
-              })}
-              </Fragment>
-            )}
-
-            {!savedMode && !internetMode && category !== 'mine' && (
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-2" style={{ color: 'var(--muted-text)', fontSize: 13 }}>
-                <span>{total === 0 ? 'No results' : `Showing ${rangeStart}–${rangeEnd} of ${total}`}</span>
-                <div className="pager">
-                  <button
-                    type="button"
-                    disabled={offset === 0}
-                    onClick={() => updateFilters({ offset: String(Math.max(0, offset - PAGE_SIZE)) }, { resetOffset: false })}
-                  >
-                    Prev
-                  </button>
-                  <button
-                    type="button"
-                    disabled={offset + PAGE_SIZE >= total}
-                    onClick={() => updateFilters({ offset: String(offset + PAGE_SIZE) }, { resetOffset: false })}
-                  >
-                    Next
-                  </button>
+              ) : (
+                <div className={containerClass} key={listKey}>
+                  {mergedRows.map((row, index) => renderCard(row, index))}
                 </div>
-              </div>
-            )}
+              )}
+
+              {!savedMode && !internetMode && category !== 'mine' && (
+                <div className="jv-pager-row">
+                  <span>{total === 0 ? 'No results' : `Showing ${rangeStart}–${rangeEnd} of ${total}`}</span>
+                  <div className="pager">
+                    <button
+                      type="button"
+                      disabled={offset === 0}
+                      onClick={() => updateFilters({ offset: String(Math.max(0, offset - PAGE_SIZE)) }, { resetOffset: false })}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      type="button"
+                      disabled={offset + PAGE_SIZE >= total}
+                      onClick={() => updateFilters({ offset: String(offset + PAGE_SIZE) }, { resetOffset: false })}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
           </div>
-        </div>
-      </section>
+        </main>
+      </div>
       <Footer />
-      <div className={`toast${toastMessage ? ' show' : ''}`}>{toastMessage}</div>
     </div>
   )
+
 }

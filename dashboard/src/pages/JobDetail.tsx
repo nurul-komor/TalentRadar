@@ -11,6 +11,7 @@ import { FormError } from '../components/FormError'
 import { ScoreRing } from '../components/ScoreRing'
 import { Pill } from '../components/Pill'
 import { LogoChip } from '../components/LogoChip'
+import { sourceLogoUrl } from '../lib/sourceLogo'
 import { ApplyDrawer } from '../components/ApplyDrawer'
 import { Footer } from '../components/Footer'
 
@@ -216,7 +217,7 @@ export function JobDetailPage() {
       <div className="wrap job-layout">
         <div>
           <div className="job-head">
-            <LogoChip name={job.company} size={56} />
+            <LogoChip name={job.company} size={56} logoUrl={sourceLogoUrl(job.sourceId)} />
             <div>
               <div className="title-row">
                 <h1>{job.title}</h1>

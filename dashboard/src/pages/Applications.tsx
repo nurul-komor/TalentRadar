@@ -1,4 +1,5 @@
 import { Icon } from '../components/Icon'
+import { CvPreview } from '../components/CvPreview'
 import { useEffect, useMemo, useState } from 'react'
 import {
   DndContext,
@@ -598,11 +599,20 @@ function truncate(text: string, max: number): string {
   return `${text.slice(0, max).trimEnd()}…`
 }
 
-function MaterialsPanel({ materialsJobId, company }: { materialsJobId: string; company: string }) {
+function MaterialsPanel({ materialsJobId, jobTitle }: { materialsJobId: string; jobTitle: string }) {
   const [materials, setMaterials] = useState<Materials | null>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'none' | 'error'>('loading')
   const [copied, setCopied] = useState<string | null>(null)
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [fullName, setFullName] = useState<string | null>(null)
+
+  // Fetch the signed-in user's name so downloads are named FirstName_LastName_JobTitle_CV.
+  useEffect(() => {
+    apiFetch('/profile')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => setFullName(body?.resume?.fullName ?? null))
+      .catch(() => setFullName(null))
+  }, [])
 
   useEffect(() => {
     setStatus('loading')
@@ -642,9 +652,10 @@ function MaterialsPanel({ materialsJobId, company }: { materialsJobId: string; c
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      // Same ATS-safe, company-scoped naming as the apply drawer.
+      // Same ATS-safe, job-title-scoped naming as the apply drawer.
       link.download = materialFileName({
-        company,
+        fullName,
+        jobTitle,
         kind: doc === 'tailoredCv' ? 'cv' : 'cover',
         ext: format,
       })
@@ -695,7 +706,11 @@ function MaterialsPanel({ materialsJobId, company }: { materialsJobId: string; c
                   {copied === key ? 'Copied' : 'Copy'}
                 </button>
               </div>
-              <p className="jt-doc-preview">{truncate(materials[key], 360)}</p>
+              {key === 'tailoredCv' ? (
+                <CvPreview text={materials[key]} className="jt-doc-preview space-y-1" />
+              ) : (
+                <p className="jt-doc-preview">{truncate(materials[key], 360)}</p>
+              )}
               <div className="jt-doc-actions">
                 <DownloadMenu
                   label="Download"
@@ -815,7 +830,7 @@ function JobDrawer({ editing, form, set, error, saving, onClose, onSave, onDelet
           </div>
 
           {editing?.materialsJobId && (
-            <MaterialsPanel materialsJobId={editing.materialsJobId} company={editing.company} />
+            <MaterialsPanel materialsJobId={editing.materialsJobId} jobTitle={editing.position} />
           )}
 
           {error && (
