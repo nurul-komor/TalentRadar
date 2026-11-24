@@ -1039,7 +1039,8 @@ footer{padding-block:56px 64px;}
 /* ---- Search bar card ---- */
 .jv-searchbar{background:var(--surface);border:1px solid var(--line);border-radius:var(--card-radius-lg);box-shadow:var(--shadow-card);padding:16px;display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr auto;gap:12px;align-items:end;}
 @media (max-width:900px){.jv-searchbar{grid-template-columns:1fr 1fr;}}
-@media (max-width:540px){.jv-searchbar{grid-template-columns:1fr;}}
+/* Hide the search bar on mobile — filters are reached via the Filters drawer. */
+@media (max-width:640px){.jv-searchbar{display:none;}}
 .jv-field{position:relative;display:flex;flex-direction:column;gap:7px;min-width:0;}
 .jv-field__label{font-size:12.5px;font-weight:600;color:var(--fg);padding-left:2px;}
 .jv-field__control{position:relative;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);transition:border-color .15s,box-shadow .15s;}
