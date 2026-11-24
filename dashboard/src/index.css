@@ -1136,6 +1136,15 @@ footer{padding-block:56px 64px;}
 .jv-results__tools .lp-chip svg{flex:none;}
 .jv-filter-trigger{display:none;}
 @media (max-width:1023px){.jv-filter-trigger{display:inline-flex;}}
+/* Mobile: stack the toolbar so the category tabs, sort tabs, Filters button and
+   view toggle never overflow. Each segmented control scrolls within itself. */
+@media (max-width:640px){
+  .jv-results__head{flex-direction:column;align-items:stretch;gap:12px;}
+  .jv-results__tabs{width:100%;}
+  .jv-results__tools{width:100%;flex:none;flex-wrap:wrap;justify-content:space-between;gap:8px;}
+  .jv-results__tools .lp-filters{min-width:0;}
+  .jv-filter-trigger{flex:1;justify-content:center;}
+}
 .jv-results__meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .jv-govt-note{font-size:12.5px;color:var(--muted-text);}
 .jv-pager-row{margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;color:var(--muted-text);font-size:13px;}
