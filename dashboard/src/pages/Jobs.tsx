@@ -829,16 +829,40 @@ export function JobsPage() {
   // Jobs the signed-in user added themselves (from /add-job) live in a separate,
   // profile-scoped collection, so they're fetched here and shown above the public
   // feed. Logged-out visitors never see them.
+  // The signed-in user's own added jobs (`myJobs`) only ever render as `myJobRows`:
+  // in saved mode, on the "My jobs" tab, or on the first page of "All jobs" (never
+  // under Government/Other, in internet/best-match mode, or on paginated pages).
+  // Fetch /user-jobs only when that view will actually show them — otherwise the
+  // request is wasted work on load. Mirrors the `myJobRows` condition below.
+  const needMyJobs =
+    isAuthenticated &&
+    (savedMode || category === 'mine' || (category === 'all' && offset === 0 && !internetMode && !sortByMatch))
+
+  // Community (other members' shared) jobs only render on the first page of
+  // "All jobs". Fetch /jobs/community only for that view. Mirrors `communityJobRows`.
+  const needCommunity =
+    !savedMode && !internetMode && !sortByMatch && category === 'all' && offset === 0
+
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!needMyJobs) {
       setMyJobs([])
-      setHasResume(false)
       return
     }
     apiFetch('/user-jobs')
       .then((res) => (res.ok ? res.json() : { jobs: [] }))
       .then((body: { jobs: UserJob[] }) => setMyJobs(body.jobs))
       .catch(() => setMyJobs([]))
+  }, [needMyJobs])
+
+  // Resume status drives always-visible header UI (the greeting, the "Resume on
+  // file"/upload banner, and whether the "Best match" sort is offered), so it's
+  // fetched for every signed-in load — but never for logged-out visitors.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setHasResume(false)
+      setUserName(null)
+      return
+    }
     // A resume (uploaded CV text or a non-empty structured resume) is what the "Best match"
     // sort ranks against. resumeEmbedding itself is projected out of the profile response, so
     // we infer eligibility from the resume content the server does return.
@@ -853,16 +877,19 @@ export function JobsPage() {
       .catch(() => setHasResume(false))
   }, [isAuthenticated])
 
-  // Public jobs other members added and chose to share. Unlike `myJobs`, these
-  // are public, so we fetch them for logged-out visitors too; the API excludes
-  // the signed-in user's own (those already appear under "My jobs"), which is why
-  // this re-runs when auth changes.
+  // Public jobs other members added and chose to share. The API excludes the
+  // signed-in user's own (those already appear under "My jobs"). Fetched only for
+  // the first page of "All jobs" — the only view that renders them.
   useEffect(() => {
+    if (!needCommunity) {
+      setCommunityJobs([])
+      return
+    }
     apiFetch('/jobs/community')
       .then((res) => (res.ok ? res.json() : { jobs: [] }))
       .then((body: { jobs: UserJob[] }) => setCommunityJobs(body.jobs))
       .catch(() => setCommunityJobs([]))
-  }, [isAuthenticated])
+  }, [needCommunity])
 
   useEffect(() => {
     if (debouncedKeyword === urlKeyword) return

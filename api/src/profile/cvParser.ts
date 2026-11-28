@@ -1,14 +1,29 @@
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
-import * as pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs'
-import mammoth from 'mammoth'
+// pdf.js, its worker, and mammoth are large (several MB) and only needed when a
+// CV is actually uploaded — never on a normal request. They're imported lazily
+// inside parsePdf/parseDocx so they stay out of the serverless cold-start path.
+// This also keeps importing the lightweight `DOCX_MIME_TYPE` constant below (done
+// by routes/materials.ts) from dragging the whole PDF/DOCX toolchain into memory.
+let pdfjsLibPromise: Promise<typeof import('pdfjs-dist/legacy/build/pdf.mjs')> | null = null
 
-// Run pdf.js entirely on the main thread. By default pdf.js loads its worker
-// via a dynamic `import(workerSrc)`, which the Vercel/esbuild bundler can't see
-// statically — so the worker module isn't included in the serverless function
-// bundle and `getDocument()` throws at runtime (works locally, fails deployed).
-// Registering the statically-imported worker on `globalThis.pdfjsWorker` makes
-// pdf.js use its `WorkerMessageHandler` directly and skip the dynamic import.
-;(globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = pdfjsWorker
+async function loadPdfjs(): Promise<typeof import('pdfjs-dist/legacy/build/pdf.mjs')> {
+  if (!pdfjsLibPromise) {
+    pdfjsLibPromise = (async () => {
+      const [pdfjsLib, pdfjsWorker] = await Promise.all([
+        import('pdfjs-dist/legacy/build/pdf.mjs'),
+        import('pdfjs-dist/legacy/build/pdf.worker.mjs'),
+      ])
+      // Run pdf.js entirely on the main thread. By default pdf.js loads its worker
+      // via a dynamic `import(workerSrc)`, which the Vercel/esbuild bundler can't see
+      // statically — so the worker module isn't included in the serverless function
+      // bundle and `getDocument()` throws at runtime (works locally, fails deployed).
+      // Registering the imported worker on `globalThis.pdfjsWorker` makes pdf.js use
+      // its `WorkerMessageHandler` directly and skip the dynamic import.
+      ;(globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = pdfjsWorker
+      return pdfjsLib
+    })()
+  }
+  return pdfjsLibPromise
+}
 
 export const DOCX_MIME_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -31,6 +46,7 @@ async function parsePdf(buffer: Buffer): Promise<string> {
   // rejects Node's `Buffer` type outright (even though it's a Uint8Array
   // subclass), so the copy must be a plain Uint8Array.
   const copy = new Uint8Array(buffer)
+  const pdfjsLib = await loadPdfjs()
   const doc = await pdfjsLib.getDocument({ data: copy }).promise
 
   const pageTexts: string[] = []
@@ -47,6 +63,7 @@ async function parsePdf(buffer: Buffer): Promise<string> {
 }
 
 async function parseDocx(buffer: Buffer): Promise<string> {
+  const { default: mammoth } = await import('mammoth')
   const result = await mammoth.extractRawText({ buffer })
   return result.value.trim()
 }

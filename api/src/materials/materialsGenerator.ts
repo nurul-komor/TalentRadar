@@ -343,6 +343,9 @@ export function createMaterialsGenerator(
           projects: (resume?.projects ?? []).map((project) => ({
             name: project.name,
             url: project.url ?? null,
+            role: project.role ?? null,
+            technologies: project.technologies ?? [],
+            bullets: project.bullets ?? [],
           })),
           jobTitle: job.title,
           company: job.company,

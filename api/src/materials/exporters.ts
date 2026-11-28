@@ -1,5 +1,10 @@
-import PDFDocument from 'pdfkit'
-import { Document, Packer, Paragraph, TextRun, ExternalHyperlink, HeadingLevel } from 'docx'
+// pdfkit and docx are large and only needed when a document is actually exported,
+// so they're imported lazily inside exportToPdf/exportToDocx to keep them out of
+// the serverless cold-start path. The `PDFKit.*` types used below are ambient and
+// erased at compile time, so they need no runtime import.
+// `Paragraph` is also used in a type position (`Paragraph[]`); a type-only import
+// is erased at compile time, so it documents the type without loading docx eagerly.
+import type { Paragraph } from 'docx'
 
 // The tailored CV is generated as GitHub-flavored Markdown. These helpers parse
 // the small subset it uses — `# name`, `## section`, `- bullet`, `**bold**`, and
@@ -73,6 +78,7 @@ export function inlineSegments(text: string): InlineSegment[] {
 }
 
 export async function exportToPdf(text: string, opts: { resume?: boolean } = {}): Promise<Buffer> {
+  const { default: PDFDocument } = await import('pdfkit')
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 54, size: 'A4' })
     const chunks: Buffer[] = []
@@ -153,6 +159,7 @@ export async function exportToPdf(text: string, opts: { resume?: boolean } = {})
 }
 
 export async function exportToDocx(text: string, opts: { resume?: boolean } = {}): Promise<Buffer> {
+  const { Document, Packer, Paragraph, TextRun, ExternalHyperlink, HeadingLevel } = await import('docx')
   const lines = text.replace(/\r\n/g, '\n').split('\n')
 
   if (!opts.resume) {

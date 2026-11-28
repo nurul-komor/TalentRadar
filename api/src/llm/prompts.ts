@@ -139,6 +139,8 @@ SKILLS — organize into these categories (omit any the candidate has nothing fo
 
 PROFESSIONAL EXPERIENCE / PROJECTS:
 - Use the exact heading \`## Professional Experience\` (ATS may miss a bare "Experience"). Each item: a bold title line \`**Role — Company** (Mon YYYY – Mon YYYY)\` (preserve the CV's exact titles, companies, and dates), then EXACTLY 3 \`- \` bullets — no more, no fewer — chosen as the strongest, most role-relevant, most quantitative. Projects use \`**Project Name** — one-line context\`; whenever the master CV supplies a project's live/demo URL you MUST append \`[(Visit)](<url>)\` right after the name/context — never omit an existing live link — and append a source-repo URL as \`[(Code)](<url>)\` the same way. Only add a link that genuinely exists in the CV — never invent one.
+- INCLUDE EVERY PROJECT: the \`## Projects\` section MUST contain one entry for EVERY project listed in the "Projects" input block — never drop, merge, or silently omit a project because it seems less relevant to this role. Relevance governs only the WORDING, emphasis, and the ORDER described next — never whether a project appears at all. The only project that may be left out is one with no truthful basis anywhere in the inputs.
+- ORDER PROJECTS BY RELEVANCE TO THIS JOB: rank the projects against the posting — the project whose technologies, domain, and responsibilities most overlap the job's required/nice-to-have skills and duties goes FIRST, the least-relevant goes LAST. Judge relevance by concrete signal (shared tech stack, matching problem domain, comparable scope/role), not recency or title. The input order is NOT the output order — reorder freely. This reordering never drops a project; every one still appears, just ranked. Within each project, likewise lead with the most role-relevant, most quantified bullet.
 - BULLET REWRITE (applies identically to every Experience AND Projects bullet): Action verb + Contribution + Measurable Result — lead with the quantified outcome, turn generic responsibilities into specific accomplishments (never "responsible for…"/"in charge of…"), and fold in the role's key keywords/tools using the posting's wording. Start every bullet with a strong past-tense action verb; no bold inside a bullet. 20–35 words, 40 a HARD ceiling.
 - QUANTIFY EVERY BULLET WITH A REAL NUMBER — at MINIMUM 75% of all Experience+Projects bullets must carry a hard number (aim for 100%); never a blank, placeholder, or vague word ("many", "several"). Use the CV's figure when it supports one, else a specific, realistic, conservative estimate that fits the scope/seniority (recorded in \`unmetRequirements\`). There is always a quantifiable angle (how many, how often, how much faster/smaller, how many users/records). Don't copy CV bullets verbatim — rewrite into the formula, e.g. "In charge of improving communication between departments" → "Led a process re-engineering initiative across 10 departments that cut paperwork by 75%". SELF-AUDIT before returning: count bullets vs. quantified bullets; if under 75%, revise until met (a soft/qualitative outcome doesn't count).
 - VARY the metrics so the résumé reads analytically, drawing from: performance (latency, load/cold-start time, throughput, frame rate, memory/CPU, bundle size, battery); quality (crash-free rate, error rate, defect count, test coverage %, uptime/SLA); scale (users/DAU/MAU, requests/day, records processed, devices/screens, downloads, data volume); delivery (build/CI time, release frequency, time saved, manual steps eliminated, cost); business (conversion, retention, session length, ratings, revenue — only if the role touches it). Prefer strong shapes: a before→after delta ("4.2s → 1.8s"), a % improvement ("cut crash rate ~60%, to under 0.4%"), a rate ("99.9% crash-free sessions"), or an absolute scale ("2M+ events/day"); pair two complementary numbers where natural.
@@ -155,7 +157,7 @@ ATS KEYWORD MATCH:
 - WORD FORM — copy the posting's surface form CHARACTER-FOR-CHARACTER (a substituted inflection scores as a miss): "Collaboration" ≠ "Collaborative", "Communicate" ≠ "Communication", "Motivation" ≠ "Motivated"; when the posting uses two forms, list both. This includes the vague umbrella phrases that read generic — \`Technical skills\`, \`Teamwork skills\`, \`Communication skills\`, \`Interpersonal skills\`, \`Analytical\`, \`Motivated\`, \`Detail-oriented\`, \`Self-starter\` — list each verbatim in \`Core Competencies\` even though the résumé names the specifics elsewhere (listing "React, Node.js, PostgreSQL" does NOT cover \`Technical skills\`; describing cross-team work does NOT cover \`Teamwork skills\`).
 - Any posting keyword the master CV doesn't support still goes in \`## Skills\`, is never woven into the Summary/Experience/Projects as if used, and is still recorded in \`unmetRequirements\`.
 
-LENGTH: recruiter-scannable, never over TWO pages (use page two only when the candidate's experience genuinely fills it). No word target — the content (every company and project at exactly 3 bullets) sets the length. Cut filler and anything irrelevant, but don't drop genuinely valuable experience just to shorten.
+LENGTH: recruiter-scannable, never over TWO pages (use page two only when the candidate's experience genuinely fills it). No word target — the content (every company and every project at exactly 3 bullets) sets the length. Cut filler and tighten wording to fit, but NEVER drop a whole company or project to shorten — every project from the Projects input block stays in (see INCLUDE EVERY PROJECT); trim within entries instead.
 
 COVER LETTER (\`coverLetter\`):
 - The FIRST line is the email subject, exactly \`Subject: <line>\` (e.g. \`Subject: Application for Senior Backend Engineer — Jane Doe\`), based on the real job title and candidate name. Then one blank line, then the body (greeting, 2–3 short paragraphs, sign-off).
@@ -197,12 +199,19 @@ export function buildMaterialsUserPrompt(input: {
   // them). Handed over so the model weaves the genuinely-applicable ones into the
   // Summary/Experience using the posting's wording — the ATS scores these too.
   softSkills: string[]
-  // Authoritative project links from the structured résumé. Passed explicitly
-  // because the parsed `cvText` frequently drops hyperlinks, leaving the model no
-  // URL to append — so a project's live/demo link never makes it into the output.
-  // Each project's `url` here is the master-CV-sourced link to append as
-  // `[(Visit)](<url>)` after that project's title.
-  projects: Array<{ name: string; url: string | null }>
+  // The candidate's full set of structured projects from the master résumé — the
+  // AUTHORITATIVE project inventory. Passed in full (not just name+url) because the
+  // parsed `cvText` frequently drops hyperlinks AND under-represents or omits whole
+  // projects, which previously let the model silently skip them. Every project here
+  // MUST appear in the `## Projects` section; `url` is the master-CV-sourced link to
+  // append as `[(Visit)](<url>)` after the title.
+  projects: Array<{
+    name: string
+    url: string | null
+    role: string | null
+    technologies: string[]
+    bullets: string[]
+  }>
   // Authoritative structured contact details from the candidate's profile
   // résumé. Passed explicitly so the header (esp. the location line, which the
   // ATS checks for) is reliable even when the raw cvText is messy or omits it.
@@ -258,16 +267,23 @@ export function buildMaterialsUserPrompt(input: {
       ? `Candidate contact details (authoritative — use these for the header/contact line, and prefer them over anything parsed from the CV text; the location MUST appear in the contact line as \`City, Country\` per the header's LOCATION RULE):\n${contactLines.join('\n')}`
       : 'Candidate contact details: none on file — build the contact line from the master CV text. The contact line MUST still carry a location (`City, Country`, see the header LOCATION RULE); if no location can be found in the CV text either, note the missing city/country in `unmetRequirements` so the candidate can add it — an absent address fails the ATS searchability check.'
 
-  // Authoritative project links — the parsed `cvText` often loses hyperlinks, so
-  // these are the reliable source for the `[(Visit)](<url>)` link the Projects
-  // rule requires. Only projects that actually have a URL are listed.
-  const projectLinks = input.projects.filter((project) => project.url)
-  const projectLinksBlock =
-    projectLinks.length > 0
-      ? `Project links (authoritative — these URLs come from the candidate's profile; whenever a project below appears in the \`## Projects\` section you MUST append \`[(Visit)](<url>)\` after its name/context using the exact URL here, even if the master CV text omitted the link. Only add a link for a project genuinely listed here; never invent one):\n${projectLinks
-          .map((project) => `- ${project.name}: ${project.url}`)
+  // The candidate's full structured project inventory — the AUTHORITATIVE source
+  // for the `## Projects` section. Passed in full (role, technologies, bullets, url)
+  // because the parsed `cvText` often loses hyperlinks AND under-represents or omits
+  // whole projects; relying on cvText alone previously let the model silently skip
+  // projects it judged less relevant. EVERY project here MUST appear in the output.
+  const projectsBlock =
+    input.projects.length > 0
+      ? `Projects (authoritative — the candidate's complete project list from their profile; the parsed CV text above may omit, truncate, or under-describe some of these). INCLUDE EVERY PROJECT BELOW in the \`## Projects\` section — one entry each, none dropped, even if it seems less relevant to this role. Then ORDER the entries by how well each matches THIS posting (most-relevant project first, least-relevant last — see the ORDER PROJECTS BY RELEVANCE rule); the order they appear in below is arbitrary, not the order to output. For each, use its exact name, draw the 3 bullets from the details given here (and the master CV where it adds more), and whenever a \`url\` is present you MUST append \`[(Visit)](<url>)\` after the name/context using that exact URL even if the CV text omitted it. Never invent a URL that isn't listed here:\n${input.projects
+          .map((project) => {
+            const parts = [`- ${project.name}${project.url ? ` — ${project.url}` : ''}`]
+            if (project.role) parts.push(`  role: ${project.role}`)
+            if (project.technologies.length > 0) parts.push(`  technologies: ${project.technologies.join(', ')}`)
+            if (project.bullets.length > 0) parts.push(project.bullets.map((b) => `  • ${b}`).join('\n'))
+            return parts.join('\n')
+          })
           .join('\n')}`
-      : 'Project links: none on file — add a project link only if the master CV text itself contains one.'
+      : 'Projects: none on file — add a `## Projects` section only if the master CV text itself describes projects, and add a project link only if the CV text contains one.'
 
   const retry = input.retryFeedback
   let retryBlock = ''
@@ -321,7 +337,7 @@ export function buildMaterialsUserPrompt(input: {
   return (
     `Candidate's master CV:\n${input.cvText ?? '(no CV on file)'}\n\n` +
     `${contactBlock}\n\n` +
-    `${projectLinksBlock}\n\n` +
+    `${projectsBlock}\n\n` +
     `Job: ${input.jobTitle} at ${input.company}\n\n` +
     `Extracted requirements:\n${input.requirementsSummary}\n\n` +
     `${missingSkillsBlock}\n\n` +

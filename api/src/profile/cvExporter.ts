@@ -1,5 +1,9 @@
-import PDFDocument from 'pdfkit'
 import type { Profile, Resume, ResumeExperience, ResumeProject, ResumeSkillGroup, ResumeEducation } from '@job-hunter/shared'
+
+// pdfkit is only needed when a resume PDF is actually rendered, so it's imported
+// lazily inside renderResumePdf to keep it off the serverless cold-start path.
+// The `PDFKit.PDFDocument` type used in signatures below is an ambient type and
+// is erased at compile time, so it needs no runtime import.
 
 const PAGE_MARGIN = 50
 const FONT_REGULAR = 'Helvetica'
@@ -101,6 +105,7 @@ function renderEducation(doc: PDFKit.PDFDocument, entries: ResumeEducation[]) {
 
 export async function renderResumePdf(profile: Profile): Promise<Buffer> {
   const resume: Resume = profile.resume
+  const { default: PDFDocument } = await import('pdfkit')
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margins: { top: PAGE_MARGIN, bottom: PAGE_MARGIN, left: PAGE_MARGIN, right: PAGE_MARGIN } })

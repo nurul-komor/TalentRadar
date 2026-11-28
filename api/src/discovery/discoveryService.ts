@@ -16,6 +16,14 @@ export async function ensureJobIndexes(db: Db): Promise<void> {
   const jobs = db.collection<Job>('jobs')
   await jobs.createIndex({ sourceId: 1, sourceJobId: 1 }, { unique: true })
   await jobs.createIndex({ normalizedUrl: 1 }, { unique: true })
+  // The public /jobs feed sorts newest-first by `discoveredAt` on every load. Without
+  // this index Mongo does a full-collection in-memory sort (the dominant cost of the
+  // feed request); the descending index lets the sort+limit read straight off the index.
+  await jobs.createIndex({ discoveredAt: -1 })
+  // Common feed facets filter by status / sourceId before that same sort. These
+  // compound indexes keep the filtered-and-sorted path index-backed too.
+  await jobs.createIndex({ status: 1, discoveredAt: -1 })
+  await jobs.createIndex({ sourceId: 1, discoveredAt: -1 })
 }
 
 async function isDuplicate(
